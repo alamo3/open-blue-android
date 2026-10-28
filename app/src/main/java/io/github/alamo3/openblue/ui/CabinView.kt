@@ -67,8 +67,6 @@ private val WHEEL_CENTER = Offset(0.330f, 0.388f)
 private const val WHEEL_RADIUS = 0.071f // of the width
 private val WINDSHIELD = Rect(0.16f, 0.21f, 0.84f, 0.28f)
 
-private val SEAT_NAMES = listOf("Driver", "Passenger", "Rear left", "Rear right")
-
 /**
  * The real cabin seen from above with the roof cut away (rendered from the same 3D model as the
  * home screen). Heated seats warm up with a glow that spreads through the cushion and backrest;
@@ -112,7 +110,7 @@ fun CabinView(
         val h = maxHeight
         Image(
             painterResource(R.drawable.cabin_top),
-            contentDescription = "Cabin seen from above",
+            contentDescription = "Cabin seen from above: driver, passenger, rear left and rear right seats",
             contentScale = ContentScale.FillBounds,
             modifier = Modifier.fillMaxSize(),
         )
@@ -141,7 +139,7 @@ fun CabinView(
                     .pressable(onClick = { onSeat(i) }),
                 contentAlignment = Alignment.Center,
             ) {
-                SeatReadout(level, SEAT_NAMES[i])
+                SeatReadout(level)
             }
         }
     }
@@ -150,7 +148,7 @@ fun CabinView(
 private fun Rect.scaled(s: Size) = Rect(left * s.width, top * s.height, right * s.width, bottom * s.height)
 
 @Composable
-private fun SeatReadout(level: SeatLevel, name: String) {
+private fun SeatReadout(level: SeatLevel) {
     val app = AppTheme.colors
     val tint = when {
         level.isHeat -> app.heat
@@ -180,7 +178,7 @@ private fun SeatReadout(level: SeatLevel, name: String) {
             when {
                 level.isHeat -> "Heat"
                 level.isCool -> "Cool"
-                else -> name
+                else -> "Off"
             },
             style = MaterialTheme.typography.labelSmall,
             color = tint,
