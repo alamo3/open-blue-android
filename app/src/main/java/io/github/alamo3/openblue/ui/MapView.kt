@@ -57,6 +57,12 @@ fun CarMap(car: MapCar?, modifier: Modifier = Modifier) {
         }
         return
     }
+    LiveCarMap(car, modifier)
+}
+
+/** Kept apart from [CarMap] so the screenshot renderer never loads MapLibre's classes. */
+@Composable
+private fun LiveCarMap(car: MapCar?, modifier: Modifier) {
     val context = LocalContext.current
     val dark = isSystemInDarkTheme()
     val current by rememberUpdatedState(car)
