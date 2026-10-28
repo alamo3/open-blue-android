@@ -890,6 +890,61 @@ class MainViewModel(
         }
     }
 
+    // ------------------------------------------------------- developer: endpoint probe
+
+    var probeResults by mutableStateOf<List<BluelinkClient.ProbeResult>>(emptyList())
+        private set
+    var probing by mutableStateOf(false)
+        private set
+
+    /**
+     * Posts a send-to-car style body to each path in turn and records what comes back.
+     * The destination is the car's own location (or the CN Tower), so a hit is harmless.
+     */
+    fun probeEndpoints(paths: List<String>, authorise: Boolean) {
+        val v = vehicle ?: return
+        if (!online || probing || paths.isEmpty()) return
+        val (lat, lon) = location?.let { it.lat to it.lon } ?: (43.6426 to -79.3871)
+        val body = kotlinx.serialization.json.buildJsonObject {
+            put("vin", kotlinx.serialization.json.JsonPrimitive(v.vin))
+            put("userName", kotlinx.serialization.json.JsonPrimitive(store.username.orEmpty()))
+            store.pin?.let { put("pin", kotlinx.serialization.json.JsonPrimitive(it)) }
+            put("actionType", kotlinx.serialization.json.JsonPrimitive("SEND"))
+            put("poiInfoList", kotlinx.serialization.json.buildJsonArray {
+                add(kotlinx.serialization.json.buildJsonObject {
+                    put("name", kotlinx.serialization.json.JsonPrimitive("Open Blue test"))
+                    put("addr", kotlinx.serialization.json.JsonPrimitive(""))
+                    put("src", kotlinx.serialization.json.JsonPrimitive("HERE"))
+                    put("waypointID", kotlinx.serialization.json.JsonPrimitive(0))
+                    put("lang", kotlinx.serialization.json.JsonPrimitive(1))
+                    put("coord", kotlinx.serialization.json.buildJsonObject {
+                        put("lat", kotlinx.serialization.json.JsonPrimitive(lat))
+                        put("lon", kotlinx.serialization.json.JsonPrimitive(lon))
+                        put("alt", kotlinx.serialization.json.JsonPrimitive(0))
+                        put("type", kotlinx.serialization.json.JsonPrimitive(0))
+                    })
+                })
+            })
+        }
+        probing = true
+        probeResults = emptyList()
+        viewModelScope.launch {
+            val out = mutableListOf<BluelinkClient.ProbeResult>()
+            for (p in paths) {
+                out += try {
+                    api.probe(p, v.id, body, authorise)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    BluelinkClient.ProbeResult(p, -1, null, null, describe(e), "")
+                }
+                probeResults = out.toList()
+                delay(400)
+            }
+            probing = false
+        }
+    }
+
     /** The car's last known location; [locate] asks the car for a fresh one. */
     var location by mutableStateOf(store.lastLocation)
         private set

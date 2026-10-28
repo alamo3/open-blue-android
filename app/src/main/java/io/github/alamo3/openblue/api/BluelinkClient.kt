@@ -564,6 +564,46 @@ class BluelinkClient(private val store: SecureStore) {
         (body["result"] as? JsonObject) ?: JsonObject(emptyMap())
     }
 
+    // ------------------------------------------------------- developer: endpoint probe
+
+    /** What the server said to a probe: HTTP status, Bluelink codes and the start of the body. */
+    data class ProbeResult(val path: String, val http: Int, val responseCode: Int?, val errorCode: String?, val message: String?, val body: String)
+
+    /**
+     * Posts [body] to [path] with the usual headers (and PIN authorisation when [authorise]),
+     * reporting whatever comes back instead of throwing. Used to look for endpoints the
+     * official app doesn't call.
+     */
+    suspend fun probe(path: String, vehicleId: String, body: JsonObject, authorise: Boolean): ProbeResult = authed { t ->
+        val headers = mutableMapOf("accessToken" to t, "vehicleId" to vehicleId)
+        if (authorise) store.pin?.let { pin -> headers["pAuth"] = pAuth(t, vehicleId, pin) }
+        withContext(Dispatchers.IO) {
+            val builder = Request.Builder()
+                .url(BASE_URL + path.trimStart('/'))
+                .header("Content-Type", "application/json")
+                .header("language", "0")
+                .header("offset", offsetHours())
+                .header("from", "SPA")
+                .header("brand", "H")
+                .header("client_id", CLIENT_ID)
+                .header("client_secret", CLIENT_SECRET)
+            headers.forEach { (k, v) -> builder.header(k, v) }
+            builder.post(body.toString().toRequestBody(JSON_MEDIA))
+            http.newCall(builder.build()).execute().use { resp ->
+                val text = resp.body?.string().orEmpty()
+                val json = runCatching { Json.parseToJsonElement(text).jsonObject }.getOrNull()
+                ProbeResult(
+                    path = path,
+                    http = resp.code,
+                    responseCode = json?.int("responseHeader.responseCode"),
+                    errorCode = json?.str("error.errorCode"),
+                    message = json?.str("error.errorDesc") ?: json?.str("responseHeader.responseDesc") ?: json?.str("message"),
+                    body = text.take(300),
+                )
+            }
+        }
+    }
+
     /** Flashes the hazard lights, sounding the horn too when [horn] is set (hrnlght). */
     suspend fun hornLights(vehicleId: String, horn: Boolean) =
         command("hrnlght", vehicleId, buildJsonObject { put("horn", horn) })

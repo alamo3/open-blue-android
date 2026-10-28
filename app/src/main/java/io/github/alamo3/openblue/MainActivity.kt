@@ -51,6 +51,7 @@ import io.github.alamo3.openblue.ui.OpenBlueTheme
 import io.github.alamo3.openblue.ui.OtpScreen
 import io.github.alamo3.openblue.ui.Route
 import io.github.alamo3.openblue.ui.SettingsScreen
+import io.github.alamo3.openblue.ui.ProbeScreen
 import io.github.alamo3.openblue.ui.TripScreen
 import io.github.alamo3.openblue.ui.VehicleScreen
 import io.github.alamo3.openblue.ui.VehiclePickerScreen
@@ -146,7 +147,8 @@ private fun App(vm: MainViewModel = viewModel()) {
                         Route.Location -> LocationScreen(vm, onBack = ::back)
                         Route.Camera -> CameraScreen(vm, onBack = ::back)
                         Route.Vehicle -> VehicleScreen(vm, onBack = ::back)
-                        Route.Settings -> SettingsScreen(vm, onBack = ::back)
+                        Route.Settings -> SettingsScreen(vm, onBack = ::back, open = ::open)
+                        Route.Probe -> ProbeScreen(vm, onBack = ::back)
                     }
                 }
             }

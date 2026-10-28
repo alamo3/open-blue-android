@@ -42,7 +42,7 @@ import io.github.alamo3.openblue.MainViewModel
 import io.github.alamo3.openblue.api.ClimateFormat
 
 @Composable
-fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
+fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, open: (Route) -> Unit = {}) {
     val app = AppTheme.colors
     var editingPin by remember { mutableStateOf(false) }
     var confirmSignOut by remember { mutableStateOf(false) }
@@ -101,6 +101,9 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
                 "Shows a floating panel on every screen for simulating the car's state and testing commands without the car",
                 vm.developerMode,
             ) { vm.changeDeveloperMode(it) }
+            if (vm.developerMode) {
+                ClickRow("Endpoint probe", "Look for Bluelink endpoints the official app doesn't use") { open(Route.Probe) }
+            }
 
             HorizontalDivider(color = app.hairline, modifier = Modifier.padding(top = 8.dp))
             SectionTitle("Help")
