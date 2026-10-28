@@ -19,6 +19,9 @@ import io.github.alamo3.openblue.api.OtpChallenge
 import io.github.alamo3.openblue.api.OtpRequiredException
 import io.github.alamo3.openblue.api.ServerPreset
 import io.github.alamo3.openblue.api.SvmCapture
+import io.github.alamo3.openblue.data.Gallery
+import io.github.alamo3.openblue.data.SvmArchive
+import io.github.alamo3.openblue.data.SvmShot
 import io.github.alamo3.openblue.api.TempTables
 import io.github.alamo3.openblue.api.VehicleCaps
 import io.github.alamo3.openblue.api.VehicleInfo
@@ -64,8 +67,9 @@ class MainViewModel(
     app: Application,
     private val store: SecureStore,
     private val online: Boolean,
+    private val archive: SvmArchive? = null,
 ) : AndroidViewModel(app) {
-    constructor(app: Application) : this(app, SecureStore(app), online = true)
+    constructor(app: Application) : this(app, SecureStore(app), online = true, archive = SvmArchive(java.io.File(app.filesDir, "svm")))
 
     private val api = BluelinkClient(store)
     private val prettyJson = Json { prettyPrint = true }
@@ -107,7 +111,8 @@ class MainViewModel(
         private set
     var confirmUnlock by mutableStateOf(store.confirmUnlock)
         private set
-    var svm by mutableStateOf<List<SvmCapture>>(emptyList())
+    /** Surround-view photos, newest first: everything archived on this phone plus Bluelink's latest. */
+    var svm by mutableStateOf<List<SvmShot>>(emptyList())
         private set
     var svmLoaded by mutableStateOf(false)
         private set
@@ -481,10 +486,30 @@ class MainViewModel(
 
     fun loadSurroundView(force: Boolean = false) {
         val v = vehicle ?: return
-        if (!online || (svmLoaded && !force)) return
+        if (svmLoaded && !force) return
+        // Archived photos show straight away, even offline.
+        if (svm.isEmpty() && archive != null) {
+            viewModelScope.launch { svm = withContext(Dispatchers.IO) { archive.list(v.id) } }
+        }
+        if (!online) {
+            svmLoaded = true
+            return
+        }
         if (force) refreshing = true
         launchSafely(onDone = { svmLoaded = true; refreshing = false }) {
-            svm = api.lastSurroundView(v.id)
+            keepSurroundView(v.id, api.lastSurroundView(v.id))
+        }
+    }
+
+    /** Archives [latest] and shows everything we have. */
+    private suspend fun keepSurroundView(vehicleId: String, latest: List<SvmCapture>) {
+        svm = if (archive != null) {
+            withContext(Dispatchers.IO) {
+                archive.add(vehicleId, latest)
+                archive.list(vehicleId)
+            }
+        } else {
+            latest.map { SvmShot.of(it) }
         }
     }
 
@@ -511,13 +536,47 @@ class MainViewModel(
                     continue
                 }
                 if (latest.isNotEmpty() && latest.first().utcTime != before) {
-                    svm = latest
+                    keepSurroundView(v.id, latest)
                     svmLoaded = true
                     finish(action, true)
                     return@launchSafely
                 }
             }
             finish(action, false, "The car hasn't sent photos yet. Pull down on this screen in a minute to check again.")
+        }
+    }
+
+    /** Removes a set of photos from this phone's archive (Bluelink keeps its own latest copy). */
+    fun deleteSurroundView(shot: SvmShot) {
+        val v = vehicle ?: return
+        val time = shot.utcTime ?: return
+        viewModelScope.launch {
+            svm = withContext(Dispatchers.IO) {
+                archive?.remove(v.id, time)
+                archive?.list(v.id) ?: svm.filter { it !== shot }
+            }
+        }
+    }
+
+    /** Saves the photos (all views, or just [only]) to the phone's gallery. */
+    fun exportSurroundView(shot: SvmShot, only: String? = null) {
+        if (!Gallery.supported) {
+            message = "Saving to the gallery needs Android 10 or newer"
+            return
+        }
+        val context = getApplication<Application>()
+        viewModelScope.launch {
+            val saved = withContext(Dispatchers.IO) {
+                runCatching {
+                    val views = shot.views().filter { only == null || it.first == only }
+                    Gallery.save(context, shot.takenAt, views)
+                }.getOrDefault(0)
+            }
+            message = when (saved) {
+                0 -> "Couldn't save to the gallery"
+                1 -> "Saved to Pictures/Open Blue"
+                else -> "Saved $saved photos to Pictures/Open Blue"
+            }
         }
     }
 

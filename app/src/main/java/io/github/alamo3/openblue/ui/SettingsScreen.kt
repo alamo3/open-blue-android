@@ -144,7 +144,7 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
         AlertDialog(
             onDismissRequest = { confirmSignOut = false },
             title = { Text("Sign out?") },
-            text = { Text("Your email, password and PIN are removed from this phone. Presets saved on this phone are kept.") },
+            text = { Text("Your email, password and PIN are removed from this phone. Presets and camera photos saved on this phone are kept.") },
             confirmButton = { TextButton(onClick = { confirmSignOut = false; vm.signOut() }) { Text("Sign out", color = app.alert) } },
             dismissButton = { TextButton(onClick = { confirmSignOut = false }) { Text("Cancel") } },
         )
