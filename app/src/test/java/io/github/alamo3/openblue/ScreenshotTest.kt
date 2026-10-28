@@ -2,6 +2,12 @@ package io.github.alamo3.openblue
 
 import android.app.Application
 import android.content.SharedPreferences
+import androidx.activity.compose.LocalActivityResultRegistryOwner
+import androidx.activity.result.ActivityResultRegistry
+import androidx.activity.result.ActivityResultRegistryOwner
+import androidx.activity.result.contract.ActivityResultContract
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.core.app.ActivityOptionsCompat
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
@@ -93,7 +99,14 @@ class ScreenshotTest(private val night: Boolean) {
         shot { ClimateScreen(vm, onBack = {}) }
     }
     @Test fun vehicle() = demoVm().let { vm -> shot { VehicleScreen(vm, onBack = {}) } }
-    @Test fun settings() = demoVm().let { vm -> shot { SettingsScreen(vm, onBack = {}) } }
+    @Test fun settings() = demoVm().let { vm ->
+        shot {
+            // The photo picker needs an activity-result registry, which the renderer doesn't provide.
+            CompositionLocalProvider(LocalActivityResultRegistryOwner provides NoopRegistryOwner) {
+                SettingsScreen(vm, onBack = {})
+            }
+        }
+    }
     @Test fun camera() = demoVm().let { vm -> shot { CameraScreen(vm, onBack = {}) } }
     @Test fun login() = demoVm(signedIn = false).let { vm -> shot { LoginScreen(vm) } }
 
@@ -156,5 +169,11 @@ private class MemoryPrefs : SharedPreferences {
             if (clear) map.clear()
             pending.forEach { (k, v) -> if (v == null) map.remove(k) else map[k] = v }
         }
+    }
+}
+
+private object NoopRegistryOwner : ActivityResultRegistryOwner {
+    override val activityResultRegistry: ActivityResultRegistry = object : ActivityResultRegistry() {
+        override fun <I, O> onLaunch(requestCode: Int, contract: ActivityResultContract<I, O>, input: I, options: ActivityOptionsCompat?) {}
     }
 }
