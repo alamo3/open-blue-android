@@ -125,6 +125,17 @@ class ReversingTest {
         assertTrue("axis kept: ${f.confidence}", f.confidence > 0.5f)
     }
 
+    @Test fun phoneTurnedRoundOnAFlatPadIsCaught() {
+        val f = calibrated() // remembers forward = +x
+        // But today the phone lies the other way: driving forwards pushes it along -x.
+        drive(f, 800, -2.5f) { it * 0.025f }
+        assertTrue("not stuck thinking it's reversing", !f.reversing)
+        assertTrue("relearned: forward push reads ${f.accel}", f.accel > 1.5f)
+        // And braking now reads as braking.
+        drive(f, 150, 2f) { 20f - it * 0.02f }
+        assertTrue("braking reads ${f.accel}", f.accel < -1f)
+    }
+
     @Test fun reversingNeverTeachesTheWrongWay() {
         val f = calibrated()
         repeat(5) {

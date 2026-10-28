@@ -50,6 +50,11 @@ class MotionFusion {
     // A remembered mount from an earlier drive, checked once gravity has settled.
     private var pendingMount: FloatArray? = null
     private var samples = 0
+    /**
+     * Speed changes left to confirm a remembered mount. Tilt alone can't tell a phone lying
+     * flat top-forward from top-backward, so GPS gets the final say.
+     */
+    private var probation = 0
 
     /**
      * The learned mount (how the phone is tilted and which way is forward), to remember for next
@@ -96,6 +101,7 @@ class MotionFusion {
                 if (g[0] * m[0] + g[1] * m[1] + g[2] * m[2] > 0.985f) {
                     m.copyInto(forward, 0, 3, 6)
                     evidence = minOf(m[6], 8f)
+                    probation = 2
                 }
                 pendingMount = null
             }
@@ -143,11 +149,25 @@ class MotionFusion {
             val dt = (timeMs - lastFixTime) / 1000f
             if (dt in 0.2f..3f) {
                 lastGpsAccel = (gpsSpeed - lastFixSpeed) / dt
+                // Nobody reverses this fast: if we thought so, the axis was the wrong way round.
+                if (gpsSpeed > 4.2f) reversing = false
                 // Learn forward: the average horizontal push over this interval, signed by
                 // whether GPS saw us speed up or slow down.
                 // Only above ~15 km/h, which no one reaches in reverse, and never while reversing.
                 val fastEnough = minOf(gpsSpeed, lastFixSpeed) > 4.2f
                 if (sinceFixCount > 0 && abs(lastGpsAccel) > 0.5f && fastEnough && !reversing) {
+                    // Check a remembered mount against GPS: if the push points the opposite way
+                    // to the speed change, the phone was put down turned round, so start over.
+                    if (probation > 0) {
+                        val n0 = norm(forward)
+                        val agree0 = if (n0 > 0f) dot(sinceFix, forward) / n0 / sinceFixCount * sign(lastGpsAccel) else 0f
+                        if (agree0 < -0.2f) {
+                            resetAxis()
+                            probation = 0
+                        } else if (agree0 > 0.2f) {
+                            probation--
+                        }
+                    }
                     val w = sign(lastGpsAccel) * minOf(abs(lastGpsAccel), 3f) / sinceFixCount
                     for (i in 0..2) forward[i] += sinceFix[i] * w
                     // Evidence only builds when the push actually agrees with GPS.
