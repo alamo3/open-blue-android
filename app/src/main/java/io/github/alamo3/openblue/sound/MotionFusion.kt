@@ -20,6 +20,16 @@ class MotionFusion {
     /** Speed in m/s. */
     var speed = 0f
         private set
+    /**
+     * True while reversing. GPS gives speed but not direction, so this is worked out from the
+     * first push after a stop: if it's backwards along the learned axis, we're reversing until
+     * the next stop. The sound stays quiet and nothing is learned meanwhile.
+     */
+    var reversing = false
+        private set
+    /** Parked or stopped, waiting to see which way the car sets off. */
+    private var stopped = true
+
     /** How sure we are which way is forward, 0..1. */
     val confidence: Float get() = (evidence / 8f).coerceIn(0f, 1f)
 
@@ -100,8 +110,9 @@ class MotionFusion {
         val raw = if (evidence > 1.5f) {
             dot(h, forward) / max(1e-3f, norm(forward))
         } else {
-            // Not calibrated yet: take the size of the push, with GPS saying which way.
-            norm(h) * if (lastGpsAccel < -0.2f) -1f else 1f
+            // Not calibrated yet: take the size of the push, with GPS saying which way. Not at
+            // parking speeds, though, where it could just as well be reversing.
+            if (speed < 4.2f) 0f else norm(h) * if (lastGpsAccel < -0.2f) -1f else 1f
         }
         // Smooth out road vibration (time constant ~0.15 s).
         val k = 1f - exp(-dt / 0.15f)
@@ -109,7 +120,21 @@ class MotionFusion {
 
         // Standing still: GPS near zero and the phone barely moving.
         stillFor = if (norm(h) < 0.15f && speed < 1.5f) stillFor + dt else 0f
-        speed = if (stillFor > 1f) 0f else max(0f, speed + accel * dt)
+        if (stillFor > 1f) {
+            stopped = true
+            reversing = false
+        } else if (stopped) {
+            if (evidence > 1.5f && abs(accel) > 0.4f) {
+                // The first real push after a stop says which way we're going.
+                reversing = accel < 0f
+                stopped = false
+            } else if (evidence <= 1.5f && speed > 2f) {
+                stopped = false // can't tell yet; assume forwards
+            }
+        }
+        // Reversing, a backwards push is what speeds the car up.
+        val along = if (reversing) -accel else accel
+        speed = if (stillFor > 1f) 0f else max(0f, speed + along * dt)
     }
 
     /** A GPS fix with a speed (m/s). [timeMs] is the fix's time. */
@@ -120,7 +145,9 @@ class MotionFusion {
                 lastGpsAccel = (gpsSpeed - lastFixSpeed) / dt
                 // Learn forward: the average horizontal push over this interval, signed by
                 // whether GPS saw us speed up or slow down.
-                if (sinceFixCount > 0 && abs(lastGpsAccel) > 0.5f) {
+                // Only above ~15 km/h, which no one reaches in reverse, and never while reversing.
+                val fastEnough = minOf(gpsSpeed, lastFixSpeed) > 4.2f
+                if (sinceFixCount > 0 && abs(lastGpsAccel) > 0.5f && fastEnough && !reversing) {
                     val w = sign(lastGpsAccel) * minOf(abs(lastGpsAccel), 3f) / sinceFixCount
                     for (i in 0..2) forward[i] += sinceFix[i] * w
                     // Evidence only builds when the push actually agrees with GPS.

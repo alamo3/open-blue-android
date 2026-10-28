@@ -85,7 +85,8 @@ class SoundController(
                         sinceMountSave = 0
                         fusion.exportMount()?.let(saveMount)
                     }
-                    fusedAccel = fusion.accel
+                    // Reversing out of a spot isn't "accelerating": keep the sound at idle.
+                    fusedAccel = if (fusion.reversing) 0f else fusion.accel
                     fusedSpeed = fusion.speed
                 }
             }
