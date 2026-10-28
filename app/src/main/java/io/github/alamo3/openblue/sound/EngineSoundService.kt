@@ -32,23 +32,30 @@ class EngineSoundService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
-        val gps = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
-        val type = if (Build.VERSION.SDK_INT >= 29) {
-            ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK or (if (gps) ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION else 0)
-        } else {
-            0
-        }
-        val started = runCatching {
-            if (Build.VERSION.SDK_INT >= 29) startForeground(NOTIFICATION_ID, notification(), type)
-            else startForeground(NOTIFICATION_ID, notification())
+        var gps = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        fun begin(withGps: Boolean) = runCatching {
+            if (Build.VERSION.SDK_INT >= 29) {
+                val type = ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK or
+                    (if (withGps) ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION else 0)
+                startForeground(NOTIFICATION_ID, notification(withGps), type)
+            } else {
+                startForeground(NOTIFICATION_ID, notification(withGps))
+            }
         }.isSuccess
+        // Started in the background (by the car connecting), Android only allows location with
+        // "Allow all the time"; without it, carry on with motion sensors alone.
+        var started = begin(gps)
+        if (!started && gps) {
+            gps = false
+            started = begin(false)
+        }
         if (!started) {
             stopSelf()
             return START_NOT_STICKY
         }
         if (current == null) {
             val store = SecureStore(this)
-            current = SoundController(applicationContext).apply {
+            current = SoundController(applicationContext, store.soundMount, { store.soundMount = it }).apply {
                 sound = store.engineSound?.let { n -> EngineSound.entries.firstOrNull { it.name == n } } ?: EngineSound.STARSHIP
                 volume = store.soundVolume
                 holdRevs = store.holdRevs
@@ -66,7 +73,7 @@ class EngineSoundService : Service() {
         super.onDestroy()
     }
 
-    private fun notification(): Notification {
+    private fun notification(gps: Boolean): Notification {
         val nm = getSystemService(NotificationManager::class.java)
         if (Build.VERSION.SDK_INT >= 26) {
             nm.createNotificationChannel(
@@ -86,7 +93,7 @@ class EngineSoundService : Service() {
         return NotificationCompat.Builder(this, CHANNEL)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle("Engine sound is on")
-            .setContentText("Following the car's motion")
+            .setContentText(if (gps) "Following the car's motion" else "Following the car's motion (no GPS: allow location all the time for speed)")
             .setContentIntent(open)
             .addAction(0, "Stop", stop)
             .setOngoing(true)

@@ -160,6 +160,18 @@ class ScreenshotTest(private val night: Boolean) {
             }
         }
     }
+    /** The whole sound screen, including the car auto-start settings. */
+    @Test fun soundTall() {
+        paparazzi.unsafeUpdateConfig(
+            deviceConfig = DeviceConfig.PIXEL_5.copy(screenHeight = 4200, nightMode = if (night) NightMode.NIGHT else NightMode.NOTNIGHT),
+        )
+        val vm = demoVm().apply { showDemoSound() }
+        shot {
+            CompositionLocalProvider(LocalActivityResultRegistryOwner provides NoopRegistryOwner) {
+                io.github.alamo3.openblue.ui.SoundScreen(vm, onBack = {})
+            }
+        }
+    }
     @Test fun camera() = demoVm().let { vm -> shot { CameraScreen(vm, onBack = {}) } }
     @Test fun login() = demoVm(signedIn = false).let { vm -> shot { LoginScreen(vm) } }
 

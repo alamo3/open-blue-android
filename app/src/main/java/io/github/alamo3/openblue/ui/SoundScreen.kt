@@ -239,6 +239,7 @@ fun SoundScreen(vm: MainViewModel, onBack: () -> Unit) {
             vm.soundDelayNote?.let {
                 Text(it, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 8.dp))
             }
+            SoundAutoStart(vm)
             Spacer(Modifier.height(16.dp))
             Text(
                 "Mount the phone so it can't move; it works out which way is forward the first time you accelerate. " +

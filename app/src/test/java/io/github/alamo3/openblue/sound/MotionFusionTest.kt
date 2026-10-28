@@ -45,3 +45,41 @@ class MotionFusionTest {
         assertEquals(0f, f.confidence, 0f)
     }
 }
+
+class MountMemoryTest {
+    private val flat = floatArrayOf(0f, 0f, 9.81f)
+
+    /** Teaches a fusion that forward is +x, returns what it would save. */
+    private fun learned(): String {
+        val f = MotionFusion()
+        var t = 0L
+        var v = 0f
+        repeat(800) { i ->
+            val a = if ((i / 200) % 2 == 0) 2.5f else -2f
+            v = maxOf(0f, v + a * 0.01f)
+            f.onAccel(floatArrayOf(a, 0f, 0f), flat, t)
+            t += 10_000_000L
+            if (i % 100 == 0) f.onGps(v, i * 10L)
+        }
+        return f.exportMount() ?: error("nothing learned")
+    }
+
+    @Test fun sameAngleRestoresAtOnce() {
+        val f = MotionFusion()
+        f.restoreMount(learned())
+        var t = 0L
+        repeat(80) { f.onAccel(floatArrayOf(-2f, 0f, 0f), flat, t); t += 10_000_000L }
+        assertTrue("confidence ${f.confidence}", f.confidence > 0.2f)
+        // Braking along -x reads as negative straight away, with no GPS at all.
+        assertTrue("accel ${f.accel}", f.accel < -1f)
+    }
+
+    @Test fun differentAngleIsIgnored() {
+        val f = MotionFusion()
+        f.restoreMount(learned())
+        val tilted = floatArrayOf(0f, 4f, 8.96f) // about 24° off
+        var t = 0L
+        repeat(80) { f.onAccel(floatArrayOf(0f, 0f, 0f), tilted, t); t += 10_000_000L }
+        assertEquals(0f, f.confidence, 0f)
+    }
+}

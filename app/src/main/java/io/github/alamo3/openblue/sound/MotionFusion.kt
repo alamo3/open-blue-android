@@ -37,6 +37,28 @@ class MotionFusion {
     private var lastSensorTime = 0L
     private var stillFor = 0f
 
+    // A remembered mount from an earlier drive, checked once gravity has settled.
+    private var pendingMount: FloatArray? = null
+    private var samples = 0
+
+    /**
+     * The learned mount (how the phone is tilted and which way is forward), to remember for next
+     * time; null until it's known well enough.
+     */
+    fun exportMount(): String? {
+        if (!haveGravity || evidence < 2f) return null
+        return (gravity.toList() + forward.toList() + evidence).joinToString(",")
+    }
+
+    /**
+     * Offers a mount from [exportMount]. It's used if the phone turns out to sit at the same angle
+     * (within about 10°), so the sound follows the car from the start; otherwise it's ignored.
+     */
+    fun restoreMount(saved: String?) {
+        val v = saved?.split(",")?.mapNotNull { it.toFloatOrNull() } ?: return
+        if (v.size == 7) pendingMount = v.toFloatArray()
+    }
+
     /** Phone moved in its mount (gravity swung): forget which way is forward. */
     private fun resetAxis() {
         forward.fill(0f)
@@ -57,6 +79,17 @@ class MotionFusion {
         if (haveGravity && dot(g, gravity) < 0.97f) resetAxis() // tilted more than ~14°
         g.copyInto(gravity)
         haveGravity = true
+        samples++
+        // Gravity takes a moment to settle after the sensor starts; then compare with the saved mount.
+        pendingMount?.let { m ->
+            if (samples >= 50) {
+                if (g[0] * m[0] + g[1] * m[1] + g[2] * m[2] > 0.985f) {
+                    m.copyInto(forward, 0, 3, 6)
+                    evidence = minOf(m[6], 8f)
+                }
+                pendingMount = null
+            }
+        }
 
         // Horizontal part of the acceleration (the road plane).
         val up = dot(linear, g)

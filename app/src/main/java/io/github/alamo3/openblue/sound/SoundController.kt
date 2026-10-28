@@ -35,7 +35,12 @@ data class SoundReadout(
  * Runs the engine sound: phone sensors and GPS feed [MotionFusion], which drives [EngineModel],
  * which drives [SoundVoice] on a high-priority audio thread.
  */
-class SoundController(private val context: Context) {
+class SoundController(
+    private val context: Context,
+    /** The phone mount learned on an earlier drive, and where to keep the new one. */
+    savedMount: String? = null,
+    private val saveMount: (String) -> Unit = {},
+) {
     @Volatile var sound: EngineSound = EngineSound.STARSHIP
     @Volatile var volume = 0.8f
     @Volatile var holdRevs = false
@@ -57,7 +62,8 @@ class SoundController(private val context: Context) {
         private set
     val running: Boolean get() = audioThread != null
 
-    private val fusion = MotionFusion()
+    private val fusion = MotionFusion().apply { restoreMount(savedMount) }
+    private var sinceMountSave = 0
     @Volatile private var fusedAccel = 0f
     @Volatile private var fusedSpeed = 0f
     @Volatile private var lastGpsAt = 0L
@@ -74,6 +80,11 @@ class SoundController(private val context: Context) {
                 Sensor.TYPE_GRAVITY -> e.values.copyInto(gravity, endIndex = 3)
                 Sensor.TYPE_LINEAR_ACCELERATION -> {
                     fusion.onAccel(e.values, gravity, e.timestamp)
+                    // Remember the mount every half minute or so, for next drive.
+                    if (++sinceMountSave >= 1500) {
+                        sinceMountSave = 0
+                        fusion.exportMount()?.let(saveMount)
+                    }
                     fusedAccel = fusion.accel
                     fusedSpeed = fusion.speed
                 }
@@ -122,6 +133,7 @@ class SoundController(private val context: Context) {
 
     fun stop() {
         val t = audioThread ?: return
+        fusion.exportMount()?.let(saveMount)
         stopping = true
         runCatching { t.join(600) }
         audioThread = null

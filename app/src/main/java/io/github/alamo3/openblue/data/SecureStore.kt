@@ -135,6 +135,20 @@ class SecureStore(private val prefs: SharedPreferences) {
     var soundLookaheadMs: Int
         get() = prefs.getInt("soundLookaheadMs", 0)
         set(v) = prefs.edit().putInt("soundLookaheadMs", v).apply()
+    /** The phone mount learned for the engine sound (tilt and which way is forward). */
+    var soundMount: String?
+        get() = read("soundMount")
+        set(v) = write("soundMount", v)
+    /** Start the engine sound when the car's Bluetooth connects, stop when it disconnects. */
+    var autoSound: Boolean
+        get() = prefs.getBoolean("autoSound", false)
+        set(v) = prefs.edit().putBoolean("autoSound", v).apply()
+    var soundCarAddress: String?
+        get() = read("soundCarAddress")
+        set(v) = write("soundCarAddress", v)
+    var soundCarName: String?
+        get() = read("soundCarName")
+        set(v) = write("soundCarName", v)
     var gearshifts: Boolean
         get() = prefs.getBoolean("gearshifts", false)
         set(v) = prefs.edit().putBoolean("gearshifts", v).apply()

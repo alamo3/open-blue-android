@@ -186,7 +186,7 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, open: (Route) -> Unit 
 }
 
 @Composable
-private fun ClickRow(title: String, subtitle: String?, enabled: Boolean = true, onClick: () -> Unit) {
+internal fun ClickRow(title: String, subtitle: String?, enabled: Boolean = true, onClick: () -> Unit) {
     Column(Modifier.fillMaxWidth().clickable(enabled = enabled, onClick = onClick).padding(vertical = 12.dp)) {
         Text(title, style = MaterialTheme.typography.titleMedium)
         if (subtitle != null) Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

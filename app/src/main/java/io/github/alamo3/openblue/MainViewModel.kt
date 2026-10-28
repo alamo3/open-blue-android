@@ -1343,6 +1343,36 @@ class MainViewModel(
         soundCtl?.gearshifts = on
     }
 
+    var autoSound by mutableStateOf(store.autoSound)
+        private set
+    var soundCarName by mutableStateOf(store.soundCarName)
+        private set
+
+    fun changeAutoSound(on: Boolean) {
+        autoSound = on
+        store.autoSound = on
+    }
+
+    /** The car whose Bluetooth starts and stops the sound. */
+    fun setSoundCar(address: String, name: String) {
+        store.soundCarAddress = address
+        store.soundCarName = name
+        soundCarName = name
+        changeAutoSound(true)
+    }
+
+    fun forgetSoundCar() {
+        if (online) io.github.alamo3.openblue.sound.CarLink.forget(getApplication())
+        store.soundCarAddress = null
+        store.soundCarName = null
+        soundCarName = null
+        changeAutoSound(false)
+    }
+
+    fun soundMessage(text: String) {
+        message = text
+    }
+
     fun changeSoundLookahead(ms: Int) {
         soundLookaheadMs = ms
         store.soundLookaheadMs = ms
@@ -1374,6 +1404,7 @@ class MainViewModel(
         soundOn = true
         soundReadout = SoundReadout(4650f, -1, 92f, 2.6f, 0.68f, 1f, gpsFix = true, hasSensors = true)
         soundDelayNote = "Measured 182 ms from the phone to your ears. Look-ahead set to 160 ms."
+        setSoundCar("00:11:22:33:44:55", "IONIQ 5")
         soundLookaheadMs = 160
     }
 
