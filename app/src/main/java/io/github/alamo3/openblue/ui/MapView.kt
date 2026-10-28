@@ -52,12 +52,17 @@ data class MapCar(val lat: Double, val lon: Double, val heading: Double?)
 @Composable
 fun CarMap(car: MapCar?, modifier: Modifier = Modifier) {
     if (LocalInspectionMode.current) {
-        Box(modifier.background(MaterialTheme.colorScheme.surfaceVariant), contentAlignment = Alignment.Center) {
-            Icon(Icons.Rounded.Map, contentDescription = "Map", tint = MaterialTheme.colorScheme.outline)
-        }
+        MapPlaceholder(modifier)
         return
     }
     LiveCarMap(car, modifier)
+}
+
+@Composable
+private fun MapPlaceholder(modifier: Modifier) {
+    Box(modifier.background(MaterialTheme.colorScheme.surfaceVariant), contentAlignment = Alignment.Center) {
+        Icon(Icons.Rounded.Map, contentDescription = "Map", tint = MaterialTheme.colorScheme.outline)
+    }
 }
 
 /** Kept apart from [CarMap] so the screenshot renderer never loads MapLibre's classes. */
@@ -66,7 +71,14 @@ private fun LiveCarMap(car: MapCar?, modifier: Modifier) {
     val context = LocalContext.current
     val dark = isSystemInDarkTheme()
     val current by rememberUpdatedState(car)
-    val holder = remember { MapHolder(context) }
+    // MapLibre is native code; if it can't start (or in the screenshot renderer), show a placeholder.
+    val holder = remember {
+        runCatching { MapHolder(context) }.onFailure { android.util.Log.w("OpenBlue", "Map unavailable", it) }.getOrNull()
+    }
+    if (holder == null) {
+        MapPlaceholder(modifier)
+        return
+    }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
 
     DisposableEffect(lifecycle) {
