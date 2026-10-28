@@ -5,7 +5,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlin.math.roundToInt
 
 /*
- * Hyundai's in-app charging ("iac/*" on mybluelink.ca), parsed loosely: field names follow the
+ * Hyundai's in-app charging (the iac endpoints on mybluelink.ca), parsed loosely: field names follow the
  * official app's models, and anything missing just comes back null.
  */
 

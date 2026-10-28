@@ -396,7 +396,7 @@ class BluelinkClient(private val store: SecureStore) {
     // ------------------------------------------------- Hyundai in-app charging (iac/*)
     // Read-only for now: what the account has, stations nearby and charging history.
 
-    /** iac/* answers carry their own result codes; accept anything Bluelink didn't reject. */
+    /** The iac endpoints carry their own result codes; accept anything Bluelink didn't reject. */
     private fun iacCheck(r: Reply): JsonObject {
         val code = r.body.int("responseHeader.responseCode")
         if (code == null || code == 0) return r.body
