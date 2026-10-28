@@ -18,6 +18,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.EvStation
 import androidx.compose.material.icons.rounded.Map
 import androidx.compose.material.icons.rounded.ReceiptLong
+import androidx.compose.material.icons.rounded.Route
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -192,6 +193,7 @@ private fun PublicCharging(vm: MainViewModel, open: (Route) -> Unit) {
         else -> Text("Loading…", style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
     }
     NavRow(Icons.Rounded.Map, "Find chargers", "Nearby stations with live availability and prices", onClick = { open(Route.Chargers) })
+    NavRow(Icons.Rounded.Route, "Plan a trip", "Route with charging stops, from Hyundai's EV route planner", onClick = { open(Route.Trip) })
     NavRow(Icons.Rounded.ReceiptLong, "Charging history", "Sessions paid through the app, with receipts", onClick = { open(Route.ChargeHistory) })
 }
 

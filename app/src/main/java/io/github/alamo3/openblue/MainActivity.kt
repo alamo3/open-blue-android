@@ -51,6 +51,7 @@ import io.github.alamo3.openblue.ui.OpenBlueTheme
 import io.github.alamo3.openblue.ui.OtpScreen
 import io.github.alamo3.openblue.ui.Route
 import io.github.alamo3.openblue.ui.SettingsScreen
+import io.github.alamo3.openblue.ui.TripScreen
 import io.github.alamo3.openblue.ui.VehicleScreen
 import io.github.alamo3.openblue.ui.VehiclePickerScreen
 import io.github.alamo3.openblue.ui.confirmIdentity
@@ -141,6 +142,7 @@ private fun App(vm: MainViewModel = viewModel()) {
                         Route.Charging -> ChargingScreen(vm, onBack = ::back, open = ::open)
                         Route.Chargers -> ChargersScreen(vm, onBack = ::back)
                         Route.ChargeHistory -> ChargeHistoryScreen(vm, onBack = ::back)
+                        Route.Trip -> TripScreen(vm, onBack = ::back)
                         Route.Location -> LocationScreen(vm, onBack = ::back)
                         Route.Camera -> CameraScreen(vm, onBack = ::back)
                         Route.Vehicle -> VehicleScreen(vm, onBack = ::back)

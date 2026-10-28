@@ -21,6 +21,8 @@ data class ChargeService(
     val cardRegistered: Boolean,
     val cards: List<PayCard>,
     val plans: List<ChargePlan>,
+    /** Passed back to the route planner. */
+    val vendorNum: Int = 0,
 ) {
     companion object {
         fun from(r: JsonObject): ChargeService {
@@ -34,6 +36,7 @@ data class ChargeService(
                 cardRegistered = r.bool("icpServiceData.usrInfo.cardRegisterInfo") == true,
                 cards = r.arr("payCardList").map { PayCard.from(it) },
                 plans = r.arr("icpSubscriptInfo").map { ChargePlan.from(it) },
+                vendorNum = r.int("vendorNum") ?: 0,
             )
         }
     }
@@ -324,6 +327,77 @@ data class SessionStatus(
             battery = r.int("evStatus.batteryStatus"),
             charging = r.bool("evStatus.batteryCharge"),
             minutesLeft = r.int("evStatus.remainTime2.atc.value")?.takeIf { it > 0 },
+        )
+    }
+}
+
+/** A charging stop on a planned trip (iac/rp). Times in seconds, distances in metres. */
+data class TripStop(
+    val name: String,
+    val network: String?,
+    val poiId: String?,
+    val lat: Double,
+    val lon: Double,
+    val arriveSoc: Int?,
+    val targetSoc: Int?,
+    val chargeSeconds: Long?,
+    val etaSeconds: Int?,
+    val distanceM: Int?,
+    val powerKw: Int?,
+)
+
+/** One way to get there, with its charging stops and the line to draw. */
+data class TripRoute(
+    val distanceM: Int,
+    val seconds: Int,
+    val fee: Int,
+    val stops: List<TripStop>,
+    /** Stretches of road; each carries the server's traffic colour code. */
+    val line: List<Pair<Int, List<Pair<Double, Double>>>>,
+    val arriveSoc: Int?,
+    val unreachable: Int,
+)
+
+/** What the route planner said. status: 0 ok, 1 invalid request, 2 unknown error, 3 no route found. */
+data class TripPlan(val status: Int, val routes: List<TripRoute>, val reachedDestination: Boolean?) {
+    companion object {
+        private fun coord(e: JsonElement): Pair<Double, Double>? {
+            val lat = e.dbl("lat") ?: return null
+            val lon = e.dbl("lon") ?: return null
+            return lat to lon
+        }
+
+        fun from(r: JsonObject) = TripPlan(
+            status = r.int("status") ?: 0,
+            reachedDestination = r.int("arriveToDstFlag")?.let { it == 1 },
+            routes = r.arr("route").map { rt ->
+                TripRoute(
+                    distanceM = rt.int("totalDistance") ?: 0,
+                    seconds = rt.int("totalTime") ?: 0,
+                    fee = rt.int("totalFee") ?: 0,
+                    stops = rt.arr("evStation").mapNotNull { st ->
+                        val (lat, lon) = st.at("vertex")?.let { coord(it) } ?: return@mapNotNull null
+                        TripStop(
+                            name = st.str("poiName") ?: "Charging stop",
+                            network = st.str("brandName"),
+                            poiId = st.str("poiId"),
+                            lat = lat,
+                            lon = lon,
+                            arriveSoc = st.int("pointSoc"),
+                            targetSoc = st.int("targetSoc"),
+                            chargeSeconds = st.dbl("chargingTime")?.toLong(),
+                            etaSeconds = st.int("pointEta"),
+                            distanceM = st.int("pointDistance"),
+                            powerKw = st.int("pointChargerPower"),
+                        )
+                    },
+                    line = rt.arr("routeLink").map { link ->
+                        (link.int("traColor") ?: 0) to link.arr("vertex").mapNotNull { coord(it) }
+                    },
+                    arriveSoc = rt.int("destination.pointSoc"),
+                    unreachable = rt.int("reasonUnReachable") ?: 0,
+                )
+            },
         )
     }
 }

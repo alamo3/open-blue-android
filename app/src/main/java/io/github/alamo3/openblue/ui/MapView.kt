@@ -52,7 +52,7 @@ private const val STYLE_DARK = "https://tiles.openfreemap.org/styles/dark"
 /** A spot on the map, drawn as the car seen from above, pointing along [heading]. */
 data class MapCar(val lat: Double, val lon: Double, val heading: Double?)
 
-/** A charging station pin. [state]: 0 = chargers free, 1 = all busy, 2 = unknown or out of order. */
+/** A pin. [state]: 0 = chargers free, 1 = all busy, 2 = unknown or out of order, 3 = destination. */
 data class MapPin(val id: String, val lat: Double, val lon: Double, val state: Int)
 
 /**
@@ -72,12 +72,14 @@ fun CarMap(
     fitKey: Any? = null,
     onPin: (String) -> Unit = {},
     onMoved: ((Double, Double) -> Unit)? = null,
+    /** A route to draw: stretches of (traffic code, points). */
+    line: List<Pair<Int, List<Pair<Double, Double>>>> = emptyList(),
 ) {
     if (LocalInspectionMode.current) {
         MapPlaceholder(modifier)
         return
     }
-    LiveCarMap(car, modifier, pins, selected, fitKey, onPin, onMoved)
+    LiveCarMap(car, modifier, pins, selected, fitKey, onPin, onMoved, line)
 }
 
 @Composable
@@ -97,15 +99,19 @@ private fun LiveCarMap(
     fitKey: Any?,
     onPin: (String) -> Unit,
     onMoved: ((Double, Double) -> Unit)?,
+    line: List<Pair<Int, List<Pair<Double, Double>>>>,
 ) {
     val context = LocalContext.current
     val dark = isSystemInDarkTheme()
     val colors = AppTheme.colors
-    val state = MapState(car, pins, selected, fitKey)
+    val state = MapState(car, pins, selected, fitKey, line)
     val current by rememberUpdatedState(state)
     val pinClick by rememberUpdatedState(onPin)
     val moved by rememberUpdatedState(onMoved)
-    val palette = intArrayOf(colors.charge.toArgb(), colors.heat.toArgb(), Color(0xFF8A9199).toArgb())
+    val palette = intArrayOf(
+        colors.charge.toArgb(), colors.heat.toArgb(), Color(0xFF8A9199).toArgb(),
+        MaterialTheme.colorScheme.primary.toArgb(), colors.cool.toArgb(), colors.alert.toArgb(),
+    )
     // MapLibre is native code; if it can't start (or in the screenshot renderer), show a placeholder.
     val holder = remember {
         runCatching { MapHolder(context, palette, { pinClick(it) }, { la, lo -> moved?.invoke(la, lo) }) }
@@ -144,7 +150,13 @@ private fun LiveCarMap(
     )
 }
 
-private data class MapState(val car: MapCar?, val pins: List<MapPin>, val selected: String?, val fitKey: Any?)
+private data class MapState(
+    val car: MapCar?,
+    val pins: List<MapPin>,
+    val selected: String?,
+    val fitKey: Any?,
+    val line: List<Pair<Int, List<Pair<Double, Double>>>> = emptyList(),
+)
 
 /** Owns the MapLibre view, its style, the car marker and the station pins. */
 private class MapHolder(
@@ -189,6 +201,31 @@ private class MapHolder(
                 m.setStyle(Style.Builder().fromUri(u)) { s ->
                     style = s
                     s.addImage("car", carIcon)
+                    // Route line: blue, amber or red by traffic, under everything else.
+                    s.addSource(GeoJsonSource("route"))
+                    s.addLayer(
+                        org.maplibre.android.style.layers.LineLayer("route-casing", "route").withProperties(
+                            PropertyFactory.lineColor(android.graphics.Color.WHITE),
+                            PropertyFactory.lineWidth(9f),
+                            PropertyFactory.lineCap("round"),
+                            PropertyFactory.lineJoin("round"),
+                        ),
+                    )
+                    s.addLayer(
+                        org.maplibre.android.style.layers.LineLayer("route", "route").withProperties(
+                            PropertyFactory.lineColor(
+                                Expression.match(
+                                    Expression.get("traffic"),
+                                    Expression.color(palette[4]),
+                                    Expression.stop(2, Expression.color(palette[1])),
+                                    Expression.stop(3, Expression.color(palette[5])),
+                                ),
+                            ),
+                            PropertyFactory.lineWidth(5.5f),
+                            PropertyFactory.lineCap("round"),
+                            PropertyFactory.lineJoin("round"),
+                        ),
+                    )
                     s.addSource(GeoJsonSource("pins"))
                     s.addLayer(
                         CircleLayer("pins", "pins").withProperties(
@@ -198,6 +235,7 @@ private class MapHolder(
                                     Expression.color(palette[2]),
                                     Expression.stop(0, Expression.color(palette[0])),
                                     Expression.stop(1, Expression.color(palette[1])),
+                                    Expression.stop(3, Expression.color(palette[3])),
                                 ),
                             ),
                             PropertyFactory.circleRadius(Expression.switchCase(Expression.get("selected"), Expression.literal(11f), Expression.literal(7.5f))),
@@ -259,12 +297,25 @@ private class MapHolder(
             )
         }
 
+        if (next.line != prev?.line) {
+            s.getSourceAs<GeoJsonSource>("route")?.setGeoJson(
+                FeatureCollection.fromFeatures(
+                    next.line.filter { it.second.size >= 2 }.map { (traffic, pts) ->
+                        Feature.fromGeometry(org.maplibre.geojson.LineString.fromLngLats(pts.map { Point.fromLngLat(it.second, it.first) })).apply {
+                            addNumberProperty("traffic", traffic)
+                        }
+                    },
+                ),
+            )
+        }
+
         // Camera: frame the car and pins on first show and whenever fitKey changes;
         // otherwise only follow the car if it moved, and centre a newly selected pin.
         val reframe = prev == null || next.fitKey != prev.fitKey
         val points = buildList {
             car?.let { add(LatLng(it.lat, it.lon)) }
             next.pins.forEach { add(LatLng(it.lat, it.lon)) }
+            next.line.forEach { (_, pts) -> pts.forEach { add(LatLng(it.first, it.second)) } }
         }
         when {
             reframe && points.size >= 2 -> {

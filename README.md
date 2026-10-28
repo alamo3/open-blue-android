@@ -10,6 +10,7 @@ It exists because the official app hides heated/ventilated seat controls for som
 - **Climate:** temperature, the car's real cabin seen from above (roof cut away) where you tap each seat to cycle heat/cool levels and watch it warm up or breathe cool air, front defrost, heated wheel and rear defrost, run time, start/stop. Matches what your car supports (combined or split heating, heat-only rear seats).
 - **Presets:** your presets from mybluelink.ca plus presets saved on the phone; start in one tap or load into the controls.
 - **Charging:** open or close the charge port, set AC and DC charge limits, and turn battery preconditioning on or off before DC fast charging.
+- **Public charging:** Hyundai's in-app charging: your plan and cards, chargers nearby on a map with live availability and prices, starting and stopping a paid charge, charging history with receipts, and trip planning with charging stops (handed to Google Maps).
 - **Horn and lights:** flash the hazards, with or without the horn, to find the car.
 - **Surroundings:** asks the car for surround-view photos and shows the top, front, rear, left and right views. Every set is kept on the phone (Bluelink only keeps the latest), browsable in a history strip, and can be saved to the gallery (Pictures/Open Blue) whole or one view at a time.
 - **Vehicle:** locks, doors, windows, trunk/frunk, charge limits, 12V battery, tires, odometer.

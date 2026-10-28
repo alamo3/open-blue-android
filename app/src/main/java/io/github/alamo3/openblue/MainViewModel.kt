@@ -694,6 +694,115 @@ class MainViewModel(
         sessionStatus = null
     }
 
+    // ------------------------------------------------- trip planning (iac/rp)
+
+    /** A place to drive to, from the phone's geocoder. */
+    data class Place(val name: String, val detail: String?, val lat: Double, val lon: Double)
+
+    var placeResults by mutableStateOf<List<Place>>(emptyList())
+        private set
+    var placeSearching by mutableStateOf(false)
+        private set
+    var tripDestination by mutableStateOf<Place?>(null)
+    var trip by mutableStateOf<io.github.alamo3.openblue.api.TripPlan?>(null)
+        private set
+    var tripLoading by mutableStateOf(false)
+        private set
+    var tripError by mutableStateOf<String?>(null)
+        private set
+
+    /** Looks up places by name with Android's geocoder, biased toward the car. */
+    fun searchPlaces(query: String) {
+        if (query.isBlank()) return
+        val context = getApplication<Application>()
+        placeSearching = true
+        viewModelScope.launch {
+            placeResults = withContext(Dispatchers.IO) {
+                runCatching {
+                    @Suppress("DEPRECATION")
+                    val g = android.location.Geocoder(context, java.util.Locale.getDefault())
+                    val near = location
+                    val found = if (near != null) {
+                        // About 300 km around the car first, then anywhere.
+                        g.getFromLocationName(query, 6, near.lat - 3, near.lon - 4, near.lat + 3, near.lon + 4)?.takeIf { it.isNotEmpty() }
+                            ?: g.getFromLocationName(query, 6)
+                    } else {
+                        g.getFromLocationName(query, 6)
+                    }
+                    found.orEmpty().map { a ->
+                        val street = listOfNotNull(a.subThoroughfare, a.thoroughfare).joinToString(" ").ifBlank { null }
+                        Place(
+                            name = a.featureName?.takeIf { it != a.subThoroughfare } ?: street ?: a.locality ?: query,
+                            detail = listOfNotNull(street, a.locality, a.adminArea).distinct().joinToString(", ").ifBlank { null },
+                            lat = a.latitude,
+                            lon = a.longitude,
+                        )
+                    }
+                }.getOrDefault(emptyList())
+            }
+            placeSearching = false
+            if (placeResults.isEmpty()) message = "No places found for \"$query\""
+        }
+    }
+
+    fun clearPlaces() {
+        placeResults = emptyList()
+    }
+
+    /** Plans a trip from the car to [tripDestination] with Hyundai's EV route planner. */
+    fun planTrip(chargerSoc: Int, destinationSoc: Int) {
+        val v = vehicle ?: return
+        val dest = tripDestination ?: return
+        val from = location ?: run {
+            tripError = "Locate the car first"
+            locate()
+            return
+        }
+        tripError = null
+        trip = null
+        if (!online || dryRunning) {
+            showDemoTrip()
+            return
+        }
+        tripLoading = true
+        launchSafely(onDone = { tripLoading = false }, onError = { tripError = describe(it) }) {
+            val plan = io.github.alamo3.openblue.api.TripPlan.from(
+                api.iacRoute(v.id, v.vin, from.lat to from.lon, dest.lat to dest.lon, chargerSoc, destinationSoc, chargeService?.vendorNum ?: 0),
+            )
+            trip = plan
+            tripError = when {
+                plan.status == 1 -> "The route planner rejected the request (status 1)"
+                plan.status == 2 -> "The route planner had an error (status 2)"
+                plan.status == 3 -> "No EV route found to there"
+                plan.routes.isEmpty() -> "The route planner answered but sent no route"
+                else -> null
+            }
+        }
+    }
+
+    /** Screenshots and dry run: a made-up trip with two charging stops. */
+    fun showDemoTrip() {
+        val (lat, lon) = location?.let { it.lat to it.lon } ?: (43.6534 to -79.3841)
+        if (tripDestination == null) tripDestination = Place("Demo destination", "About 450 km away", lat + 0.8, lon - 4.5)
+        val dest = tripDestination!!
+        val pts = (0..40).map { i -> val f = i / 40.0; (lat + (dest.lat - lat) * f + 0.15 * kotlin.math.sin(f * 3)) to (lon + (dest.lon - lon) * f) }
+        fun stop(i: Int, name: String, net: String, a: Int, b: Int, km: Int) = io.github.alamo3.openblue.api.TripStop(
+            name, net, "demo$i", pts[i].first, pts[i].second, a, b, 22 * 60L, km * 40, km * 1000, 350,
+        )
+        trip = io.github.alamo3.openblue.api.TripPlan(
+            status = 0,
+            reachedDestination = true,
+            routes = listOf(
+                io.github.alamo3.openblue.api.TripRoute(
+                    distanceM = 452_000, seconds = 5 * 3600 + 20 * 60, fee = 31,
+                    stops = listOf(stop(14, "Highway Services", "Electrify Canada", 18, 75, 160), stop(29, "Lakeside Plaza", "Petro-Canada", 21, 70, 325)),
+                    line = listOf(0 to pts.take(15), 1 to pts.subList(14, 21), 0 to pts.drop(20)),
+                    arriveSoc = 34, unreachable = 0,
+                ),
+            ),
+        )
+    }
+
     var chargeHistory by mutableStateOf<ChargeHistory?>(null)
         private set
     var chargeHistoryMonth by mutableStateOf(java.time.YearMonth.now())

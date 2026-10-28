@@ -45,6 +45,7 @@ import io.github.alamo3.openblue.ui.LocationScreen
 import io.github.alamo3.openblue.ui.LoginScreen
 import io.github.alamo3.openblue.ui.OpenBlueTheme
 import io.github.alamo3.openblue.ui.SettingsScreen
+import io.github.alamo3.openblue.ui.TripScreen
 import io.github.alamo3.openblue.ui.VehicleScreen
 import org.junit.Rule
 import org.junit.Test
@@ -122,6 +123,7 @@ class ScreenshotTest(private val night: Boolean) {
         shot { ChargingScreen(vm, onBack = {}) }
     }
     @Test fun chargers() = demoVm().let { vm -> vm.showDemoCharging(); shot { ChargersScreen(vm, onBack = {}) } }
+    @Test fun trip() = demoVm().let { vm -> vm.showDemoTrip(); shot { TripScreen(vm, onBack = {}) } }
     @Test fun chargeHistory() = demoVm().let { vm -> vm.showDemoCharging(); shot { ChargeHistoryScreen(vm, onBack = {}) } }
     @Test fun vehicle() = demoVm().let { vm -> shot { VehicleScreen(vm, onBack = {}) } }
     @Test fun settings() = demoVm().let { vm ->

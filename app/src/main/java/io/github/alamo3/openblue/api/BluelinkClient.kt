@@ -513,6 +513,43 @@ class BluelinkClient(private val store: SecureStore) {
         (body["result"] as? JsonObject) ?: JsonObject(emptyMap())
     }
 
+    /**
+     * EV route planning (iac/rp): a route from [from] to [to] with charging stops, planned so
+     * the car reaches each charger with at least [chargerSoc]% and the destination with
+     * [destinationSoc]%. Route option 22 is what the official app always asks for.
+     */
+    suspend fun iacRoute(
+        vehicleId: String,
+        vin: String,
+        from: Pair<Double, Double>,
+        to: Pair<Double, Double>,
+        chargerSoc: Int,
+        destinationSoc: Int,
+        vendorNum: Int,
+    ): JsonObject = authed { t ->
+        val req = buildJsonObject {
+            put("version", "1.0")
+            put("clientType", 6)
+            put("id", vin)
+            putJsonObject("origin") { put("lat", from.first); put("lon", from.second) }
+            putJsonObject("destination") {
+                putJsonArray("points") { add(buildJsonObject { put("lat", to.first); put("lon", to.second) }) }
+            }
+            put("evChargingStationCandidates", 0)
+            putJsonArray("route") { add(buildJsonObject { put("routeOption", 22) }) }
+            putJsonObject("vehicleInfo") {
+                put("chargerType", 37) // CCS and NACS
+                put("chargerSpeed", 7) // every speed
+                put("destinationArrivalSoc", destinationSoc)
+                put("chargingStationArrivalSoc", chargerSoc)
+                put("genType", genType())
+                put("vendorNum", vendorNum)
+            }
+        }
+        val body = iacCheck(post("iac/rp", req, mapOf("accessToken" to t, "vehicleId" to vehicleId)))
+        (body["result"] as? JsonObject) ?: JsonObject(emptyMap())
+    }
+
     /** Charging sessions paid through the app between two dates (yyyyMMdd). */
     suspend fun iacOrders(vehicleId: String, profileId: String, start: String, end: String): JsonObject = authed { t ->
         val req = buildJsonObject {
