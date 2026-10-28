@@ -29,6 +29,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -52,6 +53,8 @@ fun ChargingScreen(vm: MainViewModel, onBack: () -> Unit, open: (Route) -> Unit 
         Column(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 120.dp),
         ) {
+            vm.session?.let { SessionCard(vm, it) }
+
             // Battery
             Row(verticalAlignment = Alignment.Bottom) {
                 Text(st?.battery?.let { "$it%" } ?: "–", style = MaterialTheme.typography.displaySmall)
@@ -239,5 +242,77 @@ private fun ActionPill(label: String, enabled: Boolean, primary: Boolean = true,
             .padding(horizontal = 20.dp, vertical = 10.dp),
     ) {
         Text(label, style = MaterialTheme.typography.labelLarge, color = if (enabled) fg else fg.copy(alpha = 0.6f))
+    }
+}
+
+/** A paid charge started from the app: live energy, power and cost, and a stop button. */
+@Composable
+private fun SessionCard(vm: MainViewModel, session: io.github.alamo3.openblue.api.ActiveSession) {
+    val app = AppTheme.colors
+    val scheme = MaterialTheme.colorScheme
+    var confirmStop by remember { mutableStateOf(false) }
+    // Poll while the screen is open.
+    LaunchedEffect(session.paymentId) {
+        vm.refreshSession(refresh = true)
+        while (true) {
+            kotlinx.coroutines.delay(20_000)
+            vm.refreshSession()
+        }
+    }
+    val st = vm.sessionStatus
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(bottom = 20.dp)
+            .clip(MaterialTheme.shapes.large)
+            .background(app.charge.copy(alpha = 0.12f))
+            .padding(16.dp),
+    ) {
+        Text("Charging at ${session.stationName}", style = MaterialTheme.typography.titleMedium)
+        Text(
+            listOfNotNull(session.charger, "started ${relativeTime(java.util.Date(session.startedAt))}").joinToString(" · "),
+            style = MaterialTheme.typography.bodySmall,
+            color = scheme.onSurfaceVariant,
+        )
+        Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            SessionFigure("Energy", st?.kwh?.let { "%.1f kWh".format(it) } ?: "–", Modifier.weight(1f))
+            SessionFigure("Power", st?.powerKw?.let { "${it.roundToInt()} kW" } ?: "–", Modifier.weight(1f))
+            SessionFigure("Cost", st?.cost?.let { "$%.2f".format(it) } ?: "–", Modifier.weight(1f))
+        }
+        st?.minutesLeft?.let {
+            Text("About ${formatMinutes(it)} to the limit", style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
+        }
+        Row(Modifier.fillMaxWidth().padding(top = 14.dp), horizontalArrangement = Arrangement.End) {
+            ActionPill("Done", enabled = true, primary = false) { vm.dismissSession() }
+            if (session.stopAllowed) {
+                Spacer(Modifier.width(8.dp))
+                ActionPill(if (vm.sessionBusy) "Stopping…" else "Stop charging", enabled = !vm.sessionBusy) { confirmStop = true }
+            }
+        }
+        if (!session.stopAllowed) {
+            Text(
+                "This charger can't be stopped from the app; stop it on the charger or by unlocking the car.",
+                style = MaterialTheme.typography.bodySmall,
+                color = scheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 8.dp),
+            )
+        }
+    }
+    if (confirmStop) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { confirmStop = false },
+            title = { Text("Stop charging?") },
+            text = { Text("The session at ${session.stationName} ends and you're billed for what's been used.") },
+            confirmButton = { androidx.compose.material3.TextButton(onClick = { confirmStop = false; vm.stopCharge() }) { Text("Stop", color = app.alert) } },
+            dismissButton = { androidx.compose.material3.TextButton(onClick = { confirmStop = false }) { Text("Keep charging") } },
+        )
+    }
+}
+
+@Composable
+private fun SessionFigure(label: String, value: String, modifier: Modifier) {
+    Column(modifier) {
+        Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(value, style = MaterialTheme.typography.titleLarge)
     }
 }

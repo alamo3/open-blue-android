@@ -19,7 +19,11 @@ import io.github.alamo3.openblue.api.OtpChallenge
 import io.github.alamo3.openblue.api.OtpRequiredException
 import io.github.alamo3.openblue.api.ServerPreset
 import io.github.alamo3.openblue.api.SvmCapture
+import io.github.alamo3.openblue.api.ActiveSession
 import io.github.alamo3.openblue.api.ChargeHistory
+import io.github.alamo3.openblue.api.ChargeOffer
+import io.github.alamo3.openblue.api.Charger
+import io.github.alamo3.openblue.api.SessionStatus
 import io.github.alamo3.openblue.api.ChargePlan
 import io.github.alamo3.openblue.api.ChargeService
 import io.github.alamo3.openblue.api.Station
@@ -489,8 +493,8 @@ class MainViewModel(
     var stationsSearch by mutableStateOf(0)
         private set
 
-    /** [speeds]: null for all, else e.g. "fast,rapid,ultra" or "slow". */
-    fun searchStations(lat: Double, lon: Double, speeds: String?, radiusKm: Int = 15) {
+    /** Finds stations of every speed (the screen filters AC/DC itself; the server's speed filter isn't reliable). */
+    fun searchStations(lat: Double, lon: Double, speeds: String? = null, radiusKm: Int = 15) {
         val v = vehicle ?: return
         if (!online) return
         stationsLoading = true
@@ -555,6 +559,139 @@ class MainViewModel(
             ),
             kwh = 93.9, total = 42.26,
         )
+    }
+
+    // ------------------------------------------------- paid charging sessions
+
+    var offer by mutableStateOf<ChargeOffer?>(null)
+        private set
+    var offerFor by mutableStateOf<String?>(null)
+        private set
+    var offerLoading by mutableStateOf(false)
+        private set
+    var offerError by mutableStateOf<String?>(null)
+        private set
+    val savedCardId: String? get() = store.payCardId
+
+    /** Station ID the charge is addressed to (Tesla uses the charger's own station ID). */
+    private fun poiFor(station: Station, charger: Charger) =
+        if (station.isTesla) charger.stationId ?: station.id else station.id
+
+    /** Price and payment details for one charger. */
+    fun loadOffer(station: Station, charger: Charger) {
+        val v = vehicle ?: return
+        val chargerId = charger.id ?: return
+        offer = null
+        offerError = null
+        offerFor = chargerId
+        if (!online || dryRunning) {
+            offer = demoOffer(charger)
+            return
+        }
+        offerLoading = true
+        launchSafely(onDone = { offerLoading = false }, onError = { offerError = describe(it) }) {
+            val o = ChargeOffer.from(api.iacOffer(v.id, poiFor(station, charger), chargerId))
+            if (offerFor == chargerId) offer = o
+        }
+    }
+
+    fun clearOffer() {
+        offer = null
+        offerFor = null
+        offerError = null
+    }
+
+    var session by mutableStateOf(store.activeSession)
+        private set
+    var sessionStatus by mutableStateOf<SessionStatus?>(null)
+        private set
+    var sessionBusy by mutableStateOf(false)
+        private set
+
+    /** Starts a paid charge at [charger]. The screen confirms the price and identity first. */
+    fun startCharge(station: Station, charger: Charger, cardId: String?, onStarted: () -> Unit) {
+        val v = vehicle ?: return
+        val o = offer ?: return
+        val paymentId = o.paymentId ?: run { message = "The charging service didn't give a payment ID"; return }
+        if (sessionBusy) return
+        val poi = poiFor(station, charger)
+        sessionBusy = true
+        launchSafely(onDone = { sessionBusy = false }) {
+            val (code, err) = if (dryRunning) { delay(1_200); 0 to null } else api.iacStartCharge(v.id, paymentId, poi, cardId)
+            if (code == 0 || code == null && err == null) {
+                cardId?.let { store.payCardId = it }
+                val s = ActiveSession(paymentId, poi, station.name, charger.reference, System.currentTimeMillis(), o.remoteStop)
+                store.activeSession = s
+                session = s
+                sessionStatus = null
+                clearOffer()
+                message = "Charging requested at ${station.name}"
+                onStarted()
+            } else {
+                message = "The charger didn't start" + (err?.let { " ($it)" } ?: "")
+            }
+        }
+    }
+
+    /** Fetches live numbers for the running session. */
+    fun refreshSession(refresh: Boolean = false) {
+        val v = vehicle ?: return
+        val s = session ?: return
+        if (!online || dryRunning) {
+            sessionStatus = demoSessionStatus(s)
+            return
+        }
+        launchSafely(onError = { }) {
+            sessionStatus = SessionStatus.from(api.iacSessionStatus(v.id, v.vin, s.paymentId, refresh))
+        }
+    }
+
+    fun stopCharge() {
+        val v = vehicle ?: return
+        val s = session ?: return
+        if (sessionBusy) return
+        sessionBusy = true
+        launchSafely(onDone = { sessionBusy = false }) {
+            val (code, err) = if (dryRunning) { delay(1_000); 0 to null } else api.iacStopCharge(v.id, s.paymentId, s.poiId)
+            if (code == 0 || code == null && err == null) {
+                message = "Charging stopped"
+                refreshSession(true)
+            } else {
+                message = "The charger didn't stop" + (err?.let { " ($it)" } ?: "") + ". Unplug or use the charger's screen."
+            }
+        }
+    }
+
+    /** Developer mode's dry run, which also covers paid charging. */
+    private val dryRunning get() = developerMode && debug.dryRun
+
+    private fun demoOffer(charger: Charger) = ChargeOffer(
+        paymentId = "demo-payment", productId = "demo", productName = "Pay as you go",
+        price = null, description = "Demo prices; nothing is charged in a dry run.",
+        priceLines = if ((charger.maxKw ?: 0.0) >= 25) listOf("\$0.45 per kWh", "\$0.40 per minute idle after 10 minutes") else listOf("\$2.00 per hour"),
+        remoteStart = true, remoteStop = true,
+        cards = listOf(io.github.alamo3.openblue.api.PayCardRef("demo-card", io.github.alamo3.openblue.api.PayCard("Visa", "Visa", "************4242"))),
+        resultCode = 0, message = null,
+    )
+
+    private fun demoSessionStatus(s: ActiveSession): SessionStatus {
+        val minutes = ((System.currentTimeMillis() - s.startedAt) / 60_000.0).coerceAtLeast(1.0)
+        val kwh = minutes * 2.3
+        return SessionStatus(kwh = kwh, powerKw = 138.0, cost = kwh * 0.45, currency = "CAD", battery = (42 + minutes).toInt().coerceAtMost(80), charging = true, minutesLeft = 24)
+    }
+
+    /** Screenshots: a session in progress. */
+    fun showDemoSession() {
+        val s = ActiveSession("demo-payment", "demo2", "Harbour Hub", "Stall 3", System.currentTimeMillis() - 12 * 60_000, true)
+        session = s
+        sessionStatus = demoSessionStatus(s)
+    }
+
+    /** Stops showing the session (it's finished, or was started elsewhere). */
+    fun dismissSession() {
+        store.activeSession = null
+        session = null
+        sessionStatus = null
     }
 
     var chargeHistory by mutableStateOf<ChargeHistory?>(null)

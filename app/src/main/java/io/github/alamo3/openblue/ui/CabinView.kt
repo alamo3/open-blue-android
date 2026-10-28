@@ -70,7 +70,7 @@ private val WINDSHIELD = Rect(0.16f, 0.21f, 0.84f, 0.28f)
 /**
  * The real cabin seen from above with the roof cut away (rendered from the same 3D model as the
  * home screen). Heated seats warm up with a glow that spreads through the cushion and backrest;
- * ventilated seats turn cool with air breathing through the perforations. The steering wheel
+ * ventilated seats do the same in blue. The steering wheel
  * glows when it's heated and the windshield when defrosting. Tap a seat to cycle it.
  */
 @Composable
@@ -192,24 +192,24 @@ private fun seatShape(r: Rect) = Path().apply {
 }
 
 /**
- * Heat: the seat itself warms up, from the middle outward, with slow currents of warmth
- * drifting through it. [level] is 0..3 (animated).
+ * Heat or cooling: the seat takes on the colour from the middle outward, with slow soft
+ * currents drifting up through it. [level] is 0..3 (animated); [highlight] tints the currents.
  */
-private fun DrawScope.drawSeatHeat(r: Rect, t: Float, heat: Color, level: Float, seed: Int) {
+private fun DrawScope.drawSeatAir(r: Rect, t: Float, tint: Color, highlight: Color, level: Float, seed: Int) {
     val k = (level / 3f).coerceIn(0f, 1f)
     val breath = 0.9f + 0.1f * sin(t * 1.6f + seed)
     clipPath(seatShape(r)) {
         drawRect(
             Brush.radialGradient(
-                listOf(heat.copy(alpha = (0.2f + 0.45f * k) * breath), heat.copy(alpha = 0.12f * k), Color.Transparent),
+                listOf(tint.copy(alpha = (0.2f + 0.45f * k) * breath), tint.copy(alpha = 0.12f * k), Color.Transparent),
                 center = r.center,
                 radius = max(r.width, r.height) * (0.45f + 0.25f * k),
             ),
             r.topLeft, r.size,
         )
-        // Warm currents: soft wavy bands moving slowly up the seat.
+        // Soft wavy bands moving slowly up the seat.
         val bands = 3
-        val bright = lerp(heat, Color(0xFFFFD08A), 0.5f)
+        val bright = lerp(tint, highlight, 0.5f)
         for (b in 0 until bands) {
             val phase = ((t * 0.12f + b.toFloat() / bands + seed * 0.21f) % 1f)
             val y = r.bottom - phase * r.height
@@ -226,33 +226,11 @@ private fun DrawScope.drawSeatHeat(r: Rect, t: Float, heat: Color, level: Float,
     }
 }
 
-/** Ventilation: the seat cools, and air breathes through rows of perforations. */
-private fun DrawScope.drawSeatCool(r: Rect, t: Float, cool: Color, level: Float, seed: Int) {
-    val k = (level / 3f).coerceIn(0f, 1f)
-    clipPath(seatShape(r)) {
-        drawRect(
-            Brush.radialGradient(
-                listOf(cool.copy(alpha = 0.18f + 0.35f * k), cool.copy(alpha = 0.08f * k), Color.Transparent),
-                center = r.center,
-                radius = max(r.width, r.height) * (0.45f + 0.2f * k),
-            ),
-            r.topLeft, r.size,
-        )
-        val icy = lerp(cool, Color.White, 0.55f)
-        val cols = 6
-        val rows = 9
-        val dot = r.width * 0.022f
-        for (row in 0 until rows) for (col in 0 until cols) {
-            val x = r.left + r.width * (col + 0.5f + if (row % 2 == 0) 0f else 0.5f) / (cols + 0.5f)
-            val y = r.top + r.height * (row + 0.5f) / rows
-            // Each hole pulls air at its own rhythm; more holes come alive at higher levels.
-            val phase = (row * 0.37f + col * 0.61f + seed * 0.13f) % 1f
-            if (phase > 0.35f + 0.65f * k) continue
-            val pulse = sin(((t * 0.9f + phase) % 1f) * PI.toFloat())
-            drawCircle(icy.copy(alpha = 0.75f * pulse * k + 0.12f), dot * (0.7f + 0.6f * pulse), Offset(x, y))
-        }
-    }
-}
+private fun DrawScope.drawSeatHeat(r: Rect, t: Float, heat: Color, level: Float, seed: Int) =
+    drawSeatAir(r, t, heat, Color(0xFFFFD08A), level, seed)
+
+private fun DrawScope.drawSeatCool(r: Rect, t: Float, cool: Color, level: Float, seed: Int) =
+    drawSeatAir(r, t, cool, Color(0xFFCDEBFF), level, seed)
 
 private fun DrawScope.drawWheelHeat(c: Offset, radius: Float, t: Float, heat: Color, k: Float) {
     val breath = 0.85f + 0.15f * sin(t * 1.8f)

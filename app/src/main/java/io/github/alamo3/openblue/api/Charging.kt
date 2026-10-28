@@ -77,7 +77,18 @@ enum class ChargeSpeed(val code: String, val label: String) {
 
 data class Connector(val types: List<String>, val kw: Double?, val status: String?, val speed: ChargeSpeed?)
 
-data class Charger(val id: String?, val reference: String?, val connectors: List<Connector>, val fee: String?)
+data class Charger(
+    val id: String?,
+    val reference: String?,
+    val connectors: List<Connector>,
+    val fee: String?,
+    /** Tesla Superchargers are started by the charger's own station ID. */
+    val stationId: String? = null,
+) {
+    val maxKw: Double? get() = connectors.mapNotNull { it.kw }.maxOrNull()
+    val status: String? get() = connectors.firstNotNullOfOrNull { it.status }
+    val available: Boolean get() = connectors.any { it.status.equals("AVAILABLE", true) }
+}
 
 /** A charging station from iac/csList or iac/csDetail. */
 data class Station(
@@ -85,6 +96,8 @@ data class Station(
     val name: String,
     val address: String?,
     val network: String?,
+    /** Charging network's ID ("258D" is Tesla). */
+    val networkId: String? = null,
     val lat: Double,
     val lon: Double,
     val distanceKm: Double?,
@@ -112,7 +125,27 @@ data class Station(
     val power: String?
         get() = maxKw?.let { "${it.roundToInt()} kW" }
 
+    /**
+     * DC fast charging, judged by power (the server's speed names don't line up with AC/DC):
+     * anything 25 kW and up, or a DC connector when power isn't given.
+     */
+    val isDc: Boolean
+        get() = maxKw?.let { it >= 25.0 }
+            ?: chargers.flatMap { it.connectors }.flatMap { it.types }.any { t -> DC_CONNECTORS.any { t.contains(it, ignoreCase = true) } }
+
+    val speedLabel: String?
+        get() = when {
+            maxKw == null -> if (isDc) "DC fast" else null
+            maxKw >= 150 -> "DC ultra-fast"
+            maxKw >= 25 -> "DC fast"
+            else -> "Level 2"
+        }
+
+    val isTesla: Boolean get() = networkId == "258D" || network?.contains("tesla", ignoreCase = true) == true
+
     companion object {
+        private val DC_CONNECTORS = listOf("CCS", "CHADEMO", "COMBO", "DC")
+
         fun from(e: JsonElement): Station? {
             val id = e.str("id") ?: e.str("poiId") ?: return null
             val lat = e.dbl("coordinates.center.lat") ?: e.dbl("coordinates.guidance.lat") ?: return null
@@ -135,6 +168,7 @@ data class Station(
                         )
                     },
                     fee = c.str("chargingFee"),
+                    stationId = c.str("stationId"),
                 )
             }
             val tariffText = e.arr("tariff").firstNotNullOfOrNull { t ->
@@ -148,6 +182,7 @@ data class Station(
                 name = lang?.str("data.name") ?: "Charging station",
                 address = lang?.str("data.address"),
                 network = lang?.arr("data.providers.operation")?.firstOrNull()?.let { it.str("name") ?: it.str("brandName") },
+                networkId = lang?.arr("data.providers.operation")?.firstOrNull()?.str("id"),
                 lat = lat,
                 lon = lon,
                 distanceKm = e.dbl("distance"),
@@ -201,6 +236,94 @@ data class ChargeHistory(val orders: List<ChargeOrder>, val kwh: Double?, val to
             orders = r.arr("resultData").map { ChargeOrder.from(it) }.sortedByDescending { it.started.orEmpty() },
             kwh = r.dbl("resultEnergy"),
             total = r.dbl("resultPrice"),
+        )
+    }
+}
+
+/** The price and payment details for one charger, from iac/productInfo. */
+data class ChargeOffer(
+    val paymentId: String?,
+    val productId: String?,
+    val productName: String?,
+    val price: String?,
+    val description: String?,
+    val priceLines: List<String>,
+    val remoteStart: Boolean,
+    val remoteStop: Boolean,
+    val cards: List<PayCardRef>,
+    val resultCode: Int?,
+    val message: String?,
+) {
+    companion object {
+        fun from(r: JsonObject): ChargeOffer {
+            val product = r.arr("storeInfo").firstOrNull()?.arr("chargingProductList")?.firstOrNull()
+            val cap = product?.arr("capabInfos")?.firstOrNull()
+            val lines = product?.arr("priceElements").orEmpty().flatMap { el ->
+                el.arr("priceComponents").mapNotNull { pc ->
+                    val price = pc.dbl("price") ?: return@mapNotNull null
+                    when (pc.str("type")?.uppercase()) {
+                        "ENERGY" -> "$%.2f per kWh".format(price)
+                        "TIME" -> "$%.2f per hour".format(price)
+                        "PARKING_TIME" -> "$%.2f per hour parked".format(price)
+                        "FLAT" -> "$%.2f per session".format(price)
+                        else -> "$%.2f %s".format(price, pc.str("type")?.lowercase().orEmpty())
+                    }
+                }
+            }.distinct()
+            return ChargeOffer(
+                paymentId = r.str("paymentId"),
+                productId = product?.str("productId"),
+                productName = product?.str("productName"),
+                price = product?.str("price")?.takeIf { it.isNotBlank() },
+                description = product?.str("productDescription")?.takeIf { it.isNotBlank() } ?: product?.str("timeInfo"),
+                priceLines = lines,
+                remoteStart = cap?.bool("remoteStartAvailable") ?: true,
+                remoteStop = cap?.bool("remoteStopAvailable") ?: false,
+                cards = r.arr("payCardList").mapNotNull { PayCardRef.from(it) },
+                resultCode = r.int("resultInfo.resultCode"),
+                message = r.str("resultInfo.resultMsg"),
+            )
+        }
+    }
+}
+
+/** A saved payment card the charge can be put on. */
+data class PayCardRef(val id: String, val card: PayCard) {
+    companion object {
+        fun from(e: JsonElement): PayCardRef? = e.str("cardId")?.let { PayCardRef(it, PayCard.from(e)) }
+    }
+}
+
+/** A session started from the app; kept so it can be watched and stopped later. */
+@kotlinx.serialization.Serializable
+data class ActiveSession(
+    val paymentId: String,
+    val poiId: String,
+    val stationName: String,
+    val charger: String?,
+    val startedAt: Long,
+    val stopAllowed: Boolean,
+)
+
+/** Live numbers for a session (iac/chargeStatus). */
+data class SessionStatus(
+    val kwh: Double?,
+    val powerKw: Double?,
+    val cost: Double?,
+    val currency: String?,
+    val battery: Int?,
+    val charging: Boolean?,
+    val minutesLeft: Int?,
+) {
+    companion object {
+        fun from(r: JsonObject) = SessionStatus(
+            kwh = r.dbl("bwStatus.kwh"),
+            powerKw = r.dbl("bwStatus.power"),
+            cost = r.dbl("bwStatus.totalCost"),
+            currency = r.str("bwStatus.currency"),
+            battery = r.int("evStatus.batteryStatus"),
+            charging = r.bool("evStatus.batteryCharge"),
+            minutesLeft = r.int("evStatus.remainTime2.atc.value")?.takeIf { it > 0 },
         )
     }
 }

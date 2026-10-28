@@ -433,7 +433,7 @@ class BluelinkClient(private val store: SecureStore) {
             put("radiusUnit", "km")
             if (speeds != null) put("chargingSpeeds", speeds)
             put("language", "en")
-            put("size", 50)
+            put("size", 100)
             put("page", 0)
         }
         iacCheck(post("iac/csList", req, mapOf("accessToken" to t, "vehicleId" to vehicleId))).arr("result.chargingStations")
@@ -449,6 +449,68 @@ class BluelinkClient(private val store: SecureStore) {
             )
         )
         body["result"] as? JsonObject
+    }
+
+    // Starting and stopping a paid charge, as the official app does. The store is always
+    // "CHARGEPOINT" (Hyundai's charging partner) and the charger is identified by its ID in
+    // URL-safe base64; Tesla stations are addressed by the charger's own station ID.
+
+    private fun genType() = store.caps?.genType?.filter { it.isDigit() }?.ifEmpty { null } ?: "3"
+
+    /** Price, payment ID and cards for charging at [chargerId] of station [poiId]. */
+    suspend fun iacOffer(vehicleId: String, poiId: String, chargerId: String): JsonObject = authed { t ->
+        val product = android.util.Base64.encodeToString(chargerId.toByteArray(), android.util.Base64.NO_WRAP or android.util.Base64.URL_SAFE)
+        val req = buildJsonObject {
+            putJsonArray("storeInfo") {
+                add(buildJsonObject {
+                    put("storeId", "CHARGEPOINT")
+                    put("poiId", poiId)
+                    put("productId", product)
+                    put("storeType", "E001")
+                })
+            }
+            put("genType", genType())
+        }
+        val body = iacCheck(post("iac/productInfo", req, mapOf("accessToken" to t, "vehicleId" to vehicleId)))
+        (body["result"] as? JsonObject) ?: JsonObject(emptyMap())
+    }
+
+    /** Starts a paid charge. Returns (resultCode, error case) from the server. */
+    suspend fun iacStartCharge(vehicleId: String, paymentId: String, poiId: String, payCardId: String?): Pair<Int?, String?> = authed { t ->
+        val req = buildJsonObject {
+            put("paymentId", paymentId)
+            put("storeId", "CHARGEPOINT")
+            put("poiId", poiId)
+            putJsonObject("orderInfo") { put("payCardId", payCardId.orEmpty()) }
+            put("tncAgree", true)
+            put("genType", genType())
+        }
+        val body = iacCheck(post("iac/startCharge", req, mapOf("accessToken" to t, "vehicleId" to vehicleId)))
+        body.int("result.resultCode") to (body.str("result.errorCaseId") ?: body.str("result.resultMsg"))
+    }
+
+    suspend fun iacStopCharge(vehicleId: String, paymentId: String, poiId: String): Pair<Int?, String?> = authed { t ->
+        val req = buildJsonObject {
+            put("paymentId", paymentId)
+            put("storeId", "CHARGEPOINT")
+            put("poiId", poiId)
+            put("genType", genType())
+        }
+        val body = iacCheck(post("iac/stopCharge", req, mapOf("accessToken" to t, "vehicleId" to vehicleId)))
+        body.int("result.resultCode") to (body.str("result.errorCaseId") ?: body.str("result.resultMsg"))
+    }
+
+    /** Live energy, power and cost for a session (iac/chargeStatus). */
+    suspend fun iacSessionStatus(vehicleId: String, vin: String, paymentId: String, refresh: Boolean): JsonObject = authed { t ->
+        val req = buildJsonObject {
+            put("vin", vin)
+            put("genType", genType())
+            put("paymentId", paymentId)
+            put("needToRefresh", refresh)
+            put("needBWData", true)
+        }
+        val body = iacCheck(post("iac/chargeStatus", req, mapOf("accessToken" to t, "vehicleId" to vehicleId)))
+        (body["result"] as? JsonObject) ?: JsonObject(emptyMap())
     }
 
     /** Charging sessions paid through the app between two dates (yyyyMMdd). */

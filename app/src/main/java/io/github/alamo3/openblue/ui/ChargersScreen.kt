@@ -23,6 +23,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Directions
@@ -53,11 +55,11 @@ import kotlin.math.cos
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
-/** Speed filters, as the server's speed names. */
-private enum class SpeedFilter(val label: String, val speeds: String?) {
-    ALL("All", null),
-    DC("DC fast", "fast,rapid,ultra"),
-    L2("Level 2", "slow"),
+/** Speed filters, applied here by charger power (the server's own speed filter isn't reliable). */
+private enum class SpeedFilter(val label: String, val keep: (Station) -> Boolean) {
+    ALL("All", { true }),
+    DC("DC fast", { it.isDc }),
+    L2("Level 2", { !it.isDc }),
 }
 
 /**
@@ -68,6 +70,7 @@ private enum class SpeedFilter(val label: String, val speeds: String?) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChargersScreen(vm: MainViewModel, onBack: () -> Unit) {
+    LaunchedEffect(Unit) { vm.loadChargeService() }
     val app = AppTheme.colors
     val scheme = MaterialTheme.colorScheme
     var filter by rememberSaveable { mutableStateOf(SpeedFilter.ALL) }
@@ -80,17 +83,18 @@ fun ChargersScreen(vm: MainViewModel, onBack: () -> Unit) {
     // Search around the car to begin with; ask the car where it is if we don't know.
     LaunchedEffect(loc != null) {
         if (loc == null) vm.locate()
-        else if (vm.stationsCenter == null) vm.searchStations(loc.lat, loc.lon, filter.speeds)
+        else if (vm.stationsCenter == null) vm.searchStations(loc.lat, loc.lon)
     }
-    fun search(f: SpeedFilter = filter) {
+    fun search() {
         val c = mapCentre ?: vm.stationsCenter ?: loc?.let { it.lat to it.lon } ?: return
         mapCentre = null
-        vm.searchStations(c.first, c.second, f.speeds)
+        vm.searchStations(c.first, c.second)
     }
+    val shown = vm.stations.filter(filter.keep)
     val movedFar = mapCentre?.let { m -> vm.stationsCenter?.let { distanceKm(m, it) > 2.0 } } == true
 
     LaunchedEffect(selected) {
-        val i = vm.stations.indexOfFirst { it.id == selected }
+        val i = shown.indexOfFirst { it.id == selected }
         if (i >= 0) listState.animateScrollToItem(i)
     }
 
@@ -100,9 +104,9 @@ fun ChargersScreen(vm: MainViewModel, onBack: () -> Unit) {
             CarMap(
                 car = loc?.let { MapCar(it.lat, it.lon, it.heading) },
                 modifier = Modifier.fillMaxSize(),
-                pins = vm.stations.map { MapPin(it.id, it.lat, it.lon, it.state) },
+                pins = shown.map { MapPin(it.id, it.lat, it.lon, it.state) },
                 selected = selected,
-                fitKey = vm.stationsSearch,
+                fitKey = vm.stationsSearch to filter,
                 onPin = { selected = it },
                 onMoved = { la, lo -> mapCentre = la to lo },
             )
@@ -136,15 +140,16 @@ fun ChargersScreen(vm: MainViewModel, onBack: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             SpeedFilter.entries.forEach { f ->
-                OptionPill(f.label, filter == f, { if (filter != f) { filter = f; search(f) } })
+                OptionPill(f.label, filter == f, { filter = f })
             }
         }
         Legend()
 
         when {
             vm.stationsError != null -> Message(vm.stationsError!!)
-            loc == null && vm.stations.isEmpty() -> Message(if (vm.progress != null) "Finding the car…" else "Locate the car first to search around it.")
-            !vm.stationsLoading && vm.stations.isEmpty() && vm.stationsCenter != null -> Message("No chargers found within 15 km.")
+            loc == null && shown.isEmpty() -> Message(if (vm.progress != null) "Finding the car…" else "Locate the car first to search around it.")
+            !vm.stationsLoading && shown.isEmpty() && vm.stationsCenter != null ->
+                Message(if (vm.stations.isEmpty()) "No chargers found within 15 km." else "No ${filter.label} chargers within 15 km. Try another filter or search elsewhere.")
         }
 
         LazyColumn(
@@ -153,7 +158,7 @@ fun ChargersScreen(vm: MainViewModel, onBack: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(10.dp),
             modifier = Modifier.fillMaxSize(),
         ) {
-            items(vm.stations, key = { it.id }) { s ->
+            items(shown, key = { it.id }) { s ->
                 StationRow(s, s.id == selected) {
                     selected = s.id
                     detail = s.id
@@ -166,8 +171,11 @@ fun ChargersScreen(vm: MainViewModel, onBack: () -> Unit) {
     detail?.let { id ->
         val s = vm.stations.firstOrNull { it.id == id }
         if (s != null) {
-            ModalBottomSheet(onDismissRequest = { detail = null }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
-                StationDetail(s)
+            ModalBottomSheet(
+                onDismissRequest = { detail = null; vm.clearOffer() },
+                sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            ) {
+                StationDetail(vm, s, onStarted = { detail = null; onBack() })
             }
         }
     }
@@ -233,7 +241,7 @@ private fun StationRow(s: Station, selected: Boolean, onClick: () -> Unit) {
         Column(Modifier.weight(1f)) {
             Text(s.name, style = MaterialTheme.typography.titleMedium, maxLines = 1)
             Text(
-                listOfNotNull(s.network, s.speed?.label, s.power).joinToString(" · "),
+                listOfNotNull(s.network, s.speedLabel, s.power).joinToString(" · "),
                 style = MaterialTheme.typography.bodySmall,
                 color = scheme.onSurfaceVariant,
                 maxLines = 1,
@@ -251,12 +259,30 @@ private fun StationRow(s: Station, selected: Boolean, onClick: () -> Unit) {
 
 private fun formatKm(km: Double) = if (km < 1) "${(km * 1000).roundToInt()} m" else "%.1f km".format(km)
 
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-private fun StationDetail(s: Station) {
+private fun StationDetail(vm: MainViewModel, s: Station, onStarted: () -> Unit) {
     val app = AppTheme.colors
     val scheme = MaterialTheme.colorScheme
     val context = LocalContext.current
-    Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 32.dp)) {
+    val activity = remember(context) {
+        var c: android.content.Context? = context
+        while (c is android.content.ContextWrapper && c !is androidx.fragment.app.FragmentActivity) c = c.baseContext
+        c as? androidx.fragment.app.FragmentActivity
+    }
+    val canStart = vm.chargeService?.remoteStart != false
+    var chosen by remember(s.id) { mutableStateOf<String?>(null) }
+    var card by remember(s.id) { mutableStateOf(vm.savedCardId) }
+    var agreed by remember(s.id) { mutableStateOf(false) }
+    val offer = vm.offer?.takeIf { vm.offerFor == chosen }
+
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 20.dp)
+            .padding(bottom = 32.dp),
+    ) {
         Text(s.name, style = MaterialTheme.typography.headlineSmall)
         listOfNotNull(s.network, s.address).forEach {
             Text(it, style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant)
@@ -266,24 +292,142 @@ private fun StationDetail(s: Station) {
         }
 
         if (s.chargers.isNotEmpty()) {
-            SectionTitle("Chargers")
-            s.chargers.forEach { c ->
-                c.connectors.forEach { k ->
-                    DetailRow(
-                        listOfNotNull(c.reference, k.types.joinToString(", ").ifEmpty { null }).joinToString(" · ").ifEmpty { "Connector" },
-                        listOfNotNull(k.kw?.let { "${it.roundToInt()} kW" }, k.status?.let { connectorStatus(it) }).joinToString(" · "),
-                        when (k.status?.uppercase()) {
-                            "AVAILABLE" -> app.charge
-                            "CHARGING", "OCCUPIED", "BLOCKED", "RESERVED" -> app.heat
-                            else -> scheme.onSurface
-                        },
-                    )
+            SectionTitle(if (canStart) "Choose a charger" else "Chargers")
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                s.chargers.forEachIndexed { i, c ->
+                    val id = c.id
+                    val pickable = canStart && id != null
+                    val isChosen = id != null && id == chosen
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .clip(MaterialTheme.shapes.medium)
+                            .background(if (isChosen) scheme.primary.copy(alpha = 0.08f) else scheme.surfaceContainerHigh)
+                            .border(if (isChosen) 2.dp else 1.dp, if (isChosen) scheme.primary else app.hairline, MaterialTheme.shapes.medium)
+                            .let { m -> if (pickable) m.clickable { chosen = id; agreed = false; vm.loadOffer(s, c) } else m }
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(c.reference ?: "Charger ${i + 1}", style = MaterialTheme.typography.titleSmall)
+                            Text(
+                                listOfNotNull(
+                                    c.connectors.flatMap { it.types }.distinct().joinToString(", ").ifEmpty { null },
+                                    c.maxKw?.let { "${it.roundToInt()} kW" },
+                                ).joinToString(" · "),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = scheme.onSurfaceVariant,
+                            )
+                        }
+                        c.status?.let { st ->
+                            Text(
+                                connectorStatus(st),
+                                style = MaterialTheme.typography.labelLarge,
+                                color = when (st.uppercase()) {
+                                    "AVAILABLE" -> app.charge
+                                    "CHARGING", "OCCUPIED", "BLOCKED", "RESERVED" -> app.heat
+                                    else -> scheme.onSurfaceVariant
+                                },
+                            )
+                        }
+                    }
                 }
             }
         }
-        s.price?.let {
+        if (offer == null && chosen == null) {
+            s.price?.let {
+                SectionTitle("Price")
+                Text(it, style = MaterialTheme.typography.bodyMedium)
+            }
+        }
+
+        // Price and start, once a charger is chosen.
+        if (chosen != null) {
             SectionTitle("Price")
-            Text(it, style = MaterialTheme.typography.bodyMedium)
+            when {
+                vm.offerLoading -> Text("Getting the price…", style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant)
+                vm.offerError != null -> Text("Couldn't get the price: ${vm.offerError}", style = MaterialTheme.typography.bodyMedium, color = app.alert)
+                offer != null -> {
+                    val lines = offer.priceLines.ifEmpty { listOfNotNull(offer.price, s.price) }
+                    lines.forEach { Text(it, style = MaterialTheme.typography.titleMedium) }
+                    if (lines.isEmpty()) Text("The network didn't send a price.", style = MaterialTheme.typography.bodyMedium)
+                    offer.description?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant) }
+
+                    if (offer.cards.isNotEmpty()) {
+                        SectionTitle("Pay with")
+                        androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            val current = card?.takeIf { id -> offer.cards.any { it.id == id } } ?: offer.cards.first().id
+                            offer.cards.forEach { c -> OptionPill(c.card.label, current == c.id, { card = c.id }) }
+                        }
+                    }
+
+                    if (!offer.remoteStart) {
+                        Text(
+                            "This charger can't be started from the app. Use the charger's screen or the network's app.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = app.alert,
+                            modifier = Modifier.padding(top = 12.dp),
+                        )
+                    } else {
+                        Row(
+                            Modifier.fillMaxWidth().padding(top = 16.dp).clickable { agreed = !agreed },
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            androidx.compose.material3.Checkbox(checked = agreed, onCheckedChange = { agreed = it })
+                            Text(
+                                "I agree to pay this price and to the charging network's terms",
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                        }
+                        Text(
+                            "Plug the car in first. You'll confirm with your fingerprint or screen lock.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = scheme.onSurfaceVariant,
+                        )
+                        val enabled = agreed && !vm.sessionBusy && vm.session == null
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(top = 12.dp)
+                                .clip(CircleShape)
+                                .background(if (enabled) app.charge else app.charge.copy(alpha = 0.35f))
+                                .pressable(enabled) {
+                                    val charger = s.chargers.firstOrNull { it.id == chosen } ?: return@pressable
+                                    val payWith = card?.takeIf { id -> offer.cards.any { it.id == id } } ?: offer.cards.firstOrNull()?.id
+                                    val go = { vm.startCharge(s, charger, payWith, onStarted) }
+                                    if (activity != null) activity.confirmIdentity("Start charging", "${s.name}, ${charger.reference ?: "charger"}") { go() } else go()
+                                }
+                                .padding(vertical = 14.dp),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                when {
+                                    vm.sessionBusy -> "Starting…"
+                                    vm.session != null -> "A session is already running"
+                                    else -> "Start charging"
+                                },
+                                style = MaterialTheme.typography.labelLarge,
+                                color = Color.White,
+                            )
+                        }
+                    }
+                }
+            }
+        } else if (canStart && s.chargers.isNotEmpty()) {
+            Text(
+                "Pick a charger to see its price and start charging from here.",
+                style = MaterialTheme.typography.bodySmall,
+                color = scheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 8.dp),
+            )
+        } else if (s.chargers.isEmpty()) {
+            Text(
+                "Loading chargers…",
+                style = MaterialTheme.typography.bodySmall,
+                color = scheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 8.dp),
+            )
         }
 
         Spacer(Modifier.height(20.dp))
@@ -291,7 +435,7 @@ private fun StationDetail(s: Station) {
             Modifier
                 .fillMaxWidth()
                 .clip(CircleShape)
-                .background(scheme.primary)
+                .background(scheme.surfaceContainerHigh)
                 .pressable {
                     val gmaps = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/maps/dir/?api=1&destination=${s.lat},${s.lon}&travelmode=driving"))
                         .setPackage("com.google.android.apps.maps")
@@ -302,16 +446,10 @@ private fun StationDetail(s: Station) {
             horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(Icons.Rounded.Directions, null, tint = scheme.onPrimary, modifier = Modifier.size(20.dp))
+            Icon(Icons.Rounded.Directions, null, tint = scheme.onSurface, modifier = Modifier.size(20.dp))
             Spacer(Modifier.width(8.dp))
-            Text("Directions", style = MaterialTheme.typography.labelLarge, color = scheme.onPrimary)
+            Text("Directions", style = MaterialTheme.typography.labelLarge, color = scheme.onSurface)
         }
-        Text(
-            "Starting a charge from the app comes later. For now, use the station's own app or card, or Plug & Charge.",
-            style = MaterialTheme.typography.bodySmall,
-            color = scheme.onSurfaceVariant,
-            modifier = Modifier.padding(top = 12.dp),
-        )
     }
 }
 

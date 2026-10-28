@@ -113,7 +113,7 @@ class ScreenshotTest(private val night: Boolean) {
         shot { ClimateScreen(vm, onBack = {}) }
     }
     @Test fun location() = demoVm().let { vm -> shot { LocationScreen(vm, onBack = {}) } }
-    @Test fun charging() = demoVm().let { vm -> vm.showDemoCharging(); shot { ChargingScreen(vm, onBack = {}) } }
+    @Test fun charging() = demoVm().let { vm -> vm.showDemoCharging(); vm.showDemoSession(); shot { ChargingScreen(vm, onBack = {}) } }
     @Test fun chargingTall() {
         paparazzi.unsafeUpdateConfig(
             deviceConfig = DeviceConfig.PIXEL_5.copy(screenHeight = 3400, nightMode = if (night) NightMode.NIGHT else NightMode.NOTNIGHT),

@@ -100,6 +100,16 @@ class SecureStore(private val prefs: SharedPreferences) {
         get() = read("lastLocation")?.let { runCatching { json.decodeFromString<CarLocation>(it) }.getOrNull() }
         set(v) = write("lastLocation", v?.let { json.encodeToString(it) })
 
+    /** A paid charge started from this phone, while it may still be running. */
+    var activeSession: io.github.alamo3.openblue.api.ActiveSession?
+        get() = read("activeSession")?.let { runCatching { json.decodeFromString<io.github.alamo3.openblue.api.ActiveSession>(it) }.getOrNull() }
+        set(v) = write("activeSession", v?.let { json.encodeToString(it) })
+
+    /** The card the user last charged with. */
+    var payCardId: String?
+        get() = read("payCardId")
+        set(v) = write("payCardId", v)
+
     var cachedStatus: String?
         get() = read("cachedStatus")
         set(v) = write("cachedStatus", v)
