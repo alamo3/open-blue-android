@@ -16,20 +16,26 @@ import java.util.UUID
  * Everything is kept in EncryptedSharedPreferences (AES-256, key in the Android
  * Keystore). Nothing leaves the phone except the requests to mybluelink.ca.
  */
-class SecureStore(context: Context) {
+class SecureStore(private val prefs: SharedPreferences) {
+    constructor(context: Context) : this(encryptedPrefs(context))
+
     private val json = Json { ignoreUnknownKeys = true }
 
-    private val prefs: SharedPreferences = run {
-        val key = MasterKey.Builder(context)
-            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-            .build()
-        EncryptedSharedPreferences.create(
-            context,
-            "openblue_secure",
-            key,
-            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
-        )
+    companion object {
+        private const val KEY_DEVICE = "deviceId"
+
+        private fun encryptedPrefs(context: Context): SharedPreferences {
+            val key = MasterKey.Builder(context)
+                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                .build()
+            return EncryptedSharedPreferences.create(
+                context,
+                "openblue_secure",
+                key,
+                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
+            )
+        }
     }
 
     private fun read(k: String): String? = prefs.getString(k, null)
@@ -94,7 +100,4 @@ class SecureStore(context: Context) {
         keep.forEach { (k, v) -> write(k, v) }
     }
 
-    companion object {
-        private const val KEY_DEVICE = "deviceId"
-    }
 }

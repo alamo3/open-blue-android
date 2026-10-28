@@ -45,18 +45,7 @@ jobs:
       - name: Build
         env:
           OPENBLUE_KEYSTORE_PASSWORD: ${{ secrets.OPENBLUE_KEYSTORE_PASSWORD }}
-        # On failure, surface compiler errors as annotations (readable without downloading logs).
-        run: |
-          set -o pipefail
-          if ! gradle --no-daemon assembleRelease 2>&1 | tee build.log; then
-            grep -E "^e: |^w: .*error|What went wrong|^> |Could not|error:" build.log | grep -v "^> Task" | head -60 > errors.txt || true
-            split -l 12 errors.txt chunk_
-            for f in chunk_*; do
-              msg=$(sed -e 's/%/%25/g' "$f" | sed -e ':a;N;$!ba;s/\n/%0A/g')
-              echo "::error title=Build error::$msg"
-            done
-            exit 1
-          fi
+        run: .github/scripts/gradle.sh assembleRelease
 
       - name: Collect APK
         run: cp app/build/outputs/apk/release/app-release.apk OpenBlue.apk
@@ -77,3 +66,34 @@ jobs:
             --target "$GITHUB_SHA" \
             --title "Latest build (${GITHUB_SHA::7})" \
             --notes "Built from ${GITHUB_SHA} by run #${GITHUB_RUN_NUMBER}. Download OpenBlue.apk on your phone to install."
+
+  # Renders every screen with demo data and publishes the PNGs to the `screenshots` branch.
+  screenshots:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      - name: Record screenshots
+        run: .github/scripts/gradle.sh :app:recordPaparazziDebug
+
+      - name: Publish to screenshots branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir out
+          cp app/src/test/snapshots/images/*.png out/
+          cd out
+          git init -q
+          git checkout -q -b screenshots
+          git add .
+          git -c user.name="github-actions" -c user.email="github-actions@users.noreply.github.com" commit -qm "Screenshots for ${GITHUB_SHA::7}"
+          git push -f -q "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" screenshots

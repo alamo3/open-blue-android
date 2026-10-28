@@ -50,8 +50,17 @@ data class CommandProgress(val action: Action, val stage: Stage, val note: Strin
     }
 }
 
-class MainViewModel(app: Application) : AndroidViewModel(app) {
-    private val store = SecureStore(app)
+/**
+ * [online] = false keeps the ViewModel from making network calls on its own (used by the
+ * screenshot tests, which render screens from stored demo data).
+ */
+class MainViewModel(
+    app: Application,
+    private val store: SecureStore,
+    private val online: Boolean,
+) : AndroidViewModel(app) {
+    constructor(app: Application) : this(app, SecureStore(app), online = true)
+
     private val api = BluelinkClient(store)
     private val prettyJson = Json { prettyPrint = true }
 
@@ -107,6 +116,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val v = store.vehicle
         if (store.username != null && store.password != null && v != null) {
             screen = Screen.Main
+        }
+        if (online && screen == Screen.Main && v != null) {
             refreshing = true
             launchSafely(onDone = { refreshing = false }) {
                 loadVehicle(v)
@@ -361,7 +372,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun loadSurroundView(force: Boolean = false) {
         val v = vehicle ?: return
-        if (svmLoaded && !force) return
+        if (!online || (svmLoaded && !force)) return
         if (force) refreshing = true
         launchSafely(onDone = { svmLoaded = true; refreshing = false }) {
             svm = api.lastSurroundView(v.id)
