@@ -71,9 +71,18 @@ def door_pred(left, y0, y1):
     def p(f):
         c = f.calc_center_median()
         side = c.x > 0.55 if left else c.x < -0.55
+        if not (side and y0 < c.y < y1 and 0.36 < c.z < 1.47):
+            return False
         # Keep the rear wheel-arch cladding on the body.
-        arch = (mathutils.Vector((0, c.y, c.z)) - REAR_WHEEL).length < 0.56
-        return side and y0 < c.y < y1 and 0.36 < c.z < 1.47 and not arch
+        if (mathutils.Vector((0, c.y, c.z)) - REAR_WHEEL).length < 0.56:
+            return False
+        if c.z > 1.06:
+            # Above the beltline only the side window and its frame belong to the door: faces
+            # that point sideways. The windshield and A-pillar face forward and stay put.
+            # The mirror is door-mounted on this car, so it comes along.
+            mirror = abs(c.x) > 0.93 and -1.02 < c.y < -0.72 and c.z < 1.26
+            return mirror or (abs(f.normal.x) > 0.6 and c.y > -1.0)
+        return True
     return p
 
 def islands_in_box(lo, hi, min_faces=6):
@@ -147,7 +156,7 @@ def box(name, x, y0, y1, z0, z1):
     bpy.ops.object.transform_apply(scale=True)
     b.data.materials.append(mat)
     return b
-lower = box("cabin", 0.84, -1.08, 1.17, 0.34, 1.06)
+lower = box("cabin", 0.82, -0.98, 1.17, 0.34, 1.02)
 upper = box("cabin_upper", 0.58, -0.5, 1.02, 1.0, 1.38)
 bpy.ops.object.select_all(action='DESELECT')
 lower.select_set(True); upper.select_set(True)
