@@ -76,28 +76,42 @@ fun SoundScreen(vm: MainViewModel, onBack: () -> Unit) {
         ScreenHeader("Engine sound", onBack)
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 48.dp)) {
             Box(Modifier.fillMaxWidth().padding(top = 4.dp), contentAlignment = Alignment.Center) {
-                Tachometer(
-                    rpm = r?.rpm ?: if (vm.soundOn) sound.idleRpm else 0f,
-                    redline = sound.redline,
-                    load = r?.load ?: 0f,
-                    modifier = Modifier.widthIn(max = 300.dp).fillMaxWidth().aspectRatio(1f),
-                )
+                val gauge = Modifier.widthIn(max = 300.dp).fillMaxWidth().aspectRatio(1f)
+                if (sound.isEngine) {
+                    Tachometer(
+                        rpm = r?.rpm ?: if (vm.soundOn) sound.idleRpm else 0f,
+                        redline = sound.redline,
+                        load = r?.load ?: 0f,
+                        modifier = gauge,
+                    )
+                } else {
+                    PowerRing(load = r?.load ?: 0f, modifier = gauge)
+                }
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        when {
-                            r == null -> "–"
-                            r.gear == 0 -> "N"
-                            else -> r.gear.toString()
-                        },
-                        fontSize = 64.sp, fontWeight = FontWeight.SemiBold,
-                    )
-                    Text(
-                        r?.let { "${it.speedKmh.roundToInt()} km/h" } ?: sound.label,
-                        style = MaterialTheme.typography.titleMedium,
-                        color = scheme.onSurfaceVariant,
-                    )
-                    if (r != null) {
-                        Text("${(r.rpm / 10).roundToInt() * 10} rpm", style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
+                    if (sound.isEngine) {
+                        Text(
+                            when {
+                                r == null -> "–"
+                                r.gear == 0 -> "N"
+                                r.gear < 0 -> "D"
+                                else -> r.gear.toString()
+                            },
+                            fontSize = 64.sp, fontWeight = FontWeight.SemiBold,
+                        )
+                        Text(
+                            r?.let { "${it.speedKmh.roundToInt()} km/h" } ?: sound.label,
+                            style = MaterialTheme.typography.titleMedium,
+                            color = scheme.onSurfaceVariant,
+                        )
+                        if (r != null) {
+                            Text("${(r.rpm / 10).roundToInt() * 10} rpm", style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
+                        }
+                    } else {
+                        Text(r?.speedKmh?.roundToInt()?.toString() ?: "–", fontSize = 64.sp, fontWeight = FontWeight.SemiBold)
+                        Text(if (r != null) "km/h" else sound.label, style = MaterialTheme.typography.titleMedium, color = scheme.onSurfaceVariant)
+                        if (r != null) {
+                            Text("Power ${(r.load * 100).roundToInt()}%", style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
+                        }
                     }
                 }
             }
@@ -152,12 +166,30 @@ fun SoundScreen(vm: MainViewModel, onBack: () -> Unit) {
             }
 
             HorizontalDivider(color = app.hairline, modifier = Modifier.padding(top = 12.dp))
-            SectionTitle("Engine")
+            SectionTitle("Sound")
+            Text("Made for an EV", style = MaterialTheme.typography.labelLarge, color = scheme.onSurfaceVariant, modifier = Modifier.padding(bottom = 8.dp))
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                EngineSound.entries.forEach { s -> OptionPill(s.label, s == sound, { vm.changeEngineSound(s) }) }
+                EngineSound.entries.filter { !it.isEngine }.forEach { s -> OptionPill(s.label, s == sound, { vm.changeEngineSound(s) }) }
             }
+            Text("Engines", style = MaterialTheme.typography.labelLarge, color = scheme.onSurfaceVariant, modifier = Modifier.padding(top = 14.dp, bottom = 8.dp))
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                EngineSound.entries.filter { it.isEngine }.forEach { s -> OptionPill(s.label, s == sound, { vm.changeEngineSound(s) }) }
+            }
+            Text(
+                soundBlurb(sound),
+                style = MaterialTheme.typography.bodySmall,
+                color = scheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 10.dp),
+            )
             Text("Volume", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 16.dp))
             Slider(value = vm.soundVolume, onValueChange = { vm.changeSoundVolume(it) }, colors = sliderColors(scheme.primary))
+            if (sound.isEngine) {
+                SettingSwitch(
+                    "Gearshifts",
+                    "Off: one long gear like the car itself, revs rising smoothly with speed. On: a 6-speed gearbox with shifts and kickdowns.",
+                    vm.gearshifts,
+                ) { vm.changeGearshifts(it) }
+            }
             SettingSwitch(
                 "Hold revs when not accelerating",
                 "Off: revs drop back to idle whenever you're not on the power. On: they stay where the gear would put them.",
@@ -214,6 +246,31 @@ fun SoundScreen(vm: MainViewModel, onBack: () -> Unit) {
                 style = MaterialTheme.typography.bodySmall,
                 color = scheme.onSurfaceVariant,
             )
+        }
+    }
+}
+
+private fun soundBlurb(s: EngineSound) = when (s.kind) {
+    EngineSound.Kind.STARSHIP -> "A deep synth drone that climbs about two octaves with speed and opens up as you accelerate."
+    EngineSound.Kind.TURBINE -> "A jet-style whine that spools up with speed, with roar under hard acceleration."
+    EngineSound.Kind.ELECTRIC -> "Your motor's own whine, made louder: its electrical tones, gear mesh and inverter, following the real motor speed."
+    EngineSound.Kind.PISTON -> "A made-up engine, synthesized from scratch."
+}
+
+/** How hard the car is pulling, as a glowing ring. */
+@Composable
+private fun PowerRing(load: Float, modifier: Modifier = Modifier) {
+    val app = AppTheme.colors
+    val base = MaterialTheme.colorScheme.primary
+    Canvas(modifier) {
+        val stroke = size.minDimension * 0.05f
+        val inset = stroke * 1.6f
+        val arcSize = Size(size.width - inset * 2, size.height - inset * 2)
+        val tl = Offset(inset, inset)
+        drawArc(app.hairline, 135f, 270f, false, tl, arcSize, style = Stroke(stroke, cap = StrokeCap.Round))
+        val f = load.coerceIn(0f, 1f)
+        if (f > 0.005f) {
+            drawArc(lerpColor(base, app.cool, f), 135f, 270f * f, false, tl, arcSize, style = Stroke(stroke, cap = StrokeCap.Round))
         }
     }
 }

@@ -135,6 +135,9 @@ class SecureStore(private val prefs: SharedPreferences) {
     var soundLookaheadMs: Int
         get() = prefs.getInt("soundLookaheadMs", 0)
         set(v) = prefs.edit().putInt("soundLookaheadMs", v).apply()
+    var gearshifts: Boolean
+        get() = prefs.getBoolean("gearshifts", false)
+        set(v) = prefs.edit().putBoolean("gearshifts", v).apply()
     var holdRevs: Boolean
         get() = prefs.getBoolean("holdRevs", false)
         set(v) = prefs.edit().putBoolean("holdRevs", v).apply()

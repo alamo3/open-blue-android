@@ -33,12 +33,13 @@ data class SoundReadout(
 
 /**
  * Runs the engine sound: phone sensors and GPS feed [MotionFusion], which drives [EngineModel],
- * which drives [EngineVoice] on a high-priority audio thread.
+ * which drives [SoundVoice] on a high-priority audio thread.
  */
 class SoundController(private val context: Context) {
-    @Volatile var sound: EngineSound = EngineSound.INLINE_4
+    @Volatile var sound: EngineSound = EngineSound.STARSHIP
     @Volatile var volume = 0.8f
     @Volatile var holdRevs = false
+    @Volatile var gearshifts = false
     /** 0..1 while the rev slider is held; null otherwise. */
     @Volatile var revThrottle: Float? = null
     /**
@@ -211,7 +212,7 @@ class SoundController(private val context: Context) {
             .build()
 
         val model = EngineModel()
-        val voice = EngineVoice(rate)
+        val voice = SoundVoice(rate)
         val buf = FloatArray(frames)
         val dt = frames / rate.toFloat()
         var fade = 0f
@@ -222,12 +223,13 @@ class SoundController(private val context: Context) {
         try {
             while (true) {
                 val s = sound
-                if (voice.sound != s || model.redline != s.redline) {
+                if (voice.sound != s) {
                     voice.sound = s
                     model.idleRpm = s.idleRpm
                     model.redline = s.redline
                 }
                 model.holdRevs = holdRevs
+                model.gearshifts = gearshifts && s.isEngine
 
                 // Look ahead: extend the current trend in acceleration by the output delay.
                 val a = fusedAccel

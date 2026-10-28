@@ -49,9 +49,10 @@ class EngineSoundService : Service() {
         if (current == null) {
             val store = SecureStore(this)
             current = SoundController(applicationContext).apply {
-                sound = store.engineSound?.let { n -> EngineSound.entries.firstOrNull { it.name == n } } ?: EngineSound.INLINE_4
+                sound = store.engineSound?.let { n -> EngineSound.entries.firstOrNull { it.name == n } } ?: EngineSound.STARSHIP
                 volume = store.soundVolume
                 holdRevs = store.holdRevs
+                gearshifts = store.gearshifts
                 lookaheadMs = store.soundLookaheadMs.toFloat()
                 start(canUseGps = gps)
             }

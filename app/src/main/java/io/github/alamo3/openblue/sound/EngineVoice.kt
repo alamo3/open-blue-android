@@ -8,12 +8,9 @@ import kotlin.math.sin
 import kotlin.math.tanh
 import kotlin.random.Random
 
-/** An engine character: how many cylinders, how they fire, and how the exhaust resonates. */
-enum class EngineSound(
-    val label: String,
+/** Cylinders, how they fire, and how the exhaust resonates. */
+class PistonSpec(
     val cylinders: Int,
-    val idleRpm: Float,
-    val redline: Float,
     /** Main exhaust resonance and a higher pipe resonance, in Hz. */
     val exhaustHz: Float,
     val pipeHz: Float,
@@ -23,24 +20,44 @@ enum class EngineSound(
     val pulseTiming: FloatArray,
     /** How much each pulse varies at random. */
     val roughness: Float,
+)
+
+/** The sounds on offer: three made for an EV, and four classic engines. */
+enum class EngineSound(
+    val label: String,
+    val kind: Kind,
+    val idleRpm: Float = 900f,
+    val redline: Float = 6900f,
+    val piston: PistonSpec? = null,
 ) {
+    STARSHIP("Starship", Kind.STARSHIP),
+    TURBINE("Turbine", Kind.TURBINE),
+    ELECTRIC("Electric+", Kind.ELECTRIC),
     INLINE_4(
-        "Inline-4 turbo", 4, 900f, 6900f, 125f, 440f,
-        floatArrayOf(1f, 0.88f, 0.97f, 0.84f), floatArrayOf(0f, 0f, 0f, 0f), 0.25f,
+        "Inline-4 turbo", Kind.PISTON, 900f, 6900f,
+        PistonSpec(4, 125f, 440f, floatArrayOf(1f, 0.88f, 0.97f, 0.84f), floatArrayOf(0f, 0f, 0f, 0f), 0.25f),
     ),
     INLINE_5(
-        "Inline-5", 5, 850f, 7000f, 110f, 390f,
-        floatArrayOf(1f, 0.8f, 0.93f, 0.78f, 0.9f), floatArrayOf(0f, 0.04f, -0.03f, 0.05f, -0.02f), 0.3f,
+        "Inline-5", Kind.PISTON, 850f, 7000f,
+        PistonSpec(5, 110f, 390f, floatArrayOf(1f, 0.8f, 0.93f, 0.78f, 0.9f), floatArrayOf(0f, 0.04f, -0.03f, 0.05f, -0.02f), 0.3f),
     ),
     V6(
-        "V6", 6, 750f, 7200f, 100f, 340f,
-        floatArrayOf(1f, 0.86f, 0.95f, 0.9f, 0.97f, 0.84f), floatArrayOf(0f, 0f, 0f, 0f, 0f, 0f), 0.22f,
+        "V6", Kind.PISTON, 750f, 7200f,
+        PistonSpec(6, 100f, 340f, floatArrayOf(1f, 0.86f, 0.95f, 0.9f, 0.97f, 0.84f), floatArrayOf(0f, 0f, 0f, 0f, 0f, 0f), 0.22f),
     ),
     V8(
-        "V8 burble", 8, 700f, 6800f, 82f, 290f,
-        floatArrayOf(1f, 0.74f, 0.92f, 0.7f, 0.97f, 0.76f, 0.9f, 0.72f),
-        floatArrayOf(0f, 0.16f, -0.1f, 0.13f, 0.02f, -0.15f, 0.1f, -0.12f), 0.35f,
+        "V8 burble", Kind.PISTON, 700f, 6800f,
+        PistonSpec(
+            8, 82f, 290f,
+            floatArrayOf(1f, 0.74f, 0.92f, 0.7f, 0.97f, 0.76f, 0.9f, 0.72f),
+            floatArrayOf(0f, 0.16f, -0.1f, 0.13f, 0.02f, -0.15f, 0.1f, -0.12f), 0.35f,
+        ),
     ),
+    ;
+
+    enum class Kind { STARSHIP, TURBINE, ELECTRIC, PISTON }
+
+    val isEngine: Boolean get() = kind == Kind.PISTON
 }
 
 /**
@@ -102,15 +119,17 @@ class EngineVoice(private val sampleRate: Int, seed: Int = 7) {
     private var configured: EngineSound? = null
 
     private fun configure(s: EngineSound) {
-        exhaust.bandPass(s.exhaustHz, 0.9f, sr)
-        pipe.bandPass(s.pipeHz, 2.2f, sr)
+        val p = s.piston ?: EngineSound.INLINE_4.piston!!
+        exhaust.bandPass(p.exhaustHz, 0.9f, sr)
+        pipe.bandPass(p.pipeHz, 2.2f, sr)
         popTone.bandPass(1100f, 1.4f, sr)
         configured = s
     }
 
     fun render(out: FloatArray, frames: Int = out.size) {
-        val s = sound
-        if (s !== configured) configure(s)
+        val snd = sound
+        if (snd !== configured) configure(snd)
+        val s = snd.piston ?: EngineSound.INLINE_4.piston!!
         val cyl = s.cylinders
         if (targetShifts != shiftsSeen) {
             if (targetShifts > shiftsSeen) {

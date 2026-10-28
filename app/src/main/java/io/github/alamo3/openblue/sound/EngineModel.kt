@@ -8,6 +8,7 @@ import kotlin.math.min
 data class EngineState(
     val rpm: Float,
     val load: Float,
+    /** 1-6 with gearshifts on, -1 in direct drive, 0 while revving in place. */
     val gear: Int,
     /** True while the "throttle" is in (the car is accelerating, or the rev slider is up). */
     val engaged: Boolean,
@@ -16,17 +17,21 @@ data class EngineState(
     val limiter: Boolean,
     /** Increments when lifting off hard and high in the revs, for pops and crackles. */
     val liftOffs: Int = 0,
+    /** Road speed, or for revving in place a stand-in that rises with the revs. */
+    val speedKmh: Float = 0f,
 )
 
 /**
- * A virtual petrol engine and 6-speed gearbox, driven by the car's speed and how hard it's
- * accelerating. Not accelerating means the revs fall back to idle (or, with [holdRevs], stay
- * on the gear's revs for the speed, like cruising in gear).
+ * A virtual engine driven by the car's speed and how hard it's accelerating. By default it's
+ * direct drive like the car itself: revs rise smoothly with speed, plus more the harder you
+ * push. With [gearshifts] it gets a 6-speed gearbox instead. Not accelerating means the revs
+ * fall back to idle (or, with [holdRevs], stay where the speed puts them).
  */
 class EngineModel(
     var idleRpm: Float = 850f,
     var redline: Float = 6900f,
     var holdRevs: Boolean = false,
+    var gearshifts: Boolean = false,
 ) {
     /** Engine rpm per km/h in each gear: about 60, 100, 140, 180, 220, 265 km/h at 6500 rpm. */
     private val rpmPerKmh = floatArrayOf(108f, 65f, 47f, 36.5f, 29.5f, 24.5f)
@@ -66,7 +71,7 @@ class EngineModel(
             if (!engaged) {
                 engaged = true
                 pullPeak = 0f
-                gear = kickdownGear(kmh, rawLoad)
+                if (gearshifts) gear = kickdownGear(kmh, rawLoad)
             }
             quietFor = 0f
         } else if (engaged) {
@@ -83,7 +88,16 @@ class EngineModel(
 
         var limiter = false
         val target: Float
-        if (engaged) {
+        if (!gearshifts) {
+            // One fixed gear: revs follow speed, and pushing harder adds revs on top.
+            val cruise = idleRpm + kmh * 24f
+            var t = if (engaged) cruise + 2400f * load else if (holdRevs && kmh > 10f) cruise else idleRpm
+            if (t > redline) {
+                t = redline
+                limiter = engaged && load > 0.5f
+            }
+            target = t
+        } else if (engaged) {
             // Upshift when past the shift point for how hard we're going, but hold the gear briefly
             // after a shift so it doesn't skip gears.
             shiftHold = max(0f, shiftHold - dt)
@@ -112,7 +126,7 @@ class EngineModel(
             target = if (holdRevs && kmh > 10f) max(idleRpm, gearRpm(gear, kmh)) else idleRpm
         }
         rpm = slew(rpm, target, dt, up = 9000f, down = if (engaged) 7000f else 2600f)
-        return EngineState(rpm, load, gear, engaged, shifts, limiter, liftOffs)
+        return EngineState(rpm, load, if (gearshifts) gear else -1, engaged, shifts, limiter, liftOffs, kmh)
     }
 
     /** Lowest gear that stays under the shift point: flooring it at speed drops a gear or two. */
@@ -131,7 +145,8 @@ class EngineModel(
         val target = idleRpm + (redline - idleRpm) * t
         rpm = slew(rpm, target, dt, up = 6000f, down = 3500f)
         val limiter = t > 0.98f
-        return EngineState(rpm, load, 0, engaged, shifts, limiter, liftOffs)
+        val standIn = (rpm - idleRpm) / (redline - idleRpm) * 160f
+        return EngineState(rpm, load, 0, engaged, shifts, limiter, liftOffs, standIn)
     }
 
     private fun slew(from: Float, to: Float, dt: Float, up: Float, down: Float): Float {

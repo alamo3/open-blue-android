@@ -1253,11 +1253,13 @@ class MainViewModel(
     // ----------------------------------------------------------- engine sound
 
     private val soundCtl: SoundController? get() = EngineSoundService.current
-    var engineSound by mutableStateOf(store.engineSound?.let { n -> EngineSound.entries.firstOrNull { it.name == n } } ?: EngineSound.INLINE_4)
+    var engineSound by mutableStateOf(store.engineSound?.let { n -> EngineSound.entries.firstOrNull { it.name == n } } ?: EngineSound.STARSHIP)
         private set
     var soundVolume by mutableStateOf(store.soundVolume)
         private set
     var holdRevs by mutableStateOf(store.holdRevs)
+        private set
+    var gearshifts by mutableStateOf(store.gearshifts)
         private set
     var soundLookaheadMs by mutableStateOf(store.soundLookaheadMs)
         private set
@@ -1335,6 +1337,12 @@ class MainViewModel(
         soundCtl?.holdRevs = on
     }
 
+    fun changeGearshifts(on: Boolean) {
+        gearshifts = on
+        store.gearshifts = on
+        soundCtl?.gearshifts = on
+    }
+
     fun changeSoundLookahead(ms: Int) {
         soundLookaheadMs = ms
         store.soundLookaheadMs = ms
@@ -1364,7 +1372,7 @@ class MainViewModel(
     /** Fills the sound screen with a mid-pull reading, for screenshots. */
     fun showDemoSound() {
         soundOn = true
-        soundReadout = SoundReadout(4650f, 3, 92f, 2.6f, 0.68f, 1f, gpsFix = true, hasSensors = true)
+        soundReadout = SoundReadout(4650f, -1, 92f, 2.6f, 0.68f, 1f, gpsFix = true, hasSensors = true)
         soundDelayNote = "Measured 182 ms from the phone to your ears. Look-ahead set to 160 ms."
         soundLookaheadMs = 160
     }
