@@ -91,6 +91,75 @@ class SurroundBuilderTest {
         assertTrue(scene.ground.count { it != 0 } > scene.ground.size / 2)
     }
 
+    @Test fun paintedSurfaceLiesOnTheWall() {
+        val frames = SvmCalibration.ALL.map { frame(it) }
+        val crops = SurroundBuilder.makeCrops(frames)
+        val depth = TrueDepth { crops }
+        crops.forEach { SurroundBuilder.applyDepth(it, depth.disparity(it.rgb, it.n)) }
+        val scene = SurroundBuilder.assemble(frames, crops, emptyMap())
+        val mesh = scene.painted
+        assertTrue("painted surface", mesh != null && mesh.triangleCount > 1000)
+        mesh!!
+        val p = mesh.positions
+        var onWall = 0
+        for (v in 0 until mesh.vertexCount) {
+            val x = p[3 * v]; val z = p[3 * v + 2]
+            // Nothing from the floor (that's drawn separately) and nothing inside our own car.
+            assertTrue("vertex $v at z=$z", z > 0.05f)
+            assertTrue("vertex $v inside the car", !(abs(x) < 0.9f && abs(p[3 * v + 1]) < 2.3f && z < 1.6f))
+            if (x > 1.5f) { assertEquals(wallX, x.toDouble(), 0.25); onWall++ }
+        }
+        assertTrue("points on the wall: $onWall", onWall > 500)
+        for (i in mesh.indices) assertTrue(i in 0 until mesh.vertexCount)
+        // Colours are linear 0..1.
+        assertTrue(mesh.colors.all { it in 0f..1f })
+        val json = glbJson(SceneGlb.write(scene, byteArrayOf(1, 2, 3, 4)))
+        assertTrue(json.contains("\"painted\""))
+    }
+
+    @Test fun floorFillPaintsOnlyWhatWasNotSeen() {
+        val n = 100; val ext = 12.0; val res = 2 * ext / n
+        // Seen: a disc of radius 4 m round the car, painted red. The "model" paints everything blue.
+        val seen = BooleanArray(n * n) { k ->
+            val gx = -ext + (k % n + 0.5) * res; val gy = ext - (k / n + 0.5) * res
+            hypot(gx, gy) < 4.0
+        }
+        val photo = IntArray(n * n) { if (seen[it]) 0xC00000 else 0 }
+        val scene = SurroundScene(n, ext, IntArray(n * n), emptyList(), emptyList(), seen, photo)
+        var calls = 0
+        val blue = object : Inpainter {
+            override fun inpaint(rgb: ByteArray, hole: BooleanArray): ByteArray {
+                calls++
+                assertEquals(Inpainter.SIZE * Inpainter.SIZE * 3, rgb.size)
+                assertTrue(hole.any { it } && hole.any { !it })
+                return ByteArray(rgb.size) { if (it % 3 == 2) 200.toByte() else 0 }
+            }
+        }
+        val out = FloorFill.fill(scene, blue)
+        assertTrue("passes $calls", calls in 1..5)
+        fun at(x: Double, y: Double) = out[((ext - y) / res).toInt() * n + ((x + ext) / res).toInt()]
+        // Well inside what was seen: the photo. Out at 7 m (not seen, before the edge fade): the painting.
+        assertEquals(0xC0, (at(0.0, 2.5) shr 16) and 0xFF)
+        assertEquals(0, at(0.0, 2.5) and 0xFF)
+        val far = at(7.0, 0.0)
+        assertEquals(0, (far shr 16) and 0xFF)
+        assertEquals(200, far and 0xFF)
+    }
+
+    @Test fun distanceTransform() {
+        val n = 9
+        val m = BooleanArray(n * n).also { it[4 * n + 4] = true }
+        val d = FloorFill.distanceTo(m, n)
+        assertEquals(0f, d[4 * n + 4], 0f)
+        assertEquals(4f, d[4 * n + 8], 0.01f)
+        assertEquals(4 * kotlin.math.sqrt(2f), d[0], 0.01f)
+    }
+
+    private fun glbJson(glb: ByteArray): String {
+        val b = ByteBuffer.wrap(glb).order(ByteOrder.LITTLE_ENDIAN)
+        return String(glb, 20, b.getInt(12))
+    }
+
     @Test fun glbIsWellFormed() {
         val scene = SurroundScene(
             4, 12.0, IntArray(16) { 0x808080 },

@@ -97,3 +97,36 @@ class OnnxVehicles(file: File) : VehicleDetector, Closeable {
 
     override fun close() = session.close()
 }
+
+/** LaMa (big-mask inpainting): paints in the masked part of a 512 x 512 picture. */
+class OnnxInpaint(file: File) : Inpainter, Closeable {
+    private val env = OrtEnvironment.getEnvironment()
+    private val session = env.createSession(file.absolutePath, sessionOptions())
+
+    override fun inpaint(rgb: ByteArray, hole: BooleanArray): ByteArray {
+        val s = Inpainter.SIZE
+        val img = FloatBuffer.allocate(3 * s * s)
+        for (ch in 0..2) for (k in 0 until s * s) img.put((rgb[3 * k + ch].toInt() and 0xFF) / 255f)
+        img.rewind()
+        val mask = FloatBuffer.allocate(s * s)
+        for (k in 0 until s * s) mask.put(if (hole[k]) 1f else 0f)
+        mask.rewind()
+        val out = ByteArray(3 * s * s)
+        OnnxTensor.createTensor(env, img, longArrayOf(1, 3, s.toLong(), s.toLong())).use { ti ->
+            OnnxTensor.createTensor(env, mask, longArrayOf(1, 1, s.toLong(), s.toLong())).use { tm ->
+                session.run(mapOf("image" to ti, "mask" to tm)).use { res ->
+                    val v = (res[0] as OnnxTensor).floatBuffer
+                    val all = FloatArray(v.remaining()).also { v.get(it) }
+                    // This export answers in 0..255; allow for one that answers in 0..1.
+                    val gain = if (all.max() <= 1.5f) 255f else 1f
+                    for (ch in 0..2) for (k in 0 until s * s) {
+                        out[3 * k + ch] = (all[ch * s * s + k] * gain + 0.5f).toInt().coerceIn(0, 255).toByte()
+                    }
+                }
+            }
+        }
+        return out
+    }
+
+    override fun close() = session.close()
+}

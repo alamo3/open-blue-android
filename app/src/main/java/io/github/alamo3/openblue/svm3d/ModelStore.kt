@@ -7,8 +7,9 @@ import java.io.IOException
 import java.util.concurrent.TimeUnit
 
 /**
- * The two AI models the 3D view needs, downloaded once from their projects' GitHub releases
- * (too big to ship in the app): Depth Anything V2 Small (Apache-2.0) and YOLO11n (AGPL-3.0).
+ * The AI models the 3D view needs, downloaded once (too big to ship in the app): Depth Anything V2
+ * Small (Apache-2.0) and YOLO11n (AGPL-3.0) from their GitHub releases, and LaMa (Apache-2.0) from
+ * OpenCV's model zoo on GitHub.
  */
 class ModelStore(private val dir: File) {
     class Model(val file: String, val url: String, val approxBytes: Long)
@@ -24,22 +25,33 @@ class ModelStore(private val dir: File) {
             "https://github.com/ultralytics/assets/releases/download/v8.3.0/yolo11n.onnx",
             10_930_182,
         )
-        val ALL = listOf(DEPTH, DETECTOR)
+        val INPAINT = Model(
+            "inpainting_lama_2025jan.onnx",
+            "https://media.githubusercontent.com/media/opencv/opencv_zoo/main/models/inpainting_lama/inpainting_lama_2025jan.onnx",
+            92_591_623,
+        )
+        val ALL = listOf(DEPTH, DETECTOR, INPAINT)
         val TOTAL_BYTES = ALL.sumOf { it.approxBytes }
     }
 
     fun file(m: Model) = File(dir, m.file)
 
-    val ready: Boolean get() = ALL.all { file(it).length() > it.approxBytes / 2 }
+    fun has(m: Model) = file(m).length() > m.approxBytes / 2
 
-    /** Downloads whatever is missing. [progress] gets 0..1 across both. */
+    val ready: Boolean get() = ALL.all { has(it) }
+
+    /** How much is still to download. */
+    val missingBytes: Long get() = ALL.filterNot { has(it) }.sumOf { it.approxBytes }
+
+    /** Downloads whatever is missing. [progress] gets 0..1 across what's missing. */
     fun download(progress: (Float) -> Unit) {
         dir.mkdirs()
         val client = OkHttpClient.Builder().readTimeout(60, TimeUnit.SECONDS).followRedirects(true).build()
+        val todo = missingBytes.coerceAtLeast(1)
         var done = 0L
         for (m in ALL) {
             val dest = file(m)
-            if (dest.length() > m.approxBytes / 2) { done += m.approxBytes; continue }
+            if (has(m)) continue
             val tmp = File(dir, m.file + ".part")
             client.newCall(Request.Builder().url(m.url).build()).execute().use { resp ->
                 if (!resp.isSuccessful) throw IOException("Download failed (${resp.code}) for ${m.file}")
@@ -53,7 +65,7 @@ class ModelStore(private val dir: File) {
                             if (r < 0) break
                             out.write(buf, 0, r)
                             got += r
-                            progress(((done + got).toFloat() / TOTAL_BYTES).coerceIn(0f, 1f))
+                            progress(((done + got).toFloat() / todo).coerceIn(0f, 1f))
                         }
                     }
                 }

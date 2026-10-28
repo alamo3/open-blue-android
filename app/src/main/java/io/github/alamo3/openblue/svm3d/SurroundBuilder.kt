@@ -98,6 +98,12 @@ class SurroundScene(
     val ground: IntArray,
     val walls: List<Wall>,
     val vehicles: List<Vehicle>,
+    /** Which floor pixels a camera actually saw (the rest of [ground] is filled in). */
+    val groundSeen: BooleanArray = BooleanArray(0),
+    /** The floor as seen, before any filling or fading (only meaningful where [groundSeen]). */
+    val groundPhoto: IntArray = IntArray(0),
+    /** Everything that stands up, painted from the photos (null if there was nothing usable). */
+    val painted: PaintedMesh? = null,
 )
 
 interface DepthModel {
@@ -363,8 +369,11 @@ object SurroundBuilder {
         }
 
         val walls = sweepWalls(crops, carPixels, vehicles)
-        val ground = stitchFloor(frames, crops)
-        return SurroundScene(GROUND_N, GROUND_EXT, ground, walls, vehicles)
+        val seen = BooleanArray(GROUND_N * GROUND_N)
+        val photo = IntArray(GROUND_N * GROUND_N)
+        val ground = stitchFloor(frames, crops, seen, photo)
+        val painted = PaintedSurface.build(crops, vehicles).takeIf { it.triangleCount > 0 }
+        return SurroundScene(GROUND_N, GROUND_EXT, ground, walls, vehicles, seen, photo, painted)
     }
 
     private fun standing(c: Crop, k: Int, ray: DoubleArray, minZ: Double, maxT: Double, maxZ: Double = 9.0): Boolean {
@@ -438,7 +447,7 @@ object SurroundBuilder {
         return Vehicle(centreX, centreY, heading, length, height, p.kind)
     }
 
-    private fun inAnyVehicle(vs: List<Vehicle>, x: Double, y: Double): Boolean = vs.any { v ->
+    internal fun inAnyVehicle(vs: List<Vehicle>, x: Double, y: Double): Boolean = vs.any { v ->
         val a = Math.toRadians(v.heading)
         val ax = kotlin.math.sin(a); val ay = kotlin.math.cos(a)
         val dx = x - v.x; val dy = y - v.y
@@ -533,7 +542,7 @@ object SurroundBuilder {
     const val GROUND_EXT = 12.0
 
     /** The floor from all four cameras, each spot taken from whichever camera sees it best. */
-    fun stitchFloor(frames: List<Fisheye>, crops: List<Crop>): IntArray {
+    fun stitchFloor(frames: List<Fisheye>, crops: List<Crop>, seenOut: BooleanArray? = null, photoOut: IntArray? = null): IntArray {
         val n = GROUND_N; val res = 2 * GROUND_EXT / n
         val total = n * n
         val camIdx = frames.indices
@@ -600,6 +609,12 @@ object SurroundBuilder {
             }
             if (s > 1e-4) { outR[k] = (r / s).toFloat(); outG[k] = (gg / s).toFloat(); outB[k] = (b / s).toFloat(); have[k] = true }
         }
+        seenOut?.let { have.copyInto(it) }
+        photoOut?.let { o ->
+            for (k in 0 until total) if (have[k]) {
+                o[k] = (outR[k].toInt().coerceIn(0, 255) shl 16) or (outG[k].toInt().coerceIn(0, 255) shl 8) or outB[k].toInt().coerceIn(0, 255)
+            }
+        }
         // Blind spots: fill smoothly from around them (push-pull), a little darker.
         val fill = pushPullFill(outR, outG, outB, have, n)
         val alpha = blurMask(have, n, 3)
@@ -608,12 +623,15 @@ object SurroundBuilder {
             val a = alpha[k]
             val r = (k / n); val cc = k % n
             val gx = -GROUND_EXT + (cc + 0.5) * res; val gy = GROUND_EXT - (r + 0.5) * res
-            val fade = ((GROUND_EXT - hypot(gx, gy)) / 4.0).coerceIn(0.0, 1.0)
+            val fade = edgeFade(hypot(gx, gy))
             fun ch(v: Float, f: Float) = ((v * a + f * 0.82f * (1 - a)) * fade).toInt().coerceIn(0, 255)
             out[k] = (ch(outR[k], fill[0][k]) shl 16) or (ch(outG[k], fill[1][k]) shl 8) or ch(outB[k], fill[2][k])
         }
         return out
     }
+
+    /** The floor darkens towards the edge of what we know, so it doesn't end in a hard line. */
+    fun edgeFade(r: Double) = ((GROUND_EXT - r) / 4.0).coerceIn(0.0, 1.0)
 
     /** Fills the holes in an image by averaging down a pyramid and back up. */
     private fun pushPullFill(r: FloatArray, g: FloatArray, b: FloatArray, have: BooleanArray, n: Int): Array<FloatArray> {

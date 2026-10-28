@@ -61,9 +61,10 @@ import kotlin.math.exp
 import kotlin.math.sin
 
 /**
- * The 3D surroundings: the floor and walls built from the surround-view photos ([envGlb]), our
- * car in the middle, and a grey stand-in car for each neighbouring vehicle. Drag to orbit, pinch
- * to zoom, double-tap to reset.
+ * The 3D surroundings built from the surround-view photos ([envGlb]) with our car in the middle.
+ * Two looks: "painted" (everything as the cameras saw it, put back at its estimated depth) or
+ * "simple" (traced walls and a grey stand-in car for each neighbouring vehicle). Drag to orbit,
+ * pinch to zoom, double-tap to reset.
  */
 private class SurroundRenderer(
     context: Context,
@@ -94,6 +95,7 @@ private class SurroundRenderer(
     private var destroyed = false
     private var lastFrame = 0L
     private var placed = false
+    private var painted = false
 
     // Orbit camera, in the car frame (X right, Y forward, Z up); azimuth 0 = in front looking back.
     private var azimuth = -35.0
@@ -135,6 +137,11 @@ private class SurroundRenderer(
         resourceLoader.loadResources(env)
         env.releaseSourceData()
         scene.addEntities(env.entities)
+        for (e in env.getEntitiesByName("painted")) {
+            val ri = engine.renderableManager.getInstance(e)
+            if (ri != 0) { engine.renderableManager.setCastShadows(ri, false); engine.renderableManager.setReceiveShadows(ri, false) }
+        }
+        applyLook()
 
         setUpTouch(context)
         textureView.addOnAttachStateChangeListener(object : android.view.View.OnAttachStateChangeListener {
@@ -142,6 +149,28 @@ private class SurroundRenderer(
             override fun onViewDetachedFromWindow(v: android.view.View) = destroy()
         })
         if (textureView.isAttachedToWindow) start()
+    }
+
+    val hasPainted: Boolean get() = env.getEntitiesByName("painted").isNotEmpty()
+
+    /** Painted surroundings, or traced walls with stand-in cars. */
+    fun showPainted(on: Boolean) {
+        if (destroyed) return
+        painted = on && hasPainted
+        applyLook()
+    }
+
+    private fun applyLook() {
+        val rm = engine.renderableManager
+        fun show(entities: IntArray, on: Boolean) {
+            for (e in entities) {
+                val ri = rm.getInstance(e)
+                if (ri != 0) rm.setLayerMask(ri, 0xFF, if (on) 0x01 else 0x00)
+            }
+        }
+        show(env.getEntitiesByName("painted"), painted)
+        show(env.getEntitiesByName("walls"), !painted)
+        if (placed) for (k in 1 until instances.size) instances[k]?.let { show(it.entities, !painted) }
     }
 
     /** Puts the stand-in cars where the vehicles were found, in grey, without charging cables. */
@@ -177,6 +206,7 @@ private class SurroundRenderer(
                 }
             }
         }
+        applyLook()
     }
 
     private fun setUpTouch(context: Context) {
@@ -322,7 +352,7 @@ private class SurroundRenderer(
 
 /** The orbitable 3D surroundings, or a note if 3D can't run here. */
 @Composable
-fun Surround3DView(envGlb: ByteArray, vehicles: List<Vehicle>, modifier: Modifier = Modifier) {
+fun Surround3DView(envGlb: ByteArray, vehicles: List<Vehicle>, painted: Boolean, modifier: Modifier = Modifier, onHasPainted: (Boolean) -> Unit = {}) {
     var failed by remember { mutableStateOf(false) }
     if (failed) {
         Box(modifier.background(Color(0xFF0A0B0D)), contentAlignment = Alignment.Center) {
@@ -338,8 +368,10 @@ fun Surround3DView(envGlb: ByteArray, vehicles: List<Vehicle>, modifier: Modifie
                     .getOrNull()
                 if (r == null) failed = true
                 tv.tag = r
+                onHasPainted(r?.hasPainted == true)
             }
         },
+        update = { tv -> (tv.tag as? SurroundRenderer)?.showPainted(painted) },
         modifier = modifier,
     )
 }
@@ -355,19 +387,42 @@ fun Surround3DScreen(vm: MainViewModel, onBack: () -> Unit) {
         val scene = state.scene
         when {
             scene != null -> Box(Modifier.fillMaxSize()) {
-                Surround3DView(scene.glb, scene.vehicles, Modifier.fillMaxSize())
-                Text(
-                    "Built from the car's photos: grey cars are stand-ins for vehicles it spotted, walls are traced from estimated depth. Drag to look around.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Color.White.copy(alpha = 0.75f),
-                    modifier = Modifier.align(Alignment.BottomStart).padding(16.dp),
-                )
+                var painted by remember { mutableStateOf(true) }
+                var canPaint by remember { mutableStateOf(false) }
+                Surround3DView(scene.glb, scene.vehicles, painted, Modifier.fillMaxSize()) { canPaint = it }
+                Column(Modifier.align(Alignment.BottomStart).padding(16.dp)) {
+                    if (canPaint) {
+                        Row(
+                            Modifier.padding(bottom = 10.dp).clip(CircleShape).background(Color.Black.copy(alpha = 0.55f)).padding(3.dp),
+                        ) {
+                            for ((label, on) in listOf("Painted" to true, "Simple" to false)) {
+                                val sel = painted == on
+                                Text(
+                                    label,
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = if (sel) Color.Black else Color.White,
+                                    modifier = Modifier.clip(CircleShape).background(if (sel) Color.White else Color.Transparent)
+                                        .pressable { painted = on }.padding(horizontal = 16.dp, vertical = 8.dp),
+                                )
+                            }
+                        }
+                    }
+                    Text(
+                        if (canPaint && painted) {
+                            "Built on your phone from the car's photos: each pixel put back at its estimated depth. Floor the cameras couldn't see is painted in by AI. Drag to look around."
+                        } else {
+                            "Built from the car's photos: grey cars are stand-ins for vehicles it spotted, walls are traced from estimated depth. Drag to look around."
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.White.copy(alpha = 0.75f),
+                    )
+                }
             }
             state.needsDownload -> Column(Modifier.padding(20.dp)) {
                 Text("One-time download", style = MaterialTheme.typography.titleLarge)
                 Text(
-                    "The 3D view uses two AI models that run on your phone: one estimates depth, the other spots cars. " +
-                        "They're about ${io.github.alamo3.openblue.svm3d.ModelStore.TOTAL_BYTES / 1_000_000} MB together and download once, from GitHub. Best on Wi-Fi.",
+                    "The 3D view uses AI models that run on your phone: one estimates depth, one spots cars, one paints in the floor the cameras couldn't see. " +
+                        "That's about ${(state.downloadBytes.takeIf { it > 0 } ?: io.github.alamo3.openblue.svm3d.ModelStore.TOTAL_BYTES) / 1_000_000} MB to download once, from GitHub. Best on Wi-Fi.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = scheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 8.dp),

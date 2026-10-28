@@ -7,8 +7,9 @@ import kotlin.math.hypot
 import kotlin.math.min
 
 /**
- * Writes the surroundings (floor and walls) as a binary glTF, ready for Filament's glTF loader.
- * Vehicles aren't in it: the renderer places copies of the car model for those.
+ * Writes the surroundings as a binary glTF, ready for Filament's glTF loader: the floor, the simple
+ * traced walls (node "walls") and, if there is one, the painted surface (node "painted"); the viewer
+ * shows one or the other. Vehicles aren't in it: the renderer places copies of the car model for those.
  *
  * glTF axes are Y-up; we map the car frame (X right, Y forward, Z up) to glTF (-X, Z, Y), which
  * matches the car model (+X = car's left, +Z = front).
@@ -92,34 +93,45 @@ object SceneGlb {
                 idx += listOf(base, base + 1, base + 2, base, base + 2, base + 3)
             }
         }
-        val hasWalls = idx.isNotEmpty()
-        var wallPrim = ""
-        if (hasWalls) {
+        val meshes = ArrayList<String>(); val nodes = ArrayList<String>()
+        meshes += "{\"name\":\"floor\",\"primitives\":[{\"attributes\":{\"POSITION\":$gpA,\"NORMAL\":$gnA,\"TEXCOORD_0\":$guvA},\"indices\":$giA,\"material\":0}]}"
+        nodes += "{\"mesh\":0,\"name\":\"floor\"}"
+        if (idx.isNotEmpty()) {
             val p = pos.toFloatArray()
             val pA = addAccessor(addView(floats(p), 34962), 5126, p.size / 3, "VEC3", bounds(p))
             val nA = addAccessor(addView(floats(nrm.toFloatArray()), 34962), 5126, p.size / 3, "VEC3")
             val cA = addAccessor(addView(floats(col.toFloatArray()), 34962), 5126, p.size / 3, "VEC3")
             val iA = addAccessor(addView(ints(idx.toIntArray()), 34963), 5125, idx.size, "SCALAR")
-            wallPrim = "{\"attributes\":{\"POSITION\":$pA,\"NORMAL\":$nA,\"COLOR_0\":$cA},\"indices\":$iA,\"material\":1}"
+            nodes += "{\"mesh\":${meshes.size},\"name\":\"walls\"}"
+            meshes += "{\"name\":\"walls\",\"primitives\":[{\"attributes\":{\"POSITION\":$pA,\"NORMAL\":$nA,\"COLOR_0\":$cA},\"indices\":$iA,\"material\":1}]}"
+        }
+        val painted = scene.painted
+        if (painted != null && painted.triangleCount > 0) {
+            // Car frame -> glTF (-X, Z, Y).
+            val src = painted.positions
+            val p = FloatArray(src.size)
+            for (v in 0 until src.size / 3) { p[3 * v] = -src[3 * v]; p[3 * v + 1] = src[3 * v + 2]; p[3 * v + 2] = src[3 * v + 1] }
+            val pA = addAccessor(addView(floats(p), 34962), 5126, p.size / 3, "VEC3", bounds(p))
+            val cA = addAccessor(addView(floats(painted.colors), 34962), 5126, p.size / 3, "VEC3")
+            val iA = addAccessor(addView(ints(painted.indices), 34963), 5125, painted.indices.size, "SCALAR")
+            nodes += "{\"mesh\":${meshes.size},\"name\":\"painted\"}"
+            meshes += "{\"name\":\"painted\",\"primitives\":[{\"attributes\":{\"POSITION\":$pA,\"COLOR_0\":$cA},\"indices\":$iA,\"material\":2}]}"
         }
         align()
-
-        val meshes = StringBuilder("[{\"name\":\"floor\",\"primitives\":[{\"attributes\":{\"POSITION\":$gpA,\"NORMAL\":$gnA,\"TEXCOORD_0\":$guvA},\"indices\":$giA,\"material\":0}]}")
-        if (hasWalls) meshes.append(",{\"name\":\"walls\",\"primitives\":[$wallPrim]}")
-        meshes.append(']')
-        val nodes = if (hasWalls) "[{\"mesh\":0,\"name\":\"floor\"},{\"mesh\":1,\"name\":\"walls\"}]" else "[{\"mesh\":0,\"name\":\"floor\"}]"
-        val sceneNodes = if (hasWalls) "[0,1]" else "[0]"
+        val sceneNodes = nodes.indices.joinToString(",", "[", "]")
         val json = """
             {"asset":{"version":"2.0","generator":"Open Blue"},
              "extensionsUsed":["KHR_materials_unlit"],
              "scene":0,"scenes":[{"nodes":$sceneNodes}],
-             "nodes":$nodes,
-             "meshes":$meshes,
+             "nodes":${nodes.joinToString(",", "[", "]")},
+             "meshes":${meshes.joinToString(",", "[", "]")},
              "materials":[
                {"name":"floor","doubleSided":true,"extensions":{"KHR_materials_unlit":{}},
                 "pbrMetallicRoughness":{"baseColorTexture":{"index":0},"metallicFactor":0,"roughnessFactor":1}},
                {"name":"wall","doubleSided":true,
-                "pbrMetallicRoughness":{"baseColorFactor":[1,1,1,1],"metallicFactor":0,"roughnessFactor":0.85}}
+                "pbrMetallicRoughness":{"baseColorFactor":[1,1,1,1],"metallicFactor":0,"roughnessFactor":0.85}},
+               {"name":"painted","doubleSided":true,"extensions":{"KHR_materials_unlit":{}},
+                "pbrMetallicRoughness":{"baseColorFactor":[1,1,1,1],"metallicFactor":0,"roughnessFactor":1}}
              ],
              "textures":[{"sampler":0,"source":0}],
              "samplers":[{"magFilter":9729,"minFilter":9987,"wrapS":33071,"wrapT":33071}],
