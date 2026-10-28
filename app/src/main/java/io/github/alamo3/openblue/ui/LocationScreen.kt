@@ -91,7 +91,7 @@ fun LocationScreen(vm: MainViewModel, onBack: () -> Unit) {
                     val any = Intent(Intent.ACTION_VIEW, Uri.parse("geo:${loc.lat},${loc.lon}?q=${loc.lat},${loc.lon}(Car)"))
                     runCatching { context.startActivity(gmaps) }.onFailure { runCatching { context.startActivity(any) } }
                 }
-                BigButton(Icons.Rounded.MyLocation, "Locate again", primary = false, enabled = vm.canAct, modifier = Modifier.weight(1f)) {
+                BigButton(Icons.Rounded.MyLocation, if (loc == null) "Locate" else "Locate again", primary = false, enabled = vm.canAct, modifier = Modifier.weight(1f)) {
                     vm.locate()
                 }
             }
