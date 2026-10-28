@@ -137,7 +137,7 @@ private class SurroundRenderer(
         resourceLoader.loadResources(env)
         env.releaseSourceData()
         scene.addEntities(env.entities)
-        for (e in env.getEntitiesByName("painted")) {
+        for (e in env.getEntitiesByName("painted") + env.getEntitiesByName("backdrop")) {
             val ri = engine.renderableManager.getInstance(e)
             if (ri != 0) { engine.renderableManager.setCastShadows(ri, false); engine.renderableManager.setReceiveShadows(ri, false) }
         }
@@ -151,12 +151,16 @@ private class SurroundRenderer(
         if (textureView.isAttachedToWindow) start()
     }
 
+    /** Painted, stay inside the backdrop dome (radius 12.5 m round a point 1 m up). */
+    private val maxDistance get() = if (painted) 11.5 else 22.0
+
     val hasPainted: Boolean get() = env.getEntitiesByName("painted").isNotEmpty()
 
     /** Painted surroundings, or traced walls with stand-in cars. */
     fun showPainted(on: Boolean) {
         if (destroyed) return
         painted = on && hasPainted
+        distance = distance.coerceAtMost(maxDistance)
         applyLook()
     }
 
@@ -169,6 +173,7 @@ private class SurroundRenderer(
             }
         }
         show(env.getEntitiesByName("painted"), painted)
+        show(env.getEntitiesByName("backdrop"), painted)
         show(env.getEntitiesByName("walls"), !painted)
         if (placed) for (k in 1 until instances.size) instances[k]?.let { show(it.entities, !painted) }
     }
@@ -229,7 +234,7 @@ private class SurroundRenderer(
         })
         val pinch = ScaleGestureDetector(context, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
             override fun onScale(d: ScaleGestureDetector): Boolean {
-                distance = (distance / d.scaleFactor).coerceIn(5.0, 22.0)
+                distance = (distance / d.scaleFactor).coerceIn(5.0, maxDistance)
                 return true
             }
         })
@@ -409,7 +414,7 @@ fun Surround3DScreen(vm: MainViewModel, onBack: () -> Unit) {
                     }
                     Text(
                         if (canPaint && painted) {
-                            "Built on your phone from the car's photos: each pixel put back at its estimated depth. Floor the cameras couldn't see is painted in by AI. Drag to look around."
+                            "Built on your phone from the car's photos: each pixel nearby put back at its estimated depth, the far surroundings on a backdrop. What the cameras couldn't see is painted in by AI. Drag to look around."
                         } else {
                             "Built from the car's photos: grey cars are stand-ins for vehicles it spotted, walls are traced from estimated depth. Drag to look around."
                         },

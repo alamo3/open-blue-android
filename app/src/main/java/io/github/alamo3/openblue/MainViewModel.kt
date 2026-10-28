@@ -1267,8 +1267,8 @@ class MainViewModel(
     private var surroundShot: SvmShot? = null
     private var surroundJob: Job? = null
     private val modelStore by lazy { io.github.alamo3.openblue.svm3d.ModelStore(java.io.File(getApplication<Application>().filesDir, "models")) }
-    // v2: painted surface and painted-in floor.
-    private fun surroundCache(shot: SvmShot) = java.io.File(getApplication<Application>().filesDir, "svm3d/v2_${shot.utcTime ?: "latest"}")
+    // v3: painted surface, painted-in floor, backdrop panorama.
+    private fun surroundCache(shot: SvmShot) = java.io.File(getApplication<Application>().filesDir, "svm3d/v3_${shot.utcTime ?: "latest"}")
 
     /** Picks which set of photos the 3D view is for. */
     fun openSurround3d(shot: SvmShot) {
@@ -1347,23 +1347,41 @@ class MainViewModel(
                 } finally {
                     depth.close(); detector?.close()
                 }
-                // Paint in the floor no camera saw (one model at a time, to stay within memory).
+                // Paint in the floor and the far surroundings no camera saw (one model at a time, to
+                // stay within memory).
                 var ground = scene.ground
-                if (modelStore.has(io.github.alamo3.openblue.svm3d.ModelStore.INPAINT)) {
-                    viewModelScope.launch { surround = surround.copy(stage = "Painting in the floor the cameras couldn't see", progress = 0.8f) }
-                    runCatching {
-                        io.github.alamo3.openblue.svm3d.OnnxInpaint(modelStore.file(io.github.alamo3.openblue.svm3d.ModelStore.INPAINT)).use { lama ->
+                var backdrop: io.github.alamo3.openblue.svm3d.Backdrop? = null
+                val lama = if (modelStore.has(io.github.alamo3.openblue.svm3d.ModelStore.INPAINT)) {
+                    runCatching { io.github.alamo3.openblue.svm3d.OnnxInpaint(modelStore.file(io.github.alamo3.openblue.svm3d.ModelStore.INPAINT)) }
+                        .onFailure { android.util.Log.w("OpenBlue", "Inpainting model unavailable", it) }.getOrNull()
+                } else null
+                try {
+                    if (lama != null) {
+                        viewModelScope.launch { surround = surround.copy(stage = "Painting in the floor the cameras couldn't see", progress = 0.8f) }
+                        runCatching {
                             io.github.alamo3.openblue.svm3d.FloorFill.fill(scene, lama) { f ->
-                                viewModelScope.launch { surround = surround.copy(progress = 0.8f + 0.18f * f) }
+                                viewModelScope.launch { surround = surround.copy(progress = 0.8f + 0.09f * f) }
                             }
+                        }.onSuccess { ground = it }.onFailure { android.util.Log.w("OpenBlue", "Floor fill failed; keeping the plain fill", it) }
+                    }
+                    viewModelScope.launch { surround = surround.copy(stage = "Painting the sky and far surroundings", progress = 0.89f) }
+                    backdrop = runCatching {
+                        io.github.alamo3.openblue.svm3d.Backdrop.build(frames, lama) { f ->
+                            viewModelScope.launch { surround = surround.copy(progress = 0.89f + 0.09f * f) }
                         }
-                    }.onSuccess { ground = it }.onFailure { android.util.Log.w("OpenBlue", "Floor fill failed; keeping the plain fill", it) }
+                    }.onFailure { android.util.Log.w("OpenBlue", "Backdrop failed", it) }.getOrNull()
+                } finally {
+                    lama?.close()
                 }
                 val n = scene.groundSize
                 val argb = IntArray(n * n) { ground[it] or (0xFF shl 24) }
                 val bmp = Bitmap.createBitmap(argb, n, n, Bitmap.Config.ARGB_8888)
                 val jpeg = java.io.ByteArrayOutputStream().also { bmp.compress(Bitmap.CompressFormat.JPEG, 88, it) }.toByteArray()
-                val glb = io.github.alamo3.openblue.svm3d.SceneGlb.write(scene, jpeg)
+                val backdropJpeg = backdrop?.let { bd ->
+                    val bb = Bitmap.createBitmap(IntArray(bd.rgb.size) { bd.rgb[it] or (0xFF shl 24) }, bd.width, bd.height, Bitmap.Config.ARGB_8888)
+                    java.io.ByteArrayOutputStream().also { bb.compress(Bitmap.CompressFormat.JPEG, 85, it) }.toByteArray()
+                }
+                val glb = io.github.alamo3.openblue.svm3d.SceneGlb.write(scene, jpeg, backdropImage = backdropJpeg)
                 val res = SurroundResult(glb, scene.vehicles)
                 runCatching { saveSurround(surroundCache(shot), res) }
                 res
@@ -1380,7 +1398,7 @@ class MainViewModel(
 
     private fun saveSurround(base: java.io.File, r: SurroundResult) {
         base.parentFile?.mkdirs()
-        base.parentFile?.listFiles { f -> f.name.startsWith("v1_") }?.forEach { it.delete() }  // older format
+        base.parentFile?.listFiles { f -> f.name.startsWith("v1_") || f.name.startsWith("v2_") }?.forEach { it.delete() }  // older formats
         java.io.File(base.path + ".glb").writeBytes(r.glb)
         java.io.File(base.path + ".txt").writeText(r.vehicles.joinToString("\n") { "${it.x} ${it.y} ${it.heading} ${it.length} ${it.height} ${it.kind}" })
     }

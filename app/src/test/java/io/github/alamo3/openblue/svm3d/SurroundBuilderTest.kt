@@ -115,6 +115,7 @@ class SurroundBuilderTest {
         assertTrue(mesh.colors.all { it in 0f..1f })
         val json = glbJson(SceneGlb.write(scene, byteArrayOf(1, 2, 3, 4)))
         assertTrue(json.contains("\"painted\""))
+        assertTrue(glbJson(SceneGlb.write(scene, byteArrayOf(1, 2, 3, 4), backdropImage = byteArrayOf(5, 6, 7))).contains("\"backdrop\""))
     }
 
     @Test fun floorFillPaintsOnlyWhatWasNotSeen() {
@@ -153,6 +154,44 @@ class SurroundBuilderTest {
         assertEquals(0f, d[4 * n + 4], 0f)
         assertEquals(4f, d[4 * n + 8], 0.01f)
         assertEquals(4 * kotlin.math.sqrt(2f), d[0], 0.01f)
+    }
+
+    @Test fun backdropDomeFacesInwardAndMeetsTheFloor() {
+        val (pos, uv, idx) = SceneGlb.dome()
+        assertEquals(0, idx.size % 3)
+        assertTrue(uv.all { it in 0f..1f })
+        // glTF axes: Y up. Every triangle faces the eye point (0, EYE_Z, 0).
+        for (t in 0 until idx.size / 3 step 37) {
+            fun p(k: Int, c: Int) = pos[3 * idx[3 * t + k] + c].toDouble()
+            val ux = p(1, 0) - p(0, 0); val uy = p(1, 1) - p(0, 1); val uz = p(1, 2) - p(0, 2)
+            val vx = p(2, 0) - p(0, 0); val vy = p(2, 1) - p(0, 1); val vz = p(2, 2) - p(0, 2)
+            val nx = uy * vz - uz * vy; val ny = uz * vx - ux * vz; val nz = ux * vy - uy * vx
+            if (nx * nx + ny * ny + nz * nz < 1e-12) continue  // degenerate at the top
+            assertTrue("triangle $t", nx * -p(0, 0) + ny * (Backdrop.EYE_Z - p(0, 1)) + nz * -p(0, 2) > 0)
+        }
+        // The lowest ring sits on the floor.
+        var lowest = Double.MAX_VALUE
+        for (v in 0 until pos.size / 3) lowest = minOf(lowest, pos[3 * v + 1].toDouble())
+        assertEquals(0.0, lowest, 1e-3)
+    }
+
+    @Test fun backdropSeesTheHorizonButNotTheSky() {
+        val frames = SvmCalibration.ALL.map { frame(it) }
+        val seen = BooleanArray(Backdrop.WIDTH * Backdrop.HEIGHT)
+        Backdrop.stitch(frames, seen)
+        fun row(e: Double) = Backdrop.rowOfElevation(e).toInt()
+        val w = Backdrop.WIDTH
+        val horizon = (0 until w).count { seen[row(2.0) * w + it] }
+        val zenith = (0 until w).count { seen[row(78.0) * w + it] }
+        assertTrue("horizon seen in $horizon of $w columns", horizon > w * 0.9)
+        assertTrue("near the top only $zenith", zenith < w / 2)
+        // With an inpainter, nothing is left unpainted.
+        val grey = object : Inpainter {
+            override fun inpaint(rgb: ByteArray, hole: BooleanArray) = ByteArray(rgb.size) { 77 }
+        }
+        val bd = Backdrop.build(frames, grey)
+        val top = row(78.0)
+        assertTrue((0 until w).all { bd.rgb[top * w + it] != 0 })
     }
 
     private fun glbJson(glb: ByteArray): String {

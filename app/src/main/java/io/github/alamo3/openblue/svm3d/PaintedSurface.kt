@@ -22,6 +22,8 @@ object PaintedSurface {
     private const val STEP = 2
     /** Ignore anything further than this along the ray: depth gets too coarse to be worth drawing. */
     private const val MAX_T = 25f
+    /** Only what's within this of the car (metres, along the ground). */
+    const val REACH = 11.5
     /** A pixel whose depth jumps by more than this (in log) to a neighbour sits on an edge: neither side. */
     private const val EDGE = 0.06
 
@@ -60,6 +62,8 @@ object PaintedSurface {
                 // ...and to the camera whose side of the car it's on.
                 if (angle(Math.toDegrees(atan2(px, py)), SvmCalibration.SECTOR.getValue(c.camera.name)) > 50) continue
                 if (abs(px) < W / 2 + 0.05 && abs(py) < L / 2 + 0.05 && pz < 1.7) continue
+                // Further out the depth is too rough for a surface; the backdrop panorama shows it.
+                if (hypot(px, py) > REACH) continue
                 // The floor is drawn separately (stitched, with the gaps painted in); keep what stands up.
                 val tg = c.floorT[k]
                 if (tg.isFinite() && t > tg * 0.85) continue
@@ -79,9 +83,9 @@ object PaintedSurface {
             grids += Grid(c, m, x, y, z, keep, col, lt)
         }
 
-        // Level patches standing off the floor outside any vehicle aren't real: they're far floor the
-        // depth scale bent upwards, or ceiling. Find them as 10 cm columns whose points are all at
-        // one height.
+        // Level patches standing off the floor outside any vehicle aren't real: they're floor the
+        // depth put a little too near (so it hovers), far floor the depth scale bent upwards, or
+        // ceiling. Find them as 10 cm columns whose points are all at one height.
         val ext = MAX_T + 3.0; val cell = 0.1; val cn = (2 * ext / cell).toInt()
         val zmin = FloatArray(cn * cn) { Float.MAX_VALUE }; val zmax = FloatArray(cn * cn) { -Float.MAX_VALUE }; val cnt = IntArray(cn * cn)
         fun cellOf(x: Float, y: Float): Int {
@@ -94,7 +98,7 @@ object PaintedSurface {
         }
         for (gd in grids) for (g in gd.keep.indices) if (gd.keep[g]) {
             val q = cellOf(gd.x[g], gd.y[g])
-            val flat = cnt[q] >= 3 && zmax[q] - zmin[q] < 0.12f && zmin[q] > 0.3f
+            val flat = cnt[q] >= 2 && zmax[q] - zmin[q] < 0.12f
             if (flat && !SurroundBuilder.inAnyVehicle(vehicles, gd.x[g].toDouble(), gd.y[g].toDouble())) gd.keep[g] = false
         }
 

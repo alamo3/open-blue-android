@@ -173,14 +173,7 @@ object SurroundBuilder {
                 val c = Crop(view, siblings)
                 val n = view.n
                 val (mx, my) = if (cam.name == "left" || cam.name == "right") 0.08 to 0.08 else 0.08 to 0.22
-                // Our own car's body, as a box, so rays that hit it are left out.
-                val lo = doubleArrayOf(-W / 2 - 0.02, -L / 2, 0.0); val hi = doubleArrayOf(W / 2 + 0.02, L / 2, 1.6)
-                when (cam.name) {
-                    "front" -> hi[1] = min(hi[1], cam.y - 0.05)
-                    "rear" -> lo[1] = max(lo[1], cam.y + 0.05)
-                    "left" -> lo[0] = max(lo[0], cam.x + 0.08)
-                    "right" -> hi[0] = min(hi[0], cam.x - 0.08)
-                }
+                val (lo, hi) = ownCarBox(cam)
                 var validCount = 0
                 for (i in 0 until n) for (j in 0 until n) {
                     val k = i * n + j
@@ -206,7 +199,19 @@ object SurroundBuilder {
         return out
     }
 
-    private fun hitsBox(o: DoubleArray, d: DoubleArray, lo: DoubleArray, hi: DoubleArray): Boolean {
+    /** Our own car's body as a box, trimmed so it stops just short of [cam], for rays that hit it. */
+    internal fun ownCarBox(cam: SvmCamera): Pair<DoubleArray, DoubleArray> {
+        val lo = doubleArrayOf(-W / 2 - 0.02, -L / 2, 0.0); val hi = doubleArrayOf(W / 2 + 0.02, L / 2, 1.6)
+        when (cam.name) {
+            "front" -> hi[1] = min(hi[1], cam.y - 0.05)
+            "rear" -> lo[1] = max(lo[1], cam.y + 0.05)
+            "left" -> lo[0] = max(lo[0], cam.x + 0.08)
+            "right" -> hi[0] = min(hi[0], cam.x - 0.08)
+        }
+        return lo to hi
+    }
+
+    internal fun hitsBox(o: DoubleArray, d: DoubleArray, lo: DoubleArray, hi: DoubleArray): Boolean {
         var tmin = Double.NEGATIVE_INFINITY; var tmax = Double.POSITIVE_INFINITY
         for (a in 0..2) {
             if (abs(d[a]) < 1e-12) {
@@ -630,8 +635,8 @@ object SurroundBuilder {
         return out
     }
 
-    /** The floor darkens towards the edge of what we know, so it doesn't end in a hard line. */
-    fun edgeFade(r: Double) = ((GROUND_EXT - r) / 4.0).coerceIn(0.0, 1.0)
+    /** The floor fades out just before the backdrop dome (radius [Backdrop.RADIUS]) meets it. */
+    fun edgeFade(r: Double) = ((Backdrop.FLOOR_REACH - r) / 1.5).coerceIn(0.0, 1.0)
 
     /** Fills the holes in an image by averaging down a pyramid and back up. */
     private fun pushPullFill(r: FloatArray, g: FloatArray, b: FloatArray, have: BooleanArray, n: Int): Array<FloatArray> {

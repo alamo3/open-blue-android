@@ -15,7 +15,8 @@ import kotlin.math.min
  * matches the car model (+X = car's left, +Z = front).
  */
 object SceneGlb {
-    fun write(scene: SurroundScene, groundImage: ByteArray, groundMime: String = "image/jpeg"): ByteArray {
+    /** [backdropImage]: the [Backdrop] panorama as a JPEG, drawn on a dome (node "backdrop"). */
+    fun write(scene: SurroundScene, groundImage: ByteArray, groundMime: String = "image/jpeg", backdropImage: ByteArray? = null): ByteArray {
         val bin = ByteArrayOutputStream()
         val views = StringBuilder()
         val accessors = StringBuilder()
@@ -117,8 +118,24 @@ object SceneGlb {
             nodes += "{\"mesh\":${meshes.size},\"name\":\"painted\"}"
             meshes += "{\"name\":\"painted\",\"primitives\":[{\"attributes\":{\"POSITION\":$pA,\"COLOR_0\":$cA},\"indices\":$iA,\"material\":2}]}"
         }
+        var backdropView = -1
+        if (backdropImage != null) {
+            val (p, uv, ix) = dome()
+            val pA = addAccessor(addView(floats(p), 34962), 5126, p.size / 3, "VEC3", bounds(p))
+            val tA = addAccessor(addView(floats(uv), 34962), 5126, uv.size / 2, "VEC2")
+            val iA = addAccessor(addView(ints(ix), 34963), 5125, ix.size, "SCALAR")
+            backdropView = addView(backdropImage, null)
+            nodes += "{\"mesh\":${meshes.size},\"name\":\"backdrop\"}"
+            meshes += "{\"name\":\"backdrop\",\"primitives\":[{\"attributes\":{\"POSITION\":$pA,\"TEXCOORD_0\":$tA},\"indices\":$iA,\"material\":3}]}"
+        }
         align()
         val sceneNodes = nodes.indices.joinToString(",", "[", "]")
+        val images = StringBuilder("{\"bufferView\":$imgView,\"mimeType\":\"$groundMime\"}")
+        val textures = StringBuilder("{\"sampler\":0,\"source\":0}")
+        if (backdropView >= 0) {
+            images.append(",{\"bufferView\":$backdropView,\"mimeType\":\"image/jpeg\"}")
+            textures.append(",{\"sampler\":1,\"source\":1}")
+        }
         val json = """
             {"asset":{"version":"2.0","generator":"Open Blue"},
              "extensionsUsed":["KHR_materials_unlit"],
@@ -131,11 +148,14 @@ object SceneGlb {
                {"name":"wall","doubleSided":true,
                 "pbrMetallicRoughness":{"baseColorFactor":[1,1,1,1],"metallicFactor":0,"roughnessFactor":0.85}},
                {"name":"painted","doubleSided":true,"extensions":{"KHR_materials_unlit":{}},
-                "pbrMetallicRoughness":{"baseColorFactor":[1,1,1,1],"metallicFactor":0,"roughnessFactor":1}}
+                "pbrMetallicRoughness":{"baseColorFactor":[1,1,1,1],"metallicFactor":0,"roughnessFactor":1}},
+               {"name":"backdrop","extensions":{"KHR_materials_unlit":{}},
+                "pbrMetallicRoughness":{"baseColorTexture":{"index":${if (backdropView >= 0) 1 else 0}},"metallicFactor":0,"roughnessFactor":1}}
              ],
-             "textures":[{"sampler":0,"source":0}],
-             "samplers":[{"magFilter":9729,"minFilter":9987,"wrapS":33071,"wrapT":33071}],
-             "images":[{"bufferView":$imgView,"mimeType":"$groundMime"}],
+             "textures":[$textures],
+             "samplers":[{"magFilter":9729,"minFilter":9987,"wrapS":33071,"wrapT":33071},
+                         {"magFilter":9729,"minFilter":9729,"wrapS":10497,"wrapT":33071}],
+             "images":[$images],
              "accessors":[$accessors],
              "bufferViews":[$views],
              "buffers":[{"byteLength":${bin.size()}}]}
@@ -151,5 +171,44 @@ object SceneGlb {
         out.putInt(jsonBytes.size); out.putInt(0x4E4F534A); out.put(jsonBytes)
         out.putInt(binBytes.size); out.putInt(0x004E4942); out.put(binBytes)
         return out.array()
+    }
+
+    /**
+     * The backdrop dome in glTF axes: a sphere of [Backdrop.RADIUS] round the eye point, from where
+     * it meets the floor up to the top, facing inwards (so from outside only its far side shows).
+     */
+    internal fun dome(): Triple<FloatArray, FloatArray, IntArray> {
+        val na = 96; val ne = 28
+        val eBottom = Backdrop.DOME_BOTTOM_DEG; val eTop = 90.0
+        val pos = FloatArray((na + 1) * (ne + 1) * 3); val uv = FloatArray((na + 1) * (ne + 1) * 2)
+        for (j in 0..ne) {
+            val eDeg = eBottom + (eTop - eBottom) * j / ne
+            val e = Math.toRadians(eDeg)
+            val v = ((Backdrop.rowOfElevation(eDeg) + 0.5) / Backdrop.HEIGHT).coerceIn(0.0, 1.0)
+            for (i in 0..na) {
+                val az = Math.toRadians(360.0 * i / na)
+                val x = Backdrop.RADIUS * kotlin.math.sin(az) * kotlin.math.cos(e)
+                val y = Backdrop.RADIUS * kotlin.math.cos(az) * kotlin.math.cos(e)
+                val z = Backdrop.EYE_Z + Backdrop.RADIUS * kotlin.math.sin(e)
+                val k = j * (na + 1) + i
+                pos[3 * k] = (-x).toFloat(); pos[3 * k + 1] = z.toFloat(); pos[3 * k + 2] = y.toFloat()
+                uv[2 * k] = (i.toDouble() / na).toFloat(); uv[2 * k + 1] = v.toFloat()
+            }
+        }
+        val idx = IntArray(na * ne * 6)
+        var q = 0
+        for (j in 0 until ne) for (i in 0 until na) {
+            val a = j * (na + 1) + i; val b = a + 1; val c = a + na + 1; val d = c + 1
+            idx[q++] = a; idx[q++] = b; idx[q++] = c; idx[q++] = b; idx[q++] = d; idx[q++] = c
+        }
+        // Make the triangles face the centre (counter-clockwise seen from inside).
+        val t = 3 * (ne / 2 * na)
+        fun p(k: Int, c: Int) = pos[3 * idx[t + k] + c].toDouble()
+        val ux = p(1, 0) - p(0, 0); val uy = p(1, 1) - p(0, 1); val uz = p(1, 2) - p(0, 2)
+        val vx = p(2, 0) - p(0, 0); val vy = p(2, 1) - p(0, 1); val vz = p(2, 2) - p(0, 2)
+        val nx = uy * vz - uz * vy; val ny = uz * vx - ux * vz; val nz = ux * vy - uy * vx
+        val inward = nx * -p(0, 0) + ny * (Backdrop.EYE_Z - p(0, 1)) + nz * -p(0, 2)
+        if (inward < 0) for (k in idx.indices step 3) { val s = idx[k + 1]; idx[k + 1] = idx[k + 2]; idx[k + 2] = s }
+        return Triple(pos, uv, idx)
     }
 }
