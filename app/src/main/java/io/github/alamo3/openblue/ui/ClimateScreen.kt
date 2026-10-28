@@ -66,8 +66,6 @@ import io.github.alamo3.openblue.api.Heating
 import io.github.alamo3.openblue.api.SeatLevel
 
 private val DURATIONS = listOf(10, 15, 20, 30)
-private val SEAT_NAMES = listOf("Driver", "Passenger", "Rear left", "Rear right")
-
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ClimateScreen(vm: MainViewModel, onBack: () -> Unit) {
@@ -136,10 +134,17 @@ fun ClimateScreen(vm: MainViewModel, onBack: () -> Unit) {
 
             // Seats
             Spacer(Modifier.height(24.dp))
-            CabinMap(
+            val wheelHeated = if (vm.caps.splitHeating) {
+                e.heating == Heating.STEERING.code || e.heating == Heating.STEERING_REAR_MIRRORS.code
+            } else {
+                e.heating != 0
+            }
+            CabinView(
                 seats = e.seats.map { SeatLevel.of(it) },
+                wheelHeated = wheelHeated,
+                defrost = e.defrost,
                 onSeat = { vm.cycleSeat(it) },
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.width(250.dp),
             )
             Text(
                 "Tap a seat to change it",
@@ -271,47 +276,6 @@ private fun PowerButton(running: Boolean, enabled: Boolean, onClick: () -> Unit)
 }
 
 /** Top-down cabin: a car body outline with the four seats where they sit (left-hand drive). */
-@Composable
-private fun CabinMap(seats: List<SeatLevel>, onSeat: (Int) -> Unit, modifier: Modifier) {
-    val outline = AppTheme.colors.hairline
-    val glass = MaterialTheme.colorScheme.outline
-    Box(modifier.height(350.dp), contentAlignment = Alignment.Center) {
-        Canvas(Modifier.width(250.dp).height(350.dp)) {
-            val stroke = 3.dp.toPx()
-            val r = 70.dp.toPx()
-            drawRoundRect(outline, cornerRadius = CornerRadius(r, r), style = Stroke(stroke))
-            // Windshield and rear glass
-            val inset = 34.dp.toPx()
-            drawLine(glass, Offset(inset, 62.dp.toPx()), Offset(size.width - inset, 62.dp.toPx()), stroke, StrokeCap.Round)
-            drawLine(glass, Offset(inset + 8.dp.toPx(), size.height - 30.dp.toPx()), Offset(size.width - inset - 8.dp.toPx(), size.height - 30.dp.toPx()), stroke, StrokeCap.Round)
-            // Mirrors
-            val my = 78.dp.toPx()
-            drawRoundRect(outline, Offset(-14.dp.toPx(), my), Size(14.dp.toPx(), 22.dp.toPx()), CornerRadius(6.dp.toPx()))
-            drawRoundRect(outline, Offset(size.width, my), Size(14.dp.toPx(), 22.dp.toPx()), CornerRadius(6.dp.toPx()))
-        }
-        Column(
-            Modifier.width(250.dp).padding(horizontal = 22.dp).padding(top = 52.dp),
-            verticalArrangement = Arrangement.spacedBy(18.dp),
-        ) {
-            Text(
-                "Front",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.fillMaxWidth(),
-                textAlign = TextAlign.Center,
-            )
-            for (row in 0..1) {
-                Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                    for (col in 0..1) {
-                        val i = row * 2 + col
-                        SeatButton(seats[i], SEAT_NAMES[i], { onSeat(i) }, Modifier.weight(1f))
-                    }
-                }
-            }
-        }
-    }
-}
-
 @Composable
 private fun PresetCard(
     settings: ClimateSettings,

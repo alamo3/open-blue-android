@@ -24,6 +24,9 @@ Source: "2024 Hyundai Ioniq 5 N" by Ddiaz Design (Sketchfab), CC BY-NC 4.0. Outp
    still shown where 3D can't run (`res/drawable-nodpi/car_still.webp`) is
    `... 40 12 0 none 1100 748`; the screenshot-test still `car_still_port.webp` is
    `... -120 12 1 none 1100 748`.
+5. `cabinview.py car.glb studio.hdr cabin.png 1.08 700 1500 -2.4 2.4` cuts the roof off at
+   1.08 m and renders the cabin from above for the climate screen
+   (`res/drawable-nodpi/cabin_top.webp`); seat positions are in `ui/CabinView.kt`.
 
 Run with Blender's Python module (`pip install bpy`). Part names and hinge axes are mirrored in
 `ui/CarModel.kt` (`Part`).

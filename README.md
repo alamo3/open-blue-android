@@ -7,7 +7,7 @@ It exists because the official app hides heated/ventilated seat controls for som
 ## Features
 
 - **Home:** a 3D model of the car, sitting on the ground, whose doors, frunk and tailgate open to match the real car. While climate runs, warm or cool air streams into the intake and through the cabin (and up the windshield when defrosting); while plugged in, a charging cable is in the port with current running down it. Drag to look around, pinch to zoom, double-tap to reset; the view swings round to whatever just changed; battery and range, charging time, and one-tap controls for lock/unlock, climate, camera and waking the car. Pull down to refresh.
-- **Climate:** temperature, a top-down cabin map where you tap each seat to cycle heat/cool levels, front defrost, heated wheel and rear defrost, run time, start/stop. Matches what your car supports (combined or split heating, heat-only rear seats).
+- **Climate:** temperature, the car's real cabin seen from above (roof cut away) where you tap each seat to cycle heat/cool levels and watch it warm up or breathe cool air, front defrost, heated wheel and rear defrost, run time, start/stop. Matches what your car supports (combined or split heating, heat-only rear seats).
 - **Presets:** your presets from mybluelink.ca plus presets saved on the phone; start in one tap or load into the controls.
 - **Surroundings:** asks the car for surround-view photos and shows the top, front, rear, left and right views.
 - **Vehicle:** locks, doors, windows, trunk/frunk, charge limits, 12V battery, tires, odometer.
