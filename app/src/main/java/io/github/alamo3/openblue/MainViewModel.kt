@@ -699,6 +699,15 @@ class MainViewModel(
     /** A place to drive to, from the phone's geocoder. */
     data class Place(val name: String, val detail: String?, val lat: Double, val lon: Double)
 
+    /** Trip planning avoids toll roads (route option 23 instead of 22). Remembered. */
+    var avoidTolls by mutableStateOf(store.avoidTolls)
+        private set
+
+    fun changeAvoidTolls(on: Boolean) {
+        store.avoidTolls = on
+        avoidTolls = on
+    }
+
     var placeResults by mutableStateOf<List<Place>>(emptyList())
         private set
     var placeSearching by mutableStateOf(false)

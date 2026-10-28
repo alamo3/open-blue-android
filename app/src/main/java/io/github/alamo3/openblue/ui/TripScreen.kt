@@ -141,6 +141,11 @@ fun TripScreen(vm: MainViewModel, onBack: () -> Unit) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     listOf(10, 20, 30, 50).forEach { v -> OptionPill("$v%", destinationSoc == v, { destinationSoc = v }) }
                 }
+                SettingSwitch(
+                    "Avoid tolls",
+                    "Keeps off toll roads such as the 407",
+                    vm.avoidTolls,
+                ) { vm.changeAvoidTolls(it) }
 
                 // Developer mode: try other route option codes (comma separated); each gets its own route.
                 if (vm.developerMode) {
@@ -148,7 +153,7 @@ fun TripScreen(vm: MainViewModel, onBack: () -> Unit) {
                         value = codes,
                         onValueChange = { v -> codes = v.filter { it.isDigit() || it == ',' || it == ' ' || it == '-' } },
                         label = { Text("Route option codes (developer)") },
-                        supportingText = { Text("The official app sends 22. Lists and ranges work: 22, 8, 0-31.") },
+                        supportingText = { Text("22 is the official route, 23 avoids tolls (the switch above). Lists and ranges work: 22, 8, 0-31.") },
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Ascii),
                         modifier = Modifier.fillMaxWidth().padding(top = 14.dp),
@@ -216,7 +221,10 @@ fun TripScreen(vm: MainViewModel, onBack: () -> Unit) {
                         .clip(CircleShape)
                         .background(if (ready) scheme.primary else scheme.primary.copy(alpha = 0.35f))
                         .pressable(ready) {
-                            val options = if (vm.developerMode) parseCodes(codes) else listOf(22)
+                            // Route option codes, worked out by trying them: 22 is the official app's
+                            // route, 23 the same avoiding tolls (the 407 vs the 403 near Toronto).
+                            val standard = if (vm.avoidTolls) ROUTE_AVOID_TOLLS else ROUTE_STANDARD
+                            val options = if (vm.developerMode && codes.trim() != "22") parseCodes(codes) else listOf(standard)
                             vm.planTrip(chargerSoc, destinationSoc, options)
                         }
                         .padding(vertical = 14.dp),
@@ -287,7 +295,7 @@ fun TripScreen(vm: MainViewModel, onBack: () -> Unit) {
                             .padding(top = 12.dp)
                             .clip(CircleShape)
                             .background(scheme.primary)
-                            .pressable { navigate(context, route, dest.lat, dest.lon) }
+                            .pressable { navigate(context, route, dest.lat, dest.lon, vm.avoidTolls) }
                             .padding(vertical = 14.dp),
                         horizontalArrangement = Arrangement.Center,
                         verticalAlignment = Alignment.CenterVertically,
@@ -297,7 +305,7 @@ fun TripScreen(vm: MainViewModel, onBack: () -> Unit) {
                         Text("Navigate in Google Maps", style = MaterialTheme.typography.labelLarge, color = scheme.onPrimary)
                     }
                     Text(
-                        "Charging stops are added as waypoints. On the road, Android Auto shows it on the car's screen.",
+                        if (vm.avoidTolls && route.stops.isNotEmpty()) "Charging stops are added as waypoints. Google Maps can't be told to avoid tolls along with waypoints, so turn on Avoid tolls in its route options too." else "Charging stops are added as waypoints. On the road, Android Auto shows it on the car's screen.",
                         style = MaterialTheme.typography.bodySmall,
                         color = scheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = 8.dp),
@@ -390,7 +398,13 @@ private fun StopRow(n: Int, s: TripStop) {
 }
 
 /** Opens Google Maps driving directions with the charging stops as waypoints. */
-private fun navigate(context: android.content.Context, r: TripRoute, lat: Double, lon: Double) {
+private fun navigate(context: android.content.Context, r: TripRoute, lat: Double, lon: Double, avoidTolls: Boolean) {
+    // Google's turn-by-turn link can avoid tolls but takes no waypoints; use it when there are no stops.
+    if (r.stops.isEmpty()) {
+        val nav = Intent(Intent.ACTION_VIEW, Uri.parse("google.navigation:q=$lat,$lon&mode=d" + if (avoidTolls) "&avoid=t" else ""))
+            .setPackage("com.google.android.apps.maps")
+        if (runCatching { context.startActivity(nav) }.isSuccess) return
+    }
     val waypoints = r.stops.joinToString("|") { "${it.lat},${it.lon}" }
     val url = buildString {
         append("https://www.google.com/maps/dir/?api=1&travelmode=driving&destination=$lat,$lon")
@@ -399,3 +413,7 @@ private fun navigate(context: android.content.Context, r: TripRoute, lat: Double
     val gmaps = Intent(Intent.ACTION_VIEW, Uri.parse(url)).setPackage("com.google.android.apps.maps")
     runCatching { context.startActivity(gmaps) }.onFailure { runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) } }
 }
+
+/** The official app's route option, and the same avoiding tolls. */
+private const val ROUTE_STANDARD = 22
+private const val ROUTE_AVOID_TOLLS = 23

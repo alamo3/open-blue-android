@@ -78,6 +78,11 @@ class SecureStore(private val prefs: SharedPreferences) {
         get() = prefs.getBoolean("developerMode", false)
         set(v) = prefs.edit().putBoolean("developerMode", v).apply()
 
+    /** Trip planning avoids toll roads. */
+    var avoidTolls: Boolean
+        get() = prefs.getBoolean("avoidTolls", false)
+        set(v) = prefs.edit().putBoolean("avoidTolls", v).apply()
+
     /** Ask for fingerprint/screen lock before unlocking the car. */
     var confirmUnlock: Boolean
         get() = prefs.getBoolean("confirmUnlock", true)
