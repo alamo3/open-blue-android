@@ -781,6 +781,56 @@ class MainViewModel(
         }
     }
 
+    /** One route option code tried on its own (developer scan). */
+    data class OptionResult(val code: Int, val status: Int?, val route: io.github.alamo3.openblue.api.TripRoute?, val error: String?)
+
+    var scanResults by mutableStateOf<List<OptionResult>>(emptyList())
+        private set
+    var scanning by mutableStateOf(false)
+        private set
+
+    /**
+     * Developer: asks the planner for each code in [codes] separately (one bad code can fail a
+     * whole request), then shows every route that came back so they can be compared.
+     */
+    fun scanRouteOptions(chargerSoc: Int, destinationSoc: Int, codes: List<Int>) {
+        val v = vehicle ?: return
+        val dest = tripDestination ?: return
+        val from = location ?: run { tripError = "Locate the car first"; locate(); return }
+        if (scanning || codes.isEmpty()) return
+        tripError = null
+        trip = null
+        scanResults = emptyList()
+        scanning = true
+        viewModelScope.launch {
+            val results = mutableListOf<OptionResult>()
+            for (code in codes) {
+                val r = try {
+                    if (!online || dryRunning) {
+                        delay(150)
+                        demoOptions = listOf(code)
+                        showDemoTrip()
+                        OptionResult(code, 0, trip?.routes?.firstOrNull(), null)
+                    } else {
+                        val plan = io.github.alamo3.openblue.api.TripPlan.from(
+                            api.iacRoute(v.id, v.vin, from.lat to from.lon, dest.lat to dest.lon, chargerSoc, destinationSoc, chargeService?.vendorNum ?: 0, listOf(code)),
+                        )
+                        OptionResult(code, plan.status, plan.routes.firstOrNull()?.copy(option = code), null)
+                    }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    OptionResult(code, null, null, describe(e))
+                }
+                results += r
+                scanResults = results.toList()
+            }
+            trip = io.github.alamo3.openblue.api.TripPlan(0, results.mapNotNull { it.route }, null)
+            if (trip?.routes.isNullOrEmpty()) tripError = "None of the codes returned a route"
+            scanning = false
+        }
+    }
+
     /** Screenshots and dry run: a made-up trip with two charging stops. */
     fun showDemoTrip() {
         val (lat, lon) = location?.let { it.lat to it.lon } ?: (43.6534 to -79.3841)

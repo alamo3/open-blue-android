@@ -146,13 +146,66 @@ fun TripScreen(vm: MainViewModel, onBack: () -> Unit) {
                 if (vm.developerMode) {
                     OutlinedTextField(
                         value = codes,
-                        onValueChange = { v -> codes = v.filter { it.isDigit() || it == ',' || it == ' ' } },
+                        onValueChange = { v -> codes = v.filter { it.isDigit() || it == ',' || it == ' ' || it == '-' } },
                         label = { Text("Route option codes (developer)") },
-                        supportingText = { Text("The official app sends 22. Try e.g. 22, 0, 1, 2, 6, 18 and compare.") },
+                        supportingText = { Text("The official app sends 22. Lists and ranges work: 22, 8, 0-31.") },
                         singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
+                        keyboardOptions = KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Ascii),
                         modifier = Modifier.fillMaxWidth().padding(top = 14.dp),
                     )
+                    val enabled = dest != null && loc != null && !vm.scanning && !vm.tripLoading
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(top = 10.dp)
+                            .clip(CircleShape)
+                            .background(scheme.surfaceContainerHigh)
+                            .pressable(enabled) { vm.scanRouteOptions(chargerSoc, destinationSoc, parseCodes(codes)) }
+                            .padding(vertical = 12.dp),
+                        horizontalArrangement = Arrangement.Center,
+                    ) {
+                        Text(
+                            if (vm.scanning) "Trying ${vm.scanResults.size + 1} of ${parseCodes(codes).size}…" else "Try each code on its own",
+                            style = MaterialTheme.typography.labelLarge,
+                        )
+                    }
+                    if (vm.scanResults.isNotEmpty()) {
+                        val base = vm.scanResults.firstOrNull { it.code == 22 }?.route
+                        Column(Modifier.padding(top = 10.dp)) {
+                            vm.scanResults.forEach { r ->
+                                val rt = r.route
+                                Row(
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .let { m ->
+                                            if (rt != null) m.clickable { routeIndex = vm.trip?.routes?.indexOfFirst { it.option == r.code }?.coerceAtLeast(0) ?: 0 } else m
+                                        }
+                                        .padding(vertical = 6.dp),
+                                ) {
+                                    Text("${r.code}", style = MaterialTheme.typography.titleSmall, modifier = Modifier.width(40.dp))
+                                    Text(
+                                        when {
+                                            rt != null -> buildString {
+                                                append("${(rt.distanceM / 1000.0).roundToInt()} km, ${hours(rt.seconds.toLong())}, ${rt.stops.size} stops")
+                                                if (base != null && rt !== base) {
+                                                    val dKm = (rt.distanceM - base.distanceM) / 1000.0
+                                                    val dMin = (rt.seconds - base.seconds) / 60
+                                                    append("  (%+.0f km, %+d min vs 22)".format(dKm, dMin))
+                                                }
+                                            }
+                                            r.status == 3 -> "No EV route found"
+                                            r.status == 1 -> "Rejected (status 1)"
+                                            r.status == 2 -> "Error (status 2)"
+                                            r.error != null -> r.error
+                                            else -> "No route (status ${r.status})"
+                                        },
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = if (rt != null) scheme.onSurface else scheme.onSurfaceVariant,
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
 
                 val ready = dest != null && loc != null && !vm.tripLoading
@@ -163,7 +216,7 @@ fun TripScreen(vm: MainViewModel, onBack: () -> Unit) {
                         .clip(CircleShape)
                         .background(if (ready) scheme.primary else scheme.primary.copy(alpha = 0.35f))
                         .pressable(ready) {
-                            val options = if (vm.developerMode) codes.split(',', ' ').mapNotNull { it.trim().toIntOrNull() }.distinct() else listOf(22)
+                            val options = if (vm.developerMode) parseCodes(codes) else listOf(22)
                             vm.planTrip(chargerSoc, destinationSoc, options)
                         }
                         .padding(vertical = 14.dp),
@@ -254,6 +307,21 @@ fun TripScreen(vm: MainViewModel, onBack: () -> Unit) {
         }
     }
 }
+
+/** "22, 8, 0-3" to [22, 8, 0, 1, 2, 3]. */
+private fun parseCodes(text: String): List<Int> = text.split(',', ' ').flatMap { part ->
+    val p = part.trim()
+    val range = Regex("^(\\d+)-(\\d+)$").find(p)
+    when {
+        range != null -> {
+            val (a, b) = range.destructured
+            val lo = a.toInt()
+            val hi = b.toInt()
+            if (hi >= lo && hi - lo <= 64) (lo..hi).toList() else emptyList()
+        }
+        else -> listOfNotNull(p.toIntOrNull())
+    }
+}.distinct()
 
 private fun hours(seconds: Long): String {
     val m = (seconds / 60.0).roundToInt()
