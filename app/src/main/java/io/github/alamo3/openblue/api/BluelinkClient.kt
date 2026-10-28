@@ -408,6 +408,8 @@ class BluelinkClient(private val store: SecureStore) {
         putJsonObject("vehicleInfo") {
             put("modelCode", modelCode.orEmpty())
             put("modelYear", modelYear.orEmpty())
+            // The official app always sends the brand (IACVehicleInfo defaults it to "H").
+            put("brand", "H")
         }
     }
 
