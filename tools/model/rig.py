@@ -272,7 +272,11 @@ bpy.ops.object.select_all(action='SELECT')
 bpy.ops.export_scene.gltf(filepath=OUT, export_format='GLB', export_yup=True, export_apply=True)
 print("exported", OUT, os.path.getsize(OUT))
 
-# The shadow should not be lit: mark its material unlit (KHR_materials_unlit) in the GLB's JSON chunk.
+# Final touches in the GLB's JSON chunk:
+# - the shadow should not be lit: mark its material unlit (KHR_materials_unlit);
+# - glass uses KHR_materials_transmission, which Filament renders with screen-space refraction
+#   that flickers over a transparent background (the windshield came and went as the view moved).
+#   Make it plain tinted, alpha-blended glass instead.
 import struct
 data = open(OUT, "rb").read()
 jlen = struct.unpack_from("<I", data, 12)[0]
@@ -281,6 +285,14 @@ for m in doc["materials"]:
     if m.get("name") == "ground_shadow":
         m.setdefault("extensions", {})["KHR_materials_unlit"] = {}
         m["alphaMode"] = "BLEND"
+    ext = m.get("extensions", {})
+    if "KHR_materials_transmission" in ext:
+        del ext["KHR_materials_transmission"]
+        if not ext: m.pop("extensions")
+        red = m.get("name") == "red_glass"
+        m["pbrMetallicRoughness"] = {"baseColorFactor": [0.55, 0.02, 0.02, 0.7] if red else [0.02, 0.025, 0.03, 0.62],
+                                     "metallicFactor": 0, "roughnessFactor": 0.04}
+doc["extensionsUsed"] = [e for e in doc.get("extensionsUsed", []) if e != "KHR_materials_transmission"]
 doc.setdefault("extensionsUsed", [])
 if "KHR_materials_unlit" not in doc["extensionsUsed"]: doc["extensionsUsed"].append("KHR_materials_unlit")
 js = json.dumps(doc, separators=(",", ":")).encode()
