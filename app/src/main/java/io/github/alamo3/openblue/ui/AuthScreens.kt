@@ -54,7 +54,7 @@ fun PrimaryButton(text: String, enabled: Boolean, loading: Boolean = false, modi
             .alpha(if (enabled || loading) 1f else 0.4f)
             .clip(CircleShape)
             .background(scheme.primary)
-            .pressable(enabled && !loading, onClick),
+            .pressable(enabled && !loading, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         if (loading) CircularProgressIndicator(color = scheme.onPrimary, strokeWidth = 2.dp, modifier = Modifier.size(22.dp))

@@ -12,7 +12,9 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -65,15 +67,26 @@ import io.github.alamo3.openblue.api.SeatLevel
 
 /** Press feedback shared by tappable controls: a slight springy shrink plus a haptic tick. */
 @Composable
-fun Modifier.pressable(enabled: Boolean = true, onClick: () -> Unit): Modifier {
+@OptIn(ExperimentalFoundationApi::class)
+fun Modifier.pressable(enabled: Boolean = true, onLongClick: (() -> Unit)? = null, onClick: () -> Unit): Modifier {
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val scale by animateFloatAsState(if (pressed) 0.94f else 1f, spring(dampingRatio = 0.55f, stiffness = 600f), label = "press")
     val haptics = LocalHapticFeedback.current
     return this
         .scale(scale)
-        .clickable(interactionSource = interaction, indication = null, enabled = enabled) {
-            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+        .combinedClickable(
+            interactionSource = interaction,
+            indication = null,
+            enabled = enabled,
+            onLongClick = onLongClick?.let { long ->
+                {
+                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                    long()
+                }
+            },
+        ) {
+            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
             onClick()
         }
 }
@@ -89,6 +102,7 @@ fun RoundControl(
     tint: Color = MaterialTheme.colorScheme.primary,
     enabled: Boolean = true,
     size: Dp = 64.dp,
+    onLongClick: (() -> Unit)? = null,
 ) {
     val scheme = MaterialTheme.colorScheme
     val bg by animateColorAsState(if (active) tint.copy(alpha = 0.16f) else scheme.surfaceContainerHigh, tween(250), label = "bg")
@@ -102,7 +116,7 @@ fun RoundControl(
                 .size(size)
                 .clip(CircleShape)
                 .background(bg)
-                .pressable(enabled, onClick),
+                .pressable(enabled, onLongClick, onClick),
             contentAlignment = Alignment.Center,
         ) {
             AnimatedContent(icon, transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(120)) }, label = "icon") { i ->
@@ -360,6 +374,29 @@ fun <T> Picker(
             options.forEach { option ->
                 DropdownMenuItem(text = { Text(optionLabel(option)) }, onClick = { onSelect(option); open = false })
             }
+        }
+    }
+}
+
+/** Round profile picture, or the first letter of [name] when there isn't one. */
+@Composable
+fun Avatar(file: java.io.File?, version: Int, name: String, onClick: () -> Unit, size: Dp = 44.dp) {
+    val scheme = MaterialTheme.colorScheme
+    Box(
+        Modifier.size(size).clip(CircleShape).background(scheme.surfaceContainerHigh).pressable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (file != null) {
+            androidx.compose.runtime.key(version) {
+                coil.compose.AsyncImage(
+                    model = file,
+                    contentDescription = "Profile picture",
+                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                    modifier = Modifier.matchParentSize(),
+                )
+            }
+        } else {
+            Text(name.take(1).uppercase().ifEmpty { "?" }, style = MaterialTheme.typography.titleMedium)
         }
     }
 }

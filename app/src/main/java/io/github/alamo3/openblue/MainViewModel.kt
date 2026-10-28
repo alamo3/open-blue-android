@@ -1,7 +1,11 @@
 package io.github.alamo3.openblue
 
 import android.app.Application
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.net.Uri
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
@@ -21,12 +25,15 @@ import io.github.alamo3.openblue.api.VehicleCaps
 import io.github.alamo3.openblue.api.VehicleInfo
 import io.github.alamo3.openblue.data.SecureStore
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
+import java.io.File
 import java.io.IOException
 
 sealed interface Screen {
@@ -97,6 +104,14 @@ class MainViewModel(
     var svmLoaded by mutableStateOf(false)
         private set
     var diagnostics by mutableStateOf<String?>(null)
+
+    /** Profile picture chosen from the phone; kept in app-private storage only. */
+    private val avatarPath: File? = if (online) runCatching { File(app.filesDir, "avatar.jpg") }.getOrNull() else null
+    var avatar by mutableStateOf(avatarPath?.takeIf { it.exists() })
+        private set
+    /** Bumped when the picture changes so images reload. */
+    var avatarVersion by mutableIntStateOf(0)
+        private set
 
     val username: String? get() = store.username
 
@@ -269,6 +284,31 @@ class MainViewModel(
         svmLoaded = false
         progress = null
         screen = Screen.Login
+    }
+
+    fun setAvatar(uri: Uri) {
+        val target = avatarPath ?: return
+        launchSafely {
+            withContext(Dispatchers.IO) {
+                val resolver = getApplication<Application>().contentResolver
+                val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
+                var sample = 1
+                while (maxOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= 512) sample *= 2
+                val bmp = resolver.openInputStream(uri)?.use {
+                    BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply { inSampleSize = sample })
+                } ?: throw IOException("Couldn't read that photo")
+                target.outputStream().use { bmp.compress(Bitmap.CompressFormat.JPEG, 90, it) }
+            }
+            avatar = target
+            avatarVersion++
+        }
+    }
+
+    fun clearAvatar() {
+        avatarPath?.delete()
+        avatar = null
+        avatarVersion++
     }
 
     fun updatePin(pin: String) {

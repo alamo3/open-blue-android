@@ -70,9 +70,7 @@ fun HomeScreen(vm: MainViewModel, open: (Route) -> Unit, onUnlock: () -> Unit) {
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                IconButton(onClick = { open(Route.Settings) }) {
-                    Icon(Icons.Rounded.Settings, contentDescription = "Settings")
-                }
+                Avatar(vm.avatar, vm.avatarVersion, vm.username.orEmpty(), onClick = { open(Route.Settings) })
             }
 
             // Battery and range
@@ -116,14 +114,15 @@ fun HomeScreen(vm: MainViewModel, open: (Route) -> Unit, onUnlock: () -> Unit) {
                     enabled = vm.canAct,
                     onClick = { if (locked == true) onUnlock() else vm.lock() },
                 )
+                // Tap opens the climate screen; press and hold starts or stops with the last settings.
                 val climateOn = st?.climateOn == true
                 RoundControl(
                     icon = Icons.Rounded.Air,
-                    label = if (climateOn) "Climate on" else "Climate",
+                    label = if (climateOn) (st?.setTempC?.let { "${ClimateSettings.fmt(it)}° on" } ?: "On") else "Climate",
                     active = climateOn,
-                    tint = if (vm.editor.tempC >= 20) app.heat else app.cool,
-                    enabled = vm.canAct,
-                    onClick = { if (climateOn) vm.stopClimate() else vm.startClimate() },
+                    tint = if ((st?.setTempC ?: vm.editor.tempC) >= 20) app.heat else app.cool,
+                    onClick = { open(Route.Climate) },
+                    onLongClick = { if (vm.canAct) { if (climateOn) vm.stopClimate() else vm.startClimate() } },
                 )
                 if (caps.hasSvm) {
                     RoundControl(icon = Icons.Rounded.PhotoCamera, label = "Camera", onClick = { open(Route.Camera) })
@@ -135,19 +134,6 @@ fun HomeScreen(vm: MainViewModel, open: (Route) -> Unit, onUnlock: () -> Unit) {
             HorizontalDivider(color = app.hairline)
             Spacer(Modifier.height(8.dp))
 
-            NavRow(
-                Icons.Rounded.Thermostat,
-                "Climate",
-                if (st?.climateOn == true) {
-                    "On" + (st.setTempC?.let { ", set to ${ClimateSettings.fmt(it)} °C" } ?: "")
-                } else {
-                    "Off. Next start: ${vm.editor.summary()}"
-                },
-                onClick = { open(Route.Climate) },
-            )
-            if (caps.hasSvm) {
-                NavRow(Icons.Rounded.PhotoCamera, "Surroundings", "Photos from the car's cameras", onClick = { open(Route.Camera) })
-            }
             NavRow(Icons.Rounded.DirectionsCar, "Vehicle", st?.let { vehicleLine(it) }, onClick = { open(Route.Vehicle) },
                 iconTint = if (st != null && needsAttention(st)) app.alert else MaterialTheme.colorScheme.onSurface)
         }

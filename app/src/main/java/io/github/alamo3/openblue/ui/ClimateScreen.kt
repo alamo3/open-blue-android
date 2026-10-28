@@ -263,7 +263,7 @@ private fun PowerButton(running: Boolean, enabled: Boolean, onClick: () -> Unit)
             .size(84.dp)
             .clip(CircleShape)
             .background(bg)
-            .pressable(enabled, onClick),
+            .pressable(enabled, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Icon(Icons.Rounded.PowerSettingsNew, contentDescription = if (running) "Stop climate" else "Start climate", tint = fg, modifier = Modifier.size(38.dp))
@@ -337,7 +337,7 @@ private fun PresetCard(
         Spacer(Modifier.height(12.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
-                Modifier.clip(CircleShape).background(scheme.primary).pressable(enabled, onStart).padding(horizontal = 18.dp, vertical = 9.dp),
+                Modifier.clip(CircleShape).background(scheme.primary).pressable(enabled, onClick = onStart).padding(horizontal = 18.dp, vertical = 9.dp),
             ) { Text("Start", style = MaterialTheme.typography.labelLarge, color = scheme.onPrimary) }
             Spacer(Modifier.weight(1f))
             IconButton(onClick = onEdit) { Icon(Icons.Rounded.Edit, contentDescription = "Load into controls") }

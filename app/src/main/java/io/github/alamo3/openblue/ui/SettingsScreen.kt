@@ -1,6 +1,13 @@
 package io.github.alamo3.openblue.ui
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.width
+import androidx.compose.ui.Alignment
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -39,12 +46,31 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
     val app = AppTheme.colors
     var editingPin by remember { mutableStateOf(false) }
     var confirmSignOut by remember { mutableStateOf(false) }
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) vm.setAvatar(uri)
+    }
+    fun pickPhoto() = picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
 
     Column(Modifier.fillMaxSize()) {
         ScreenHeader("Settings", onBack)
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 48.dp)) {
             SectionTitle("Account")
-            DetailRow("Signed in as", vm.username ?: "Unknown")
+            Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Avatar(vm.avatar, vm.avatarVersion, vm.username.orEmpty(), onClick = { pickPhoto() }, size = 56.dp)
+                Spacer(Modifier.width(16.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(vm.username ?: "Unknown", style = MaterialTheme.typography.titleMedium)
+                    Row {
+                        TextButton(onClick = { pickPhoto() }, contentPadding = PaddingValues(0.dp)) {
+                            Text(if (vm.avatar == null) "Add profile picture" else "Change picture")
+                        }
+                        if (vm.avatar != null) {
+                            Spacer(Modifier.width(16.dp))
+                            TextButton(onClick = { vm.clearAvatar() }, contentPadding = PaddingValues(0.dp)) { Text("Remove", color = app.alert) }
+                        }
+                    }
+                }
+            }
             vm.vehicle?.let { DetailRow("Vehicle", it.nickname) }
             ClickRow("Change vehicle", "Pick another car on this account", enabled = vm.busy == null) { vm.changeVehicle() }
 
