@@ -311,6 +311,7 @@ fun CommandStrip(p: CommandProgress, onDismiss: () -> Unit, modifier: Modifier =
                         CommandProgress.Stage.FAILED -> "${p.action.doing} didn't work"
                     },
                     style = MaterialTheme.typography.titleSmall,
+                    color = scheme.onSurface,
                 )
                 if (p.note != null) {
                     Text(p.note, style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)

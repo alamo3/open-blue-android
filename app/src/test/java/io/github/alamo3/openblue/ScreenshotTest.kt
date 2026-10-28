@@ -80,6 +80,18 @@ class ScreenshotTest(private val night: Boolean) {
 
     @Test fun home() = demoVm().let { vm -> shot { HomeScreen(vm, open = {}, onUnlock = {}) } }
     @Test fun climate() = demoVm().let { vm -> shot { ClimateScreen(vm, onBack = {}) } }
+
+    /** Whole climate screen, including the presets below the fold. */
+    @Test fun climateTall() {
+        paparazzi.unsafeUpdateConfig(
+            deviceConfig = DeviceConfig.PIXEL_5.copy(
+                screenHeight = 4200,
+                nightMode = if (night) NightMode.NIGHT else NightMode.NOTNIGHT,
+            ),
+        )
+        val vm = demoVm()
+        shot { ClimateScreen(vm, onBack = {}) }
+    }
     @Test fun vehicle() = demoVm().let { vm -> shot { VehicleScreen(vm, onBack = {}) } }
     @Test fun settings() = demoVm().let { vm -> shot { SettingsScreen(vm, onBack = {}) } }
     @Test fun camera() = demoVm().let { vm -> shot { CameraScreen(vm, onBack = {}) } }

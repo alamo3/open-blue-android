@@ -15,6 +15,8 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -35,7 +37,7 @@ import androidx.compose.material.icons.rounded.KeyboardArrowLeft
 import androidx.compose.material.icons.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.LocalFireDepartment
 import androidx.compose.material.icons.rounded.PowerSettingsNew
-import androidx.compose.material.icons.rounded.Window
+import androidx.compose.material.icons.rounded.Waves
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -66,6 +68,7 @@ import io.github.alamo3.openblue.api.SeatLevel
 private val DURATIONS = listOf(10, 15, 20, 30)
 private val SEAT_NAMES = listOf("Driver", "Passenger", "Rear left", "Rear right")
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ClimateScreen(vm: MainViewModel, onBack: () -> Unit) {
     val e = vm.editor
@@ -91,7 +94,7 @@ fun ClimateScreen(vm: MainViewModel, onBack: () -> Unit) {
 
             // Temperature
             Spacer(Modifier.height(12.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 StepButton(Icons.Rounded.KeyboardArrowLeft, "Cooler") {
                     vm.updateEditor { s -> s.copy(tempC = temps.lastOrNull { it < s.tempC } ?: s.tempC) }
                 }
@@ -103,7 +106,7 @@ fun ClimateScreen(vm: MainViewModel, onBack: () -> Unit) {
                             (slideOutVertically(tween(180)) { h -> if (up) -h / 2 else h / 2 } + fadeOut(tween(180)))
                     },
                     label = "temp",
-                    modifier = Modifier.widthIn(min = 170.dp),
+                    modifier = Modifier.weight(1f),
                 ) { t ->
                     Text(
                         "${ClimateSettings.fmt(t)}°",
@@ -147,11 +150,12 @@ fun ClimateScreen(vm: MainViewModel, onBack: () -> Unit) {
 
             // Extras
             Spacer(Modifier.height(20.dp))
-            Row(
-                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            FlowRow(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                ToggleChip(Icons.Rounded.Window, "Front defrost", e.defrost, { vm.updateEditor { it.copy(defrost = !it.defrost) } }, app.heat)
+                ToggleChip(Icons.Rounded.Waves, "Front defrost", e.defrost, { vm.updateEditor { it.copy(defrost = !it.defrost) } }, app.heat)
                 if (vm.caps.splitHeating) {
                     val wheel = e.heating == Heating.STEERING.code || e.heating == Heating.STEERING_REAR_MIRRORS.code
                     val rear = e.heating == Heating.REAR_MIRRORS.code || e.heating == Heating.STEERING_REAR_MIRRORS.code
@@ -159,21 +163,24 @@ fun ClimateScreen(vm: MainViewModel, onBack: () -> Unit) {
                     ToggleChip(Icons.Rounded.LocalFireDepartment, "Rear window & mirrors", rear, { vm.updateEditor { it.copy(heating = splitCode(wheel, !rear)) } }, app.heat)
                 } else {
                     val on = e.heating != 0
+                    // One switch on this car: steering wheel, side mirrors and rear defroster together.
                     ToggleChip(
-                        Icons.Rounded.LocalFireDepartment, "Heated wheel, mirrors & rear window", on,
+                        Icons.Rounded.LocalFireDepartment, "Heated wheel & rear defrost", on,
                         { vm.updateEditor { it.copy(heating = if (on) 0 else Heating.ALL.code) } }, app.heat,
                     )
                 }
             }
 
             // Duration
-            Spacer(Modifier.height(16.dp))
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text("Run for", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    (DURATIONS + e.durationMin).distinct().sorted().forEach { d ->
-                        OptionPill("$d min", e.durationMin == d, { vm.updateEditor { it.copy(durationMin = d) } })
-                    }
+            Text(
+                "Run for",
+                style = MaterialTheme.typography.titleSmall,
+                color = scheme.onSurfaceVariant,
+                modifier = Modifier.fillMaxWidth().padding(top = 24.dp, bottom = 10.dp),
+            )
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                (DURATIONS + e.durationMin).distinct().sorted().forEach { d ->
+                    OptionPill("$d min", e.durationMin == d, { vm.updateEditor { it.copy(durationMin = d) } }, Modifier.weight(1f))
                 }
             }
 
@@ -268,15 +275,15 @@ private fun PowerButton(running: Boolean, enabled: Boolean, onClick: () -> Unit)
 private fun CabinMap(seats: List<SeatLevel>, onSeat: (Int) -> Unit, modifier: Modifier) {
     val outline = AppTheme.colors.hairline
     val glass = MaterialTheme.colorScheme.outline
-    Box(modifier.height(330.dp), contentAlignment = Alignment.Center) {
-        Canvas(Modifier.width(250.dp).height(330.dp)) {
+    Box(modifier.height(350.dp), contentAlignment = Alignment.Center) {
+        Canvas(Modifier.width(250.dp).height(350.dp)) {
             val stroke = 3.dp.toPx()
             val r = 70.dp.toPx()
             drawRoundRect(outline, cornerRadius = CornerRadius(r, r), style = Stroke(stroke))
             // Windshield and rear glass
             val inset = 34.dp.toPx()
             drawLine(glass, Offset(inset, 62.dp.toPx()), Offset(size.width - inset, 62.dp.toPx()), stroke, StrokeCap.Round)
-            drawLine(glass, Offset(inset + 8.dp.toPx(), size.height - 44.dp.toPx()), Offset(size.width - inset - 8.dp.toPx(), size.height - 44.dp.toPx()), stroke, StrokeCap.Round)
+            drawLine(glass, Offset(inset + 8.dp.toPx(), size.height - 30.dp.toPx()), Offset(size.width - inset - 8.dp.toPx(), size.height - 30.dp.toPx()), stroke, StrokeCap.Round)
             // Mirrors
             val my = 78.dp.toPx()
             drawRoundRect(outline, Offset(-14.dp.toPx(), my), Size(14.dp.toPx(), 22.dp.toPx()), CornerRadius(6.dp.toPx()))
