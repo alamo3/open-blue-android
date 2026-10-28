@@ -252,8 +252,9 @@ fun SoundScreen(vm: MainViewModel, onBack: () -> Unit) {
 
 private fun soundBlurb(s: EngineSound) = when (s.kind) {
     EngineSound.Kind.STARSHIP -> "A deep synth drone that climbs about two octaves with speed and opens up as you accelerate."
-    EngineSound.Kind.TURBINE -> "A jet-style whine that spools up with speed, with roar under hard acceleration."
-    EngineSound.Kind.ELECTRIC -> "Your motor's own whine, made louder: its electrical tones, gear mesh and inverter, following the real motor speed."
+    EngineSound.Kind.HYPERDRIVE -> "Tones that seem to rise forever while you accelerate, and hold when you ease off."
+    EngineSound.Kind.ION -> "A growling bass that throbs faster the quicker you go."
+    EngineSound.Kind.CRUISER -> "A cinematic chord that swells and brightens as you push, adding a top note near full power."
     EngineSound.Kind.PISTON -> "A made-up engine, synthesized from scratch."
 }
 

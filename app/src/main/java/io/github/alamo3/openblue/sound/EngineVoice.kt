@@ -22,7 +22,7 @@ class PistonSpec(
     val roughness: Float,
 )
 
-/** The sounds on offer: three made for an EV, and four classic engines. */
+/** The sounds on offer: four sci-fi sounds made for an EV, and four classic engines. */
 enum class EngineSound(
     val label: String,
     val kind: Kind,
@@ -31,8 +31,9 @@ enum class EngineSound(
     val piston: PistonSpec? = null,
 ) {
     STARSHIP("Starship", Kind.STARSHIP),
-    TURBINE("Turbine", Kind.TURBINE),
-    ELECTRIC("Electric+", Kind.ELECTRIC),
+    HYPERDRIVE("Hyperdrive", Kind.HYPERDRIVE),
+    ION("Ion pulse", Kind.ION),
+    CRUISER("Cruiser", Kind.CRUISER),
     INLINE_4(
         "Inline-4 turbo", Kind.PISTON, 900f, 6900f,
         PistonSpec(4, 125f, 440f, floatArrayOf(1f, 0.88f, 0.97f, 0.84f), floatArrayOf(0f, 0f, 0f, 0f), 0.25f),
@@ -55,7 +56,7 @@ enum class EngineSound(
     ),
     ;
 
-    enum class Kind { STARSHIP, TURBINE, ELECTRIC, PISTON }
+    enum class Kind { STARSHIP, HYPERDRIVE, ION, CRUISER, PISTON }
 
     val isEngine: Boolean get() = kind == Kind.PISTON
 }

@@ -77,7 +77,7 @@ class EngineModelTest {
     }
 
     @Test fun evSoundsStayInRange() {
-        for (kind in listOf(EngineSound.STARSHIP, EngineSound.TURBINE, EngineSound.ELECTRIC)) {
+        for (kind in EngineSound.entries.filter { !it.isEngine }) {
             val voice = SoundVoice(48000).apply { sound = kind }
             val m = EngineModel()
             val buf = FloatArray(480)

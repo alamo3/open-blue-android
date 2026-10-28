@@ -1,6 +1,7 @@
 package io.github.alamo3.openblue.sound
 
 import kotlin.math.PI
+import kotlin.math.cos
 import kotlin.math.exp
 import kotlin.math.min
 import kotlin.math.pow
@@ -11,15 +12,17 @@ import kotlin.math.tanh
 import kotlin.random.Random
 
 /**
- * Sounds made for an EV rather than imitating an engine. Like the real motor, which is geared
- * straight to the wheels, their pitch follows road speed; how hard you're accelerating sets how
- * loud, bright and intense they get. When you're not accelerating they settle to a quiet hum.
+ * Sci-fi sounds made for an EV rather than imitating an engine. Like the real motor, which is
+ * geared straight to the wheels, their pitch follows road speed; how hard you accelerate sets
+ * how loud, bright and intense they get. When you're not accelerating they settle to a quiet hum.
  *
- * - Starship: a detuned, filtered synth drone that climbs about two octaves with speed.
- * - Turbine: a jet-style whine that spools up, with roar under load.
- * - Electric+: the motor's own whine, exaggerated: electrical tones, gear mesh, inverter.
+ * - Starship: a detuned synth drone that climbs about two octaves with speed and opens up.
+ * - Hyperdrive: a Shepard tone, which seems to rise forever while you accelerate.
+ * - Ion pulse: an FM bass that growls under load and throbs faster with speed.
+ * - Cruiser: a cinematic chord that brightens, and gains a top note, as you push.
  *
- * Pure Kotlin, so it can be tested and rendered off the phone.
+ * All share a small reverb for a sense of space. Pure Kotlin, so it can be tested and rendered
+ * off the phone. Nothing here allocates per sample: it runs on the audio thread.
  */
 class FutureVoice(private val sampleRate: Int, seed: Int = 11) {
     @Volatile var kind: EngineSound.Kind = EngineSound.Kind.STARSHIP
@@ -42,21 +45,19 @@ class FutureVoice(private val sampleRate: Int, seed: Int = 11) {
     private val loadK = coef(0.04f)
     private val attackK = coef(0.06f)
     private val releaseK = coef(0.45f)
-    private val spoolUpK = coef(0.22f)
-    private val spoolDownK = coef(0.8f)
 
     private var speed = 0f
     private var load = 0f
     private var level = 0f
-    private var spool = 0.15f
-    private val phase = DoubleArray(8)
+    private val phase = DoubleArray(16)
     private var lfo = 0.0
+    private var lfo2 = 0.0
+    private var shepard = 0.0
     private var counter = 0
 
     private val filter = Svf()
-    private val roar = Svf()
-    private val rumble = Svf()
     private val air = Svf()
+    private val reverb = Reverb(sr)
 
     fun render(out: FloatArray, frames: Int = out.size) {
         val k = kind
@@ -69,12 +70,14 @@ class FutureVoice(private val sampleRate: Int, seed: Int = 11) {
             level += (want - level) * if (want > level) attackK else releaseK
 
             val x = when (k) {
-                EngineSound.Kind.TURBINE -> turbine(sn)
-                EngineSound.Kind.ELECTRIC -> electric()
+                EngineSound.Kind.HYPERDRIVE -> hyperdrive(sn)
+                EngineSound.Kind.ION -> ion(sn)
+                EngineSound.Kind.CRUISER -> cruiser(sn)
                 else -> starship(sn)
             }
             counter++
-            out[i] = tanh(x * level * volume * 1.4f)
+            val dry = tanh(x * level * volume * 1.4f)
+            out[i] = tanh(dry + reverb.process(dry) * 0.22f)
         }
     }
 
@@ -120,35 +123,70 @@ class FutureVoice(private val sampleRate: Int, seed: Int = 11) {
         return filter.lowPass(x) * 1.3f + air.bandPass(noise) * 0.12f * sn
     }
 
-    private fun turbine(sn: Float): Float {
-        // Like a real turbine, it takes a moment to spool up and longer to wind down.
-        val want = if (targetEngaged) 0.12f + 0.62f * sn + 0.26f * load else 0.12f + 0.4f * sn
-        spool += (want - spool) * if (want > spool) spoolUpK else spoolDownK
-        val fw = 380f + 2600f * spool
-        val body = 0.3f + 0.7f * spool
-        var x = (sine(0, fw) * 0.32f + sine(1, fw * 1.52f) * 0.16f + sine(2, fw * 2.31f) * 0.08f + sine(3, fw * 0.5f) * 0.2f) * body
-        if ((counter and 15) == 0) {
-            roar.set(220f + 1400f * spool, 0.7f, sr)
-            rumble.set(110f, 0.7f, sr)
+    /**
+     * Six tones an octave apart glide upward together; each fades in at the bottom and out at
+     * the top, so the whole seems to rise forever. It glides while you accelerate (faster the
+     * harder you push) and holds still otherwise.
+     */
+    private fun hyperdrive(sn: Float): Float {
+        val n = 6
+        val rate = if (targetEngaged) 0.04 + 0.5 * load else 0.0
+        shepard = (shepard + rate / sr) % 1.0
+        val base = 38f * 2f.pow(sn * 1.2f)
+        var x = 0f
+        for (j in 0 until n) {
+            val p = ((j + shepard) % n).toFloat()
+            val hz = base * 2f.pow(p)
+            val amp = 0.5f * (1f - cos(2f * PI.toFloat() * p / n))
+            val ph = 2 * PI * osc(j, hz)
+            x += amp * (sin(ph) + 0.35f * load * sin(2 * ph)).toFloat()
         }
-        val noise = rnd.nextFloat() * 2f - 1f
-        x += roar.bandPass(noise) * (0.25f + 1.2f * load) * spool
-        x += rumble.lowPass(noise) * 1.6f * load
-        lfo += 7.0 / sr
-        return x * 2f * (1f + 0.05f * sin(2 * PI * lfo).toFloat())
+        x *= 0.42f
+        x += sine(8, base * 0.5f) * 0.35f
+        if ((counter and 15) == 0) filter.set(500f + 5000f * load + 1500f * sn, 0.8f, sr)
+        return filter.lowPass(x) * 1.5f
     }
 
-    private fun electric(): Float {
-        // Motor turns about 1.28 times a second per km/h (Ioniq 5 gearing); 4 pole pairs.
-        val rot = speed * 1.28f
-        val elec = 4f * rot
-        val push = 0.4f + 0.6f * load
-        var x = sine(0, elec) * 0.32f + sine(1, elec * 2f) * 0.13f + sine(2, elec * 6f) * 0.05f
-        x += sine(3, elec * 0.25f) * 0.3f * load // body underneath
-        x += sine(4, rot * 23f) * 0.06f // gear mesh
-        // Inverter switching tones either side of a fixed carrier, louder under load.
-        x += (sine(5, 1600f + 2f * elec) + sine(6, (1600f - 2f * elec).coerceAtLeast(40f))) * 0.07f * load
-        return x * push * 2.1f
+    /** FM bass: more modulation under load makes it growl; a pulse throbs faster with speed. */
+    private fun ion(sn: Float): Float {
+        val f = 44f * 2f.pow(sn * 1.8f)
+        val index = 0.6f + 3.2f * load
+        val mod = sin(2 * PI * osc(0, f * 2f)).toFloat()
+        val carrier = sin(2 * PI * osc(1, f) + index * mod).toFloat()
+        val sub = sine(2, f * 0.5f)
+        lfo += (2.5 + 12.0 * sn) / sr
+        val pulseRaw = 0.5f + 0.5f * sin(2 * PI * lfo).toFloat()
+        val depth = 0.35f + 0.4f * load
+        val pulse = 1f - depth + depth * pulseRaw * pulseRaw
+        if ((counter and 15) == 0) {
+            filter.set(350f + 4200f * load + 800f * sn, 0.9f, sr)
+            air.set(3800f + 2000f * sn, 1.2f, sr)
+        }
+        val noise = rnd.nextFloat() * 2f - 1f
+        val sparkle = air.bandPass(noise) * 0.35f * load * pulseRaw
+        return (filter.lowPass(carrier * 0.8f + sub * 0.5f) * 1.4f + sparkle) * pulse
+    }
+
+    /**
+     * Root, fifth and octave from detuned saws with a gentle chorus; past half power a major
+     * third fades in on top, and the filter opens the harder you push.
+     */
+    private fun cruiser(sn: Float): Float {
+        val root = 55f * 2f.pow(sn * 1.5f)
+        lfo2 += 0.6 / sr
+        val chorus = 1f + 0.003f * sin(2 * PI * lfo2).toFloat()
+        val d = 1.006f
+        var x = (saw(0, root) + saw(1, root * d * chorus)) * 0.3f
+        x += (saw(2, root * 1.5f) + saw(3, root * 1.5f / d)) * 0.24f
+        x += (saw(4, root * 2f * chorus) + saw(5, root * 2f / d)) * 0.2f
+        val third = ((load - 0.45f) / 0.35f).coerceIn(0f, 1f)
+        x += (saw(6, root * 2.5f) + saw(7, root * 2.5f * d)) * 0.18f * third
+        x += sine(8, root * 0.5f) * 0.45f
+        // Slight vibrato on the whole thing, like a held section.
+        lfo += 5.0 / sr
+        val vib = 1f + 0.06f * load * sin(2 * PI * lfo).toFloat()
+        if ((counter and 15) == 0) filter.set((250f + 3200f * load + 700f * sn) * vib, 0.9f, sr)
+        return filter.lowPass(x) * 1.25f
     }
 
     /** Topology-preserving state variable filter (low-pass and band-pass). */
@@ -157,16 +195,14 @@ class FutureVoice(private val sampleRate: Int, seed: Int = 11) {
         private var k = 1f
         private var ic1 = 0f
         private var ic2 = 0f
+        private var band = 0f
+        private var low = 0f
 
         fun set(hz: Float, q: Float, sr: Float) {
             g = tan(PI * min(hz, sr * 0.45f) / sr).toFloat()
             k = 1f / q
         }
 
-        private var band = 0f
-        private var low = 0f
-
-        // No allocation per sample: this runs on the audio thread.
         private fun step(v0: Float) {
             val v1 = (ic1 + g * (v0 - ic2)) / (1 + g * (g + k))
             val v2 = ic2 + g * v1
@@ -178,5 +214,37 @@ class FutureVoice(private val sampleRate: Int, seed: Int = 11) {
 
         fun lowPass(x: Float): Float { step(x); return low }
         fun bandPass(x: Float): Float { step(x); return band }
+    }
+
+    /** A small Schroeder reverb: four damped combs into two all-passes. Returns the wet signal. */
+    private class Reverb(sr: Float) {
+        private val scale = sr / 44100f
+        private val combs = intArrayOf(1557, 1617, 1491, 1422).map { FloatArray((it * scale).toInt()) }
+        private val combPos = IntArray(4)
+        private val combLp = FloatArray(4)
+        private val aps = intArrayOf(556, 225).map { FloatArray((it * scale).toInt()) }
+        private val apPos = IntArray(2)
+
+        fun process(x: Float): Float {
+            var sum = 0f
+            for (c in 0 until 4) {
+                val buf = combs[c]
+                val y = buf[combPos[c]]
+                combLp[c] = y * 0.75f + combLp[c] * 0.25f
+                buf[combPos[c]] = x * 0.25f + combLp[c] * 0.8f
+                combPos[c] = (combPos[c] + 1) % buf.size
+                sum += y
+            }
+            var y = sum
+            for (a in 0 until 2) {
+                val buf = aps[a]
+                val b = buf[apPos[a]]
+                val v = y + b * 0.5f
+                buf[apPos[a]] = v
+                y = b - v * 0.5f
+                apPos[a] = (apPos[a] + 1) % buf.size
+            }
+            return y
+        }
     }
 }
