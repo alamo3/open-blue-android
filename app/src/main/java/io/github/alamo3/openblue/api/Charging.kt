@@ -386,8 +386,8 @@ data class TripPlan(val status: Int, val routes: List<TripRoute>, val reachedDes
                             poiId = st.str("poiId"),
                             lat = lat,
                             lon = lon,
-                            arriveSoc = st.int("pointSoc"),
-                            targetSoc = st.int("targetSoc"),
+                            arriveSoc = st.int("pointSoc")?.takeIf { it in 0..100 },
+                            targetSoc = st.int("targetSoc")?.takeIf { it in 0..100 },
                             chargeSeconds = st.dbl("chargingTime")?.toLong(),
                             etaSeconds = st.int("pointEta"),
                             distanceM = st.int("pointDistance"),
@@ -397,7 +397,8 @@ data class TripPlan(val status: Int, val routes: List<TripRoute>, val reachedDes
                     line = rt.arr("routeLink").map { link ->
                         (link.int("traColor") ?: 0) to link.arr("vertex").mapNotNull { coord(it) }
                     },
-                    arriveSoc = rt.int("destination.pointSoc"),
+                    // 254 means unknown (seen in the official app's demo data).
+                    arriveSoc = rt.int("destination.pointSoc")?.takeIf { it in 0..100 },
                     unreachable = rt.int("reasonUnReachable") ?: 0,
                 )
             },

@@ -141,11 +141,18 @@ fun TripScreen(vm: MainViewModel, onBack: () -> Unit) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     listOf(10, 20, 30, 50).forEach { v -> OptionPill("$v%", destinationSoc == v, { destinationSoc = v }) }
                 }
-                SettingSwitch(
-                    "Avoid tolls",
-                    "Keeps off toll roads such as the 407",
-                    vm.avoidTolls,
-                ) { vm.changeAvoidTolls(it) }
+                // The official app's Routing Options: Recommended 22, Fastest 21, Economical 23.
+                // Economical keeps off toll roads (the 407 near Toronto).
+                Text("Route", style = MaterialTheme.typography.labelLarge, color = scheme.onSurfaceVariant, modifier = Modifier.padding(top = 14.dp, bottom = 8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    RouteStyle.entries.forEach { st -> OptionPill(st.label, vm.routeStyle == st.code, { vm.changeRouteStyle(st.code) }) }
+                }
+                Text(
+                    RouteStyle.entries.firstOrNull { it.code == vm.routeStyle }?.hint.orEmpty(),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = scheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 6.dp),
+                )
 
                 // Developer mode: try other route option codes (comma separated); each gets its own route.
                 if (vm.developerMode) {
@@ -153,7 +160,7 @@ fun TripScreen(vm: MainViewModel, onBack: () -> Unit) {
                         value = codes,
                         onValueChange = { v -> codes = v.filter { it.isDigit() || it == ',' || it == ' ' || it == '-' } },
                         label = { Text("Route option codes (developer)") },
-                        supportingText = { Text("22 is the official route, 23 avoids tolls (the switch above). Lists and ranges work: 22, 8, 0-31.") },
+                        supportingText = { Text("22 Recommended, 21 Fastest, 23 Economical (the choices above). Lists and ranges work: 22, 8, 0-31.") },
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Ascii),
                         modifier = Modifier.fillMaxWidth().padding(top = 14.dp),
@@ -223,7 +230,7 @@ fun TripScreen(vm: MainViewModel, onBack: () -> Unit) {
                         .pressable(ready) {
                             // Route option codes, worked out by trying them: 22 is the official app's
                             // route, 23 the same avoiding tolls (the 407 vs the 403 near Toronto).
-                            val standard = if (vm.avoidTolls) ROUTE_AVOID_TOLLS else ROUTE_STANDARD
+                            val standard = vm.routeStyle
                             val options = if (vm.developerMode && codes.trim() != "22") parseCodes(codes) else listOf(standard)
                             vm.planTrip(chargerSoc, destinationSoc, options)
                         }
@@ -295,7 +302,7 @@ fun TripScreen(vm: MainViewModel, onBack: () -> Unit) {
                             .padding(top = 12.dp)
                             .clip(CircleShape)
                             .background(scheme.primary)
-                            .pressable { navigate(context, route, dest.lat, dest.lon, vm.avoidTolls) }
+                            .pressable { navigate(context, route, dest.lat, dest.lon, vm.routeStyle == RouteStyle.ECONOMICAL.code) }
                             .padding(vertical = 14.dp),
                         horizontalArrangement = Arrangement.Center,
                         verticalAlignment = Alignment.CenterVertically,
@@ -305,7 +312,7 @@ fun TripScreen(vm: MainViewModel, onBack: () -> Unit) {
                         Text("Navigate in Google Maps", style = MaterialTheme.typography.labelLarge, color = scheme.onPrimary)
                     }
                     Text(
-                        if (vm.avoidTolls && route.stops.isNotEmpty()) "Charging stops are added as waypoints. Google Maps can't be told to avoid tolls along with waypoints, so turn on Avoid tolls in its route options too." else "Charging stops are added as waypoints. On the road, Android Auto shows it on the car's screen.",
+                        if (vm.routeStyle == RouteStyle.ECONOMICAL.code && route.stops.isNotEmpty()) "Charging stops are added as waypoints. Google Maps can't be told to avoid tolls along with waypoints, so turn on Avoid tolls in its route options too." else "Charging stops are added as waypoints. On the road, Android Auto shows it on the car's screen.",
                         style = MaterialTheme.typography.bodySmall,
                         color = scheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = 8.dp),
@@ -414,6 +421,9 @@ private fun navigate(context: android.content.Context, r: TripRoute, lat: Double
     runCatching { context.startActivity(gmaps) }.onFailure { runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) } }
 }
 
-/** The official app's route option, and the same avoiding tolls. */
-private const val ROUTE_STANDARD = 22
-private const val ROUTE_AVOID_TOLLS = 23
+/** The official app's route options (its Routing Options sheet). */
+private enum class RouteStyle(val code: Int, val label: String, val hint: String) {
+    RECOMMENDED(22, "Recommended", "Hyundai's default balance of time and charging."),
+    FASTEST(21, "Fastest", "Shortest driving time, toll roads included."),
+    ECONOMICAL(23, "Economical", "Cheapest to drive: avoids toll roads such as the 407."),
+}
