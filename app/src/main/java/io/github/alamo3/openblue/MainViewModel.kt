@@ -56,6 +56,13 @@ data class CommandProgress(val action: Action, val stage: Stage, val note: Strin
         CLIMATE_STOP("Stopping climate", "Climate is off"),
         WAKE("Asking the car for its status", "Status updated"),
         CAMERA("Asking the car for photos", "New photos are in"),
+        HORN("Sounding the horn and flashing the lights", "Horn and lights done"),
+        LIGHTS("Flashing the lights", "Lights flashed"),
+        PORT_OPEN("Opening the charge port", "Charge port open"),
+        PORT_CLOSE("Closing the charge port", "Charge port closed"),
+        PRECONDITION_ON("Turning on battery preconditioning", "Battery preconditioning on"),
+        PRECONDITION_OFF("Turning off battery preconditioning", "Battery preconditioning off"),
+        CHARGE_LIMITS("Saving charge limits", "Charge limits saved"),
     }
 }
 
@@ -427,6 +434,50 @@ class MainViewModel(
                 wheelHeat = fixed.heating != 0, seats = fixed.seats.map { s -> if (s == 0) 2 else s },
             )
         }) { api.startClimate(it, fixed) }
+    }
+
+    fun hornLights(horn: Boolean) = command(if (horn) CommandProgress.Action.HORN else CommandProgress.Action.LIGHTS) {
+        api.hornLights(it.id, horn)
+    }
+
+    fun chargePort(open: Boolean) = command(
+        if (open) CommandProgress.Action.PORT_OPEN else CommandProgress.Action.PORT_CLOSE,
+        { it.copy(chargePortOpen = open) },
+    ) { api.chargePort(it.id, open) }
+
+    fun batteryPreconditioning(on: Boolean) = command(
+        if (on) CommandProgress.Action.PRECONDITION_ON else CommandProgress.Action.PRECONDITION_OFF,
+        { it.copy(preconditioning = on) },
+    ) { api.batteryPreconditioning(it.id, on) }
+
+    /** Saves AC and DC charge limits (percent, steps of 10). */
+    fun setChargeLimits(ac: Int, dc: Int) {
+        val v = vehicle ?: return
+        if (!canAct) return
+        val action = CommandProgress.Action.CHARGE_LIMITS
+        if (developerMode && debug.dryRun) {
+            dryRun(action) { it.copy(limitAc = ac, limitDc = dc) }
+            return
+        }
+        showProgress(CommandProgress(action, CommandProgress.Stage.SENDING))
+        launchSafely(onError = { finish(action, false, describe(it)) }) {
+            val tx = api.setChargeLimits(v.id, ac, dc)
+            if (tx != null) {
+                showProgress(CommandProgress(action, CommandProgress.Stage.WAITING))
+                when (api.awaitResult(v.id, tx)) {
+                    CommandResult.SUCCESS -> finish(action, true)
+                    CommandResult.FAILED -> finish(action, false, "The car didn't accept the new limits.")
+                    CommandResult.TIMEOUT -> finish(action, false, "No answer from the car yet. It may still go through, so check again in a minute.")
+                }
+            } else {
+                finish(action, true, "The car picks them up next time it connects.")
+            }
+            try {
+                applyStatus(api.cachedStatus(v.id))
+            } catch (e: ApiException) {
+                // The command went through; the status will catch up on the next refresh.
+            }
+        }
     }
 
     // ------------------------------------------------------------ developer mode

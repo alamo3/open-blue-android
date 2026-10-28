@@ -11,6 +11,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 import okhttp3.Headers
 import okhttp3.MediaType.Companion.toMediaType
@@ -358,6 +359,51 @@ class BluelinkClient(private val store: SecureStore) {
     }
 
     suspend fun lock(vehicleId: String) = command("drlck", vehicleId)
+
+    /** Flashes the hazard lights, sounding the horn too when [horn] is set (hrnlght). */
+    suspend fun hornLights(vehicleId: String, horn: Boolean) =
+        command("hrnlght", vehicleId, buildJsonObject { put("horn", horn) })
+
+    suspend fun chargePort(vehicleId: String, open: Boolean) =
+        command(if (open) "evc/chportopn" else "evc/chportcls", vehicleId)
+
+    /** Warms (or cools) the battery for faster DC charging. */
+    suspend fun batteryPreconditioning(vehicleId: String, on: Boolean) =
+        command(if (on) "evc/prcndtngon" else "evc/prcndtngoff", vehicleId)
+
+    /**
+     * Sets the charge limits (percent, in steps of 10). Gen3 cars take them straight away with
+     * v2/ev/reserv/socset and return null; older cars get a PIN command (evc/setsoc) whose
+     * transactionId is returned for polling. plugType 0 = DC fast charging, 1 = AC.
+     */
+    suspend fun setChargeLimits(vehicleId: String, ac: Int, dc: Int): String? {
+        if (store.caps?.isGen3 == true) {
+            authed { t ->
+                check(
+                    post(
+                        "v2/ev/reserv/socset",
+                        buildJsonObject {
+                            putJsonArray("targetSOClist") {
+                                add(buildJsonObject { put("plugType", 0); put("targetSOClevel", dc) })
+                                add(buildJsonObject { put("plugType", 1); put("targetSOClevel", ac) })
+                            }
+                        },
+                        mapOf("accessToken" to t, "vehicleId" to vehicleId),
+                    )
+                )
+            }
+            return null
+        }
+        return command(
+            "evc/setsoc", vehicleId,
+            buildJsonObject {
+                putJsonArray("tsoc") {
+                    add(buildJsonObject { put("plugType", 0); put("level", dc) })
+                    add(buildJsonObject { put("plugType", 1); put("level", ac) })
+                }
+            },
+        )
+    }
     suspend fun unlock(vehicleId: String) = command("drulck", vehicleId)
     suspend fun stopClimate(vehicleId: String) = command("evc/rfoff", vehicleId)
 

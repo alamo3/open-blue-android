@@ -20,6 +20,15 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Air
+import androidx.compose.material.icons.rounded.BatteryChargingFull
+import androidx.compose.material.icons.rounded.Campaign
+import androidx.compose.material.icons.rounded.EvStation
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.DirectionsCar
 import androidx.compose.material.icons.rounded.Lock
@@ -49,6 +58,7 @@ fun HomeScreen(vm: MainViewModel, open: (Route) -> Unit, onUnlock: () -> Unit) {
     val app = AppTheme.colors
     val v = vm.vehicle
     val caps = vm.caps
+    var hornDialog by remember { mutableStateOf(false) }
 
     PullToRefreshBox(isRefreshing = vm.refreshing, onRefresh = { vm.refresh() }, modifier = Modifier.fillMaxSize()) {
         Column(
@@ -102,42 +112,95 @@ fun HomeScreen(vm: MainViewModel, open: (Route) -> Unit, onUnlock: () -> Unit) {
             // and the charging cable shows when it's plugged in.
             Car3D(st.toPose(vm.editor.tempC), Modifier.fillMaxWidth().height(240.dp))
 
-            // One-tap controls
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                val locked = st?.locked
-                RoundControl(
-                    icon = if (locked == false) Icons.Rounded.LockOpen else Icons.Rounded.Lock,
-                    label = when (locked) { true -> "Locked"; false -> "Unlocked"; null -> "Lock" },
-                    active = locked == false,
-                    tint = app.alert,
-                    enabled = vm.canAct,
-                    onClick = { if (locked == true) onUnlock() else vm.lock() },
-                )
-                // Tap opens the climate screen; press and hold starts or stops with the last settings.
-                val climateOn = st?.climateOn == true
-                RoundControl(
-                    icon = Icons.Rounded.Air,
-                    label = if (climateOn) (st?.setTempC?.let { "${ClimateSettings.fmt(it)}° on" } ?: "On") else "Climate",
-                    active = climateOn,
-                    tint = if ((st?.setTempC ?: vm.editor.tempC) >= 20) app.heat else app.cool,
-                    onClick = { open(Route.Climate) },
-                    onLongClick = { if (vm.canAct) { if (climateOn) vm.stopClimate() else vm.startClimate() } },
-                )
-                if (caps.hasSvm) {
+            // One-tap controls, three to a row.
+            val isEv = v?.fuelKindCode.equals("E", ignoreCase = true)
+            val controls = buildList<@Composable () -> Unit> {
+                add {
+                    val locked = st?.locked
+                    RoundControl(
+                        icon = if (locked == false) Icons.Rounded.LockOpen else Icons.Rounded.Lock,
+                        label = when (locked) { true -> "Locked"; false -> "Unlocked"; null -> "Lock" },
+                        active = locked == false,
+                        tint = app.alert,
+                        enabled = vm.canAct,
+                        onClick = { if (locked == true) onUnlock() else vm.lock() },
+                    )
+                }
+                add {
+                    // Tap opens the climate screen; press and hold starts or stops with the last settings.
+                    val climateOn = st?.climateOn == true
+                    RoundControl(
+                        icon = Icons.Rounded.Air,
+                        label = if (climateOn) (st?.setTempC?.let { "${ClimateSettings.fmt(it)}° on" } ?: "On") else "Climate",
+                        active = climateOn,
+                        tint = if ((st?.setTempC ?: vm.editor.tempC) >= 20) app.heat else app.cool,
+                        onClick = { open(Route.Climate) },
+                        onLongClick = { if (vm.canAct) { if (climateOn) vm.stopClimate() else vm.startClimate() } },
+                    )
+                }
+                if (isEv) add {
+                    val portOpen = st?.chargePortOpen == true
+                    RoundControl(
+                        icon = Icons.Rounded.EvStation,
+                        label = if (portOpen) "Port open" else "Charge port",
+                        active = portOpen,
+                        tint = app.charge,
+                        enabled = vm.canAct,
+                        onClick = { vm.chargePort(open = !portOpen) },
+                    )
+                }
+                add {
+                    RoundControl(icon = Icons.Rounded.Campaign, label = "Horn & lights", enabled = vm.canAct, onClick = { hornDialog = true })
+                }
+                if (caps.hasSvm) add {
                     RoundControl(icon = Icons.Rounded.PhotoCamera, label = "Camera", onClick = { open(Route.Camera) })
                 }
-                RoundControl(icon = Icons.Rounded.Sync, label = "Wake car", enabled = vm.canAct, onClick = { vm.wakeCar() })
+                add {
+                    RoundControl(icon = Icons.Rounded.Sync, label = "Wake car", enabled = vm.canAct, onClick = { vm.wakeCar() })
+                }
+            }
+            controls.chunked(3).forEach { row ->
+                Row(Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
+                    row.forEach { c -> Box(Modifier.weight(1f), contentAlignment = Alignment.Center) { c() } }
+                    repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
+                }
             }
 
-            Spacer(Modifier.height(24.dp))
+            Spacer(Modifier.height(8.dp))
             HorizontalDivider(color = app.hairline)
             Spacer(Modifier.height(8.dp))
 
+            if (isEv) {
+                NavRow(
+                    Icons.Rounded.BatteryChargingFull, "Charging",
+                    st?.let { s -> listOfNotNull(chargingLine(s), limitsLine(s)).joinToString(" · ") },
+                    onClick = { open(Route.Charging) },
+                    iconTint = if (st?.charging == true) app.charge else MaterialTheme.colorScheme.onSurface,
+                )
+            }
             NavRow(Icons.Rounded.DirectionsCar, "Vehicle", st?.let { vehicleLine(it) }, onClick = { open(Route.Vehicle) },
                 iconTint = if (st != null && needsAttention(st)) app.alert else MaterialTheme.colorScheme.onSurface)
         }
     }
+
+    if (hornDialog) {
+        AlertDialog(
+            onDismissRequest = { hornDialog = false },
+            title = { Text("Horn and lights") },
+            text = { Text("Flash the hazard lights to find the car, or sound the horn too.") },
+            confirmButton = {
+                TextButton(onClick = { hornDialog = false; vm.hornLights(horn = true) }) { Text("Horn and lights") }
+            },
+            dismissButton = {
+                TextButton(onClick = { hornDialog = false; vm.hornLights(horn = false) }) { Text("Lights only") }
+            },
+        )
+    }
 }
+
+fun limitsLine(st: CarStatus): String? =
+    if (st.chargeLimitAc == null && st.chargeLimitDc == null) null
+    else "AC ${st.chargeLimitAc ?: "–"}% · DC ${st.chargeLimitDc ?: "–"}%"
 
 fun chargingLine(st: CarStatus): String = when {
     st.charging && st.chargeMinutesLeft != null -> "Charging, full in ${formatMinutes(st.chargeMinutesLeft)}"

@@ -21,6 +21,10 @@ data class CarStatus(
     val chargeMinutesLeft: Int?,
     val chargeLimitAc: Int?,
     val chargeLimitDc: Int?,
+    /** Null when the car doesn't report it (older cars). */
+    val chargePortOpen: Boolean?,
+    /** Battery preconditioning on, or null when the car doesn't report it. */
+    val preconditioning: Boolean?,
     val locked: Boolean?,
     val openDoors: List<String>,
     val openWindows: List<String>,
@@ -59,6 +63,8 @@ data class CarStatus(
                 chargeMinutesLeft = minutes,
                 chargeLimitAc = limit(1),
                 chargeLimitDc = limit(0),
+                chargePortOpen = (s.int("$ev.chargePortDoorOpenStatus") ?: s.int("$ev.chargePortDoorOpen"))?.let { it == 1 },
+                preconditioning = s.bool("$ev.batteryPreconditiong") ?: s.bool("$ev.batteryPrecondition"),
                 locked = s.bool("doorLock"),
                 openDoors = DOORS.filter { (s.int("doorOpen.${it.second}") ?: 0) != 0 }.map { it.first },
                 openWindows = DOORS.filter { (s.int("windowOpen.${it.second}") ?: 0) != 0 }.map { it.first },

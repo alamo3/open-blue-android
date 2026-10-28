@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import io.github.alamo3.openblue.ui.CarCamera
+import io.github.alamo3.openblue.ui.ChargingScreen
 import io.github.alamo3.openblue.ui.CarEffects
 import io.github.alamo3.openblue.ui.ClimateFx
 import androidx.compose.foundation.layout.fillMaxSize
@@ -108,6 +109,7 @@ class ScreenshotTest(private val night: Boolean) {
         val vm = demoVm()
         shot { ClimateScreen(vm, onBack = {}) }
     }
+    @Test fun charging() = demoVm().let { vm -> shot { ChargingScreen(vm, onBack = {}) } }
     @Test fun vehicle() = demoVm().let { vm -> shot { VehicleScreen(vm, onBack = {}) } }
     @Test fun settings() = demoVm().let { vm ->
         shot {

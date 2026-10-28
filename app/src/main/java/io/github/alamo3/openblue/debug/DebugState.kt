@@ -34,6 +34,10 @@ data class DebugState(
     val charging: Boolean = false,
     val pluggedIn: Boolean = false,
     val chargeMinutes: Int = 95,
+    val chargePortOpen: Boolean = false,
+    val preconditioning: Boolean = false,
+    val limitAc: Int = 80,
+    val limitDc: Int = 90,
     val battery12v: Int = 89,
     val tireWarning: Boolean = false,
 ) {
@@ -66,6 +70,8 @@ data class DebugState(
             put("batteryCharge", charging)
             put("batteryStatus", battery)
             put("batteryPlugin", if (pluggedIn || charging) 1 else 0)
+            put("chargePortDoorOpenStatus", if (chargePortOpen || pluggedIn || charging) 1 else 2)
+            put("batteryPreconditiong", preconditioning)
             putJsonObject("remainTime2") { putJsonObject("atc") { put("value", if (charging) chargeMinutes else 0); put("unit", 1) } }
             putJsonArray("drvDistance") {
                 add(buildJsonObject {
@@ -78,8 +84,8 @@ data class DebugState(
             }
             putJsonObject("reservChargeInfos") {
                 putJsonArray("targetSOClist") {
-                    add(buildJsonObject { put("plugType", 0); put("targetSOClevel", 90) })
-                    add(buildJsonObject { put("plugType", 1); put("targetSOClevel", 80) })
+                    add(buildJsonObject { put("plugType", 0); put("targetSOClevel", limitDc) })
+                    add(buildJsonObject { put("plugType", 1); put("targetSOClevel", limitAc) })
                 }
             }
         }
