@@ -70,7 +70,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             val v = store.vehicle!!
             // One task for both: task() ignores calls while another is running.
             task("Refreshing…") {
-                setStatus(api.cachedStatus(v.id))
+                applyStatus(api.cachedStatus(v.id))
                 serverPresets = api.serverPresets(v.id, tempTable)
             }
         }
@@ -172,12 +172,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         try {
             val selected = api.selectVehicle(v.id)
             store.hvacTempType = selected.int("features.hvacTempType")
-            (selected["status"] as? JsonObject)?.let { setStatus(it) }
+            (selected["status"] as? JsonObject)?.let { applyStatus(it) }
         } catch (e: ApiException) {
             // Not fatal: fall back to defaults and the regular status call.
         }
         screen = Screen.Main
-        runCatching { setStatus(api.cachedStatus(v.id)) }
+        runCatching { applyStatus(api.cachedStatus(v.id)) }
         runCatching { serverPresets = api.serverPresets(v.id, tempTable) }
     }
 
@@ -196,7 +196,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     // ---------------------------------------------------------------- status
 
-    private fun setStatus(s: JsonObject) {
+    private fun applyStatus(s: JsonObject) {
         status = s
         store.cachedStatus = s.toString()
     }
@@ -205,7 +205,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val v = vehicle ?: return
         task(if (live) "Waking the car for fresh status…" else "Refreshing…") {
             try {
-                setStatus(if (live) api.liveStatus(v.id) else api.cachedStatus(v.id))
+                applyStatus(if (live) api.liveStatus(v.id) else api.cachedStatus(v.id))
             } catch (e: ApiException) {
                 if (!quiet) throw e
             }
@@ -224,7 +224,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 CommandResult.FAILED -> "The car reported that $label failed"
                 CommandResult.TIMEOUT -> "No confirmation yet for $label — check the car's status in a minute"
             }
-            runCatching { setStatus(api.cachedStatus(v.id)) }
+            runCatching { applyStatus(api.cachedStatus(v.id)) }
         }
     }
 
