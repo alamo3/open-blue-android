@@ -242,7 +242,45 @@ class BluelinkClient(private val store: SecureStore) {
         hvacTempType = selected.int("features.hvacTempType"),
         strgWhlHeatingOption = selected.int("features.strgWhlHeatingOption"),
         seatOptions = listOf("drv", "ast", "rl", "rr").map { selected.int("features.seatHeatVent.${it}SeatHeatOption") },
+        photoUrl = selected.str("vehicle.photoUrl"),
+        trim = selected.str("vehicle.trim")?.trim()?.trimEnd('-')?.trim()?.takeIf { it.isNotEmpty() },
+        odometer = selected.dbl("vehicle.odometer"),
+        odometerUnit = selected.int("vehicle.odometerUnit"),
+        hasSvm = selected.arr("featuresModel.features").any { cat ->
+            cat.arr("features").any { it.str("featureName") == "ParkingSvm" }
+        },
     )
+
+    // ------------------------------------------------------------ surround view
+
+    /**
+     * Asks the car to take surround-view photos (rfc/fndmcrsvm). The official app verifies the
+     * PIN first and then sends the request with just the access token and vehicle ID.
+     */
+    suspend fun requestSurroundView(vehicleId: String): String? {
+        val pin = store.pin ?: throw ApiException(null, "No Bluelink PIN saved")
+        return authed { t ->
+            pAuth(t, vehicleId, pin)
+            val r = post("rfc/fndmcrsvm", headers = mapOf("accessToken" to t, "vehicleId" to vehicleId))
+            check(r)
+            r.headers["transactionId"]
+        }
+    }
+
+    /** The most recent surround-view captures stored by Bluelink (rfc/lastmcrsvm), newest first. */
+    suspend fun lastSurroundView(vehicleId: String): List<SvmCapture> = authed { t ->
+        val body = check(post("rfc/lastmcrsvm", headers = mapOf("accessToken" to t, "vehicleId" to vehicleId)))
+        body.arr("result.svmLocations").mapNotNull { loc ->
+            val b64 = loc.str("svmImage") ?: return@mapNotNull null
+            val bytes = runCatching { android.util.Base64.decode(b64, android.util.Base64.DEFAULT) }.getOrNull()
+                ?: return@mapNotNull null
+            SvmCapture(
+                utcTime = loc.str("utcTime"),
+                jpeg = bytes,
+                imageSize = loc.arr("imageSize").mapNotNull { (it as? JsonPrimitive)?.contentOrNull?.toDoubleOrNull()?.toInt() },
+            )
+        }.sortedByDescending { it.utcTime.orEmpty() }
+    }
 
     /** sltvhcl: vehicle + status + feature flags (hvacTempType etc). Returns the "result" object. */
     suspend fun selectVehicle(vehicleId: String): JsonObject = authed { t ->

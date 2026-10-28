@@ -1,8 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.OpenBlue" parent="android:Theme.Material.NoActionBar">
+    <style name="Theme.OpenBlue" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/window_background</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
     </style>
     <color name="ic_launcher_background">#0B3D91</color>
+    <color name="window_background">#F5F6F7</color>
 </resources>

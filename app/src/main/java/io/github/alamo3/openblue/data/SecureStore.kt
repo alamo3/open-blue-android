@@ -66,6 +66,11 @@ class SecureStore(context: Context) {
         get() = read("climateFormat")?.let { runCatching { ClimateFormat.valueOf(it) }.getOrNull() } ?: ClimateFormat.AUTO
         set(v) = write("climateFormat", v.name)
 
+    /** Ask for fingerprint/screen lock before unlocking the car. */
+    var confirmUnlock: Boolean
+        get() = prefs.getBoolean("confirmUnlock", true)
+        set(v) = prefs.edit().putBoolean("confirmUnlock", v).apply()
+
     var vehicle: VehicleInfo?
         get() = read("vehicle")?.let { runCatching { json.decodeFromString<VehicleInfo>(it) }.getOrNull() }
         set(v) = write("vehicle", v?.let { json.encodeToString(it) })

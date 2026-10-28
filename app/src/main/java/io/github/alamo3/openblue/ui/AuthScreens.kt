@@ -1,20 +1,28 @@
 package io.github.alamo3.openblue.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.DirectionsCar
+import androidx.compose.material.icons.rounded.Email
+import androidx.compose.material.icons.rounded.Sms
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -23,7 +31,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -31,120 +43,133 @@ import io.github.alamo3.openblue.MainViewModel
 import io.github.alamo3.openblue.Screen
 import io.github.alamo3.openblue.api.VehicleInfo
 
+/** Full-width primary action; shows a spinner while [loading]. */
 @Composable
-fun LoginScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
-    var email by rememberSaveable { mutableStateOf("") }
-    var password by rememberSaveable { mutableStateOf("") }
-    var pin by rememberSaveable { mutableStateOf("") }
-    val busy = vm.busy != null
-
-    Column(
-        modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+fun PrimaryButton(text: String, enabled: Boolean, loading: Boolean = false, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    Box(
+        modifier
+            .fillMaxWidth()
+            .height(56.dp)
+            .alpha(if (enabled || loading) 1f else 0.4f)
+            .clip(CircleShape)
+            .background(scheme.primary)
+            .pressable(enabled && !loading, onClick),
+        contentAlignment = Alignment.Center,
     ) {
-        Spacer(Modifier.height(24.dp))
-        Text("Open Blue", style = MaterialTheme.typography.headlineLarge)
-        Text(
-            "Sign in with your Hyundai Bluelink Canada account (mybluelink.ca).",
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        OutlinedTextField(
-            value = email, onValueChange = { email = it },
-            label = { Text("Email") }, singleLine = true,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
-            modifier = Modifier.fillMaxWidth(),
-        )
-        OutlinedTextField(
-            value = password, onValueChange = { password = it },
-            label = { Text("Password") }, singleLine = true,
-            visualTransformation = PasswordVisualTransformation(),
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-            modifier = Modifier.fillMaxWidth(),
-        )
-        OutlinedTextField(
-            value = pin, onValueChange = { pin = it.filter(Char::isDigit).take(4) },
-            label = { Text("Bluelink PIN (for remote commands)") }, singleLine = true,
-            visualTransformation = PasswordVisualTransformation(),
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-            modifier = Modifier.fillMaxWidth(),
-        )
-        Button(
-            onClick = { vm.login(email, password, pin) },
-            enabled = !busy && email.isNotBlank() && password.isNotEmpty() && pin.length == 4,
-            modifier = Modifier.fillMaxWidth(),
-        ) { Text("Sign in") }
-        Card {
-            Text(
-                "Your email, password and PIN are stored encrypted on this phone only, and are sent " +
-                    "only to mybluelink.ca. This is an unofficial app and is not affiliated with Hyundai.",
-                style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.padding(12.dp),
-            )
-        }
+        if (loading) CircularProgressIndicator(color = scheme.onPrimary, strokeWidth = 2.dp, modifier = Modifier.size(22.dp))
+        else Text(text, style = MaterialTheme.typography.labelLarge, color = scheme.onPrimary)
     }
 }
 
 @Composable
-fun OtpScreen(vm: MainViewModel, state: Screen.Otp, modifier: Modifier = Modifier) {
+fun LoginScreen(vm: MainViewModel) {
+    var email by rememberSaveable { mutableStateOf("") }
+    var password by rememberSaveable { mutableStateOf("") }
+    var pin by rememberSaveable { mutableStateOf("") }
+    val busy = vm.busy != null
+    val ready = email.isNotBlank() && password.isNotEmpty() && pin.length == 4
+
+    Column(
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).imePadding().padding(horizontal = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Spacer(Modifier.height(56.dp))
+        Text("Open Blue", style = MaterialTheme.typography.displayMedium)
+        Text(
+            "Sign in with your Bluelink Canada account, the same one you use on mybluelink.ca.",
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(12.dp))
+        OutlinedTextField(
+            value = email, onValueChange = { email = it },
+            label = { Text("Email") }, singleLine = true, shape = MaterialTheme.shapes.medium,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email, imeAction = ImeAction.Next),
+            modifier = Modifier.fillMaxWidth(),
+        )
+        OutlinedTextField(
+            value = password, onValueChange = { password = it },
+            label = { Text("Password") }, singleLine = true, shape = MaterialTheme.shapes.medium,
+            visualTransformation = PasswordVisualTransformation(),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Next),
+            modifier = Modifier.fillMaxWidth(),
+        )
+        OutlinedTextField(
+            value = pin, onValueChange = { pin = it.filter(Char::isDigit).take(4) },
+            label = { Text("Bluelink PIN") },
+            supportingText = { Text("The 4-digit PIN for remote commands") },
+            singleLine = true, shape = MaterialTheme.shapes.medium,
+            visualTransformation = PasswordVisualTransformation(),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword, imeAction = ImeAction.Done),
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Spacer(Modifier.height(4.dp))
+        PrimaryButton("Sign in", enabled = ready && !busy, loading = busy) { vm.login(email, password, pin) }
+        Text(
+            "Your details are stored encrypted on this phone and sent only to mybluelink.ca. Open Blue is unofficial and not affiliated with Hyundai.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 8.dp, bottom = 32.dp),
+        )
+    }
+}
+
+@Composable
+fun OtpScreen(vm: MainViewModel, state: Screen.Otp) {
     var code by rememberSaveable { mutableStateOf("") }
     val busy = vm.busy != null
     val sent = state.challenge.otpKey != null
+    val scheme = MaterialTheme.colorScheme
 
     Column(
-        modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).imePadding().padding(horizontal = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(56.dp))
         Text("Verify this phone", style = MaterialTheme.typography.headlineMedium)
         Text(
-            "Bluelink hasn't seen this device before, so it wants a one-time code. " +
-                "You should only need to do this once.",
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            if (sent) "Enter the code Bluelink sent you." else "Bluelink sends a one-time code the first time it sees a new phone. Where should it go?",
+            style = MaterialTheme.typography.bodyLarge,
+            color = scheme.onSurfaceVariant,
         )
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-            OutlinedButton(onClick = { vm.sendOtp(bySms = false) }, enabled = !busy, modifier = Modifier.weight(1f)) {
-                Text("Email code")
-            }
+        Spacer(Modifier.height(8.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            ToggleChip(Icons.Rounded.Email, "Email", false, { if (!busy) vm.sendOtp(bySms = false) }, scheme.primary)
             if (state.challenge.phone != null) {
-                OutlinedButton(onClick = { vm.sendOtp(bySms = true) }, enabled = !busy, modifier = Modifier.weight(1f)) {
-                    Text("Text code")
-                }
+                ToggleChip(Icons.Rounded.Sms, "Text message", false, { if (!busy) vm.sendOtp(bySms = true) }, scheme.primary)
             }
         }
         Text(
-            "Email: ${state.challenge.email}" + (state.challenge.phone?.let { "\nPhone: $it" } ?: ""),
+            listOfNotNull(state.challenge.email, state.challenge.phone).joinToString(" or "),
             style = MaterialTheme.typography.bodySmall,
+            color = scheme.onSurfaceVariant,
         )
-        OutlinedTextField(
-            value = code, onValueChange = { code = it.filter(Char::isLetterOrDigit).take(10) },
-            label = { Text("Code") }, singleLine = true, enabled = sent,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-            modifier = Modifier.fillMaxWidth(),
-        )
-        Button(
-            onClick = { vm.verifyOtp(code) },
-            enabled = !busy && sent && code.isNotBlank(),
-            modifier = Modifier.fillMaxWidth(),
-        ) { Text("Verify") }
+        if (sent) {
+            OutlinedTextField(
+                value = code, onValueChange = { code = it.filter(Char::isLetterOrDigit).take(10) },
+                label = { Text("Code") }, singleLine = true, shape = MaterialTheme.shapes.medium,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
+                modifier = Modifier.fillMaxWidth(),
+            )
+            PrimaryButton("Verify", enabled = code.isNotBlank() && !busy, loading = busy) { vm.verifyOtp(code) }
+            Text("Didn't get it? Tap Email or Text message again to resend.", style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
+        }
         TextButton(onClick = { vm.cancelOtp() }) { Text("Cancel") }
     }
 }
 
 @Composable
-fun VehiclePickerScreen(vm: MainViewModel, vehicles: List<VehicleInfo>, modifier: Modifier = Modifier) {
+fun VehiclePickerScreen(vm: MainViewModel, vehicles: List<VehicleInfo>) {
     Column(
-        modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(56.dp))
         Text("Choose a vehicle", style = MaterialTheme.typography.headlineMedium)
+        Spacer(Modifier.height(8.dp))
         vehicles.forEach { v ->
-            OutlinedButton(onClick = { vm.chooseVehicle(v) }, enabled = vm.busy == null, modifier = Modifier.fillMaxWidth()) {
-                Column(Modifier.fillMaxWidth()) {
-                    Text(v.nickname, style = MaterialTheme.typography.titleMedium)
-                    Text("${v.year} ${v.model} · ${v.vin}", style = MaterialTheme.typography.bodySmall)
-                }
-            }
+            NavRow(Icons.Rounded.DirectionsCar, v.nickname, "${v.year} ${v.model}", onClick = { if (vm.busy == null) vm.chooseVehicle(v) })
         }
     }
 }

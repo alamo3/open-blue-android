@@ -1,9 +1,11 @@
 package io.github.alamo3.openblue.ui
 
-import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
@@ -11,8 +13,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -28,77 +30,92 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import io.github.alamo3.openblue.BuildConfig
 import io.github.alamo3.openblue.MainViewModel
 import io.github.alamo3.openblue.api.ClimateFormat
 
 @Composable
-fun SettingsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
-    val busy = vm.busy != null
-    var pin by remember { mutableStateOf("") }
+fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
+    val app = AppTheme.colors
+    var editingPin by remember { mutableStateOf(false) }
     var confirmSignOut by remember { mutableStateOf(false) }
 
-    Column(
-        modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        SectionCard("Account") {
-            InfoRow("Signed in as", vm.username ?: "—")
-            vm.vehicle?.let { v ->
-                InfoRow("Vehicle", v.nickname)
-                InfoRow("Model", "${v.year} ${v.model}")
-                InfoRow("VIN", v.vin)
-            }
-            TextButton(onClick = { vm.changeVehicle() }, enabled = !busy) { Text("Change vehicle") }
-        }
+    Column(Modifier.fillMaxSize()) {
+        ScreenHeader("Settings", onBack)
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 48.dp)) {
+            SectionTitle("Account")
+            DetailRow("Signed in as", vm.username ?: "Unknown")
+            vm.vehicle?.let { DetailRow("Vehicle", it.nickname) }
+            ClickRow("Change vehicle", "Pick another car on this account", enabled = vm.busy == null) { vm.changeVehicle() }
 
-        SectionCard("Bluelink PIN") {
-            OutlinedTextField(
-                value = pin, onValueChange = { pin = it.filter(Char::isDigit).take(4) },
-                label = { Text("New PIN") }, singleLine = true,
-                visualTransformation = PasswordVisualTransformation(),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-                modifier = Modifier.fillMaxWidth(),
-            )
-            TextButton(onClick = { vm.updatePin(pin); pin = "" }, enabled = pin.length == 4) { Text("Save PIN") }
-        }
+            HorizontalDivider(color = app.hairline, modifier = Modifier.padding(top = 8.dp))
+            SectionTitle("Security")
+            SettingSwitch(
+                "Confirm before unlocking",
+                "Ask for your fingerprint or screen lock before unlocking the car",
+                vm.confirmUnlock,
+            ) { vm.setConfirmUnlock(it) }
+            ClickRow("Bluelink PIN", "Used for remote commands. Change it here if you change it on Bluelink.") { editingPin = true }
 
-        SectionCard("Climate request format") {
+            HorizontalDivider(color = app.hairline, modifier = Modifier.padding(top = 8.dp))
+            SectionTitle("Climate")
             Picker(
-                label = "Format",
+                label = "Request format",
                 options = ClimateFormat.entries.toList(),
                 selected = vm.climateFormat,
                 optionLabel = { it.label },
                 onSelect = { vm.setFormat(it) },
                 modifier = Modifier.fillMaxWidth(),
             )
-            InfoRow("Vehicle generation", vm.caps.genType ?: "unknown")
-            InfoRow("Currently sending", "\"${vm.climateKey}\"")
             Text(
-                "Automatic uses \"remoteControl\" for Gen3 cars (like the official app) and \"hvacInfo\" otherwise. " +
-                    "Only override this if climate starts are accepted but the car ignores the settings.",
+                "Automatic matches the official app: \"remoteControl\" for Gen3 cars, \"hvacInfo\" for older ones. " +
+                    "Your car reports ${vm.caps.genType ?: "an unknown generation"}, so climate starts use \"${vm.climateKey}\".",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-        }
 
-        SectionCard("Diagnostics") {
+            HorizontalDivider(color = app.hairline, modifier = Modifier.padding(top = 16.dp))
+            SectionTitle("Help")
+            ClickRow("Show raw vehicle data", "What Bluelink reports for your car, for troubleshooting", enabled = vm.busy == null) { vm.loadDiagnostics() }
+            Spacer(Modifier.height(8.dp))
             Text(
-                "Shows the raw vehicle data Bluelink returns (feature flags, seat options, HVAC type).",
+                "Open Blue ${BuildConfig.VERSION_NAME}. An unofficial app, not affiliated with Hyundai. " +
+                    "Set in Barlow, licensed under the SIL Open Font License.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            TextButton(onClick = { vm.loadDiagnostics() }, enabled = !busy) { Text("Show raw vehicle data") }
-        }
 
-        OutlinedButton(onClick = { confirmSignOut = true }, modifier = Modifier.fillMaxWidth()) { Text("Sign out") }
+            Spacer(Modifier.height(24.dp))
+            TextButton(onClick = { confirmSignOut = true }) {
+                Text("Sign out", color = app.alert, style = MaterialTheme.typography.labelLarge)
+            }
+        }
+    }
+
+    if (editingPin) {
+        var pin by remember { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { editingPin = false },
+            title = { Text("Bluelink PIN") },
+            text = {
+                OutlinedTextField(
+                    value = pin, onValueChange = { pin = it.filter(Char::isDigit).take(4) },
+                    label = { Text("4-digit PIN") }, singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                )
+            },
+            confirmButton = { TextButton(onClick = { vm.updatePin(pin); editingPin = false }, enabled = pin.length == 4) { Text("Save PIN") } },
+            dismissButton = { TextButton(onClick = { editingPin = false }) { Text("Cancel") } },
+        )
     }
 
     if (confirmSignOut) {
         AlertDialog(
             onDismissRequest = { confirmSignOut = false },
             title = { Text("Sign out?") },
-            text = { Text("Your saved email, password and PIN will be removed from this phone. Presets saved on this phone are kept.") },
-            confirmButton = { TextButton(onClick = { confirmSignOut = false; vm.signOut() }) { Text("Sign out") } },
+            text = { Text("Your email, password and PIN are removed from this phone. Presets saved on this phone are kept.") },
+            confirmButton = { TextButton(onClick = { confirmSignOut = false; vm.signOut() }) { Text("Sign out", color = app.alert) } },
             dismissButton = { TextButton(onClick = { confirmSignOut = false }) { Text("Cancel") } },
         )
     }
@@ -121,5 +138,13 @@ fun SettingsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
             confirmButton = { TextButton(onClick = { clipboard.setText(AnnotatedString(text)) }) { Text("Copy") } },
             dismissButton = { TextButton(onClick = { vm.diagnostics = null }) { Text("Close") } },
         )
+    }
+}
+
+@Composable
+private fun ClickRow(title: String, subtitle: String?, enabled: Boolean = true, onClick: () -> Unit) {
+    Column(Modifier.fillMaxWidth().clickable(enabled = enabled, onClick = onClick).padding(vertical = 12.dp)) {
+        Text(title, style = MaterialTheme.typography.titleMedium)
+        if (subtitle != null) Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }

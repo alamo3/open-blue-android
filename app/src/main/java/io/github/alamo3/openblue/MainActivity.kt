@@ -1,47 +1,56 @@
 package io.github.alamo3.openblue
 
 import android.os.Bundle
-import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.layout.Column
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Star
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.viewmodel.compose.viewModel
+import io.github.alamo3.openblue.ui.CameraScreen
 import io.github.alamo3.openblue.ui.ClimateScreen
+import io.github.alamo3.openblue.ui.CommandStrip
+import io.github.alamo3.openblue.ui.HomeScreen
 import io.github.alamo3.openblue.ui.LoginScreen
 import io.github.alamo3.openblue.ui.OpenBlueTheme
 import io.github.alamo3.openblue.ui.OtpScreen
+import io.github.alamo3.openblue.ui.Route
 import io.github.alamo3.openblue.ui.SettingsScreen
-import io.github.alamo3.openblue.ui.StatusScreen
+import io.github.alamo3.openblue.ui.VehicleScreen
 import io.github.alamo3.openblue.ui.VehiclePickerScreen
+import io.github.alamo3.openblue.ui.confirmIdentity
 
-class MainActivity : ComponentActivity() {
+class MainActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -53,14 +62,36 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private val TABS = listOf("Status", "Climate", "Settings")
-
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun App(vm: MainViewModel = viewModel()) {
     val snackbar = remember { SnackbarHostState() }
-    var tab by rememberSaveable { mutableIntStateOf(0) }
+    val activity = LocalContext.current as? FragmentActivity
+    val stack = remember { mutableStateListOf(Route.Home) }
+    var forward by remember { mutableStateOf(true) }
     val screen = vm.screen
+
+    fun open(r: Route) {
+        forward = true
+        stack.add(r)
+    }
+
+    fun back() {
+        if (stack.size > 1) {
+            forward = false
+            stack.removeAt(stack.lastIndex)
+        }
+    }
+
+    fun unlock() {
+        val name = vm.vehicle?.nickname ?: "your car"
+        if (vm.confirmUnlock && activity != null) {
+            activity.confirmIdentity("Unlock $name", "Confirm it's you") { vm.unlock() }
+        } else {
+            vm.unlock()
+        }
+    }
+
+    BackHandler(enabled = screen is Screen.Main && stack.size > 1) { back() }
 
     LaunchedEffect(vm.message) {
         // Clear only after showing: clearing first would change the key and cancel this effect.
@@ -69,52 +100,58 @@ private fun App(vm: MainViewModel = viewModel()) {
             vm.message = null
         }
     }
+    var lastProgress by remember { mutableStateOf<CommandProgress?>(null) }
+    LaunchedEffect(vm.progress) { vm.progress?.let { lastProgress = it } }
 
-    Scaffold(
-        snackbarHost = { SnackbarHost(snackbar) },
-        topBar = {
-            if (screen is Screen.Main) {
-                TopAppBar(title = { Text(TABS[tab]) })
-            }
-        },
-        bottomBar = {
-            if (screen is Screen.Main) {
-                NavigationBar {
-                    TABS.forEachIndexed { i, label ->
-                        NavigationBarItem(
-                            selected = tab == i,
-                            onClick = { tab = i },
-                            icon = {
-                                Icon(
-                                    when (i) { 0 -> Icons.Filled.Home; 1 -> Icons.Filled.Star; else -> Icons.Filled.Settings },
-                                    contentDescription = null,
-                                )
-                            },
-                            label = { Text(label) },
-                        )
-                    }
-                }
-            }
-        },
-    ) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding)) {
-            vm.busy?.let { label ->
-                LinearProgressIndicator(Modifier.fillMaxWidth())
-                Text(
-                    label,
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-                )
-            }
+    LaunchedEffect(screen) {
+        if (screen !is Screen.Main) {
+            stack.clear()
+            stack.add(Route.Home)
+        }
+    }
+
+    Scaffold(snackbarHost = { SnackbarHost(snackbar) }, containerColor = MaterialTheme.colorScheme.background) { padding ->
+        Box(Modifier.fillMaxSize().padding(padding)) {
             when (screen) {
                 Screen.Login -> LoginScreen(vm)
                 is Screen.Otp -> OtpScreen(vm, screen)
                 is Screen.PickVehicle -> VehiclePickerScreen(vm, screen.vehicles)
-                Screen.Main -> when (tab) {
-                    0 -> StatusScreen(vm)
-                    1 -> ClimateScreen(vm)
-                    else -> SettingsScreen(vm)
+                Screen.Main -> AnimatedContent(
+                    targetState = stack.last(),
+                    transitionSpec = {
+                        val spec = tween<androidx.compose.ui.unit.IntOffset>(320, easing = FastOutSlowInEasing)
+                        if (forward) {
+                            (slideInHorizontally(spec) { it / 3 } + fadeIn(tween(240))) togetherWith
+                                (slideOutHorizontally(spec) { -it / 6 } + fadeOut(tween(160)))
+                        } else {
+                            (slideInHorizontally(spec) { -it / 6 } + fadeIn(tween(240))) togetherWith
+                                (slideOutHorizontally(spec) { it / 3 } + fadeOut(tween(160)))
+                        }
+                    },
+                    label = "route",
+                ) { route ->
+                    when (route) {
+                        Route.Home -> HomeScreen(vm, open = ::open, onUnlock = ::unlock)
+                        Route.Climate -> ClimateScreen(vm, onBack = ::back)
+                        Route.Camera -> CameraScreen(vm, onBack = ::back)
+                        Route.Vehicle -> VehicleScreen(vm, onBack = ::back)
+                        Route.Settings -> SettingsScreen(vm, onBack = ::back)
+                    }
                 }
+            }
+
+            if (vm.busy != null && screen is Screen.Main) {
+                LinearProgressIndicator(Modifier.fillMaxWidth().align(Alignment.TopCenter))
+            }
+
+            AnimatedVisibility(
+                visible = vm.progress != null,
+                enter = slideInVertically(tween(280)) { it } + fadeIn(tween(200)),
+                exit = slideOutVertically(tween(240)) { it } + fadeOut(tween(200)),
+                modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp),
+            ) {
+                // While animating out, progress is already null, so keep showing the last value.
+                (vm.progress ?: lastProgress)?.let { CommandStrip(it, onDismiss = { vm.dismissProgress() }) }
             }
         }
     }

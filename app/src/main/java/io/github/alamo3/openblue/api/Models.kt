@@ -25,8 +25,30 @@ data class VehicleCaps(
     val strgWhlHeatingOption: Int? = null,
     /** drv, ast, rl, rr */
     val seatOptions: List<Int?> = listOf(null, null, null, null),
+    val photoUrl: String? = null,
+    val trim: String? = null,
+    val odometer: Double? = null,
+    /** 1 = km, 3 = miles (same units as range). */
+    val odometerUnit: Int? = null,
+    /** "ParkingSvm" in the Menu feature list: remote surround-view photos. */
+    val hasSvm: Boolean = false,
 ) {
     val isGen3: Boolean get() = genType?.contains("3") == true
+
+    /** Order a seat cycles through when tapped, starting from the warmest setting. */
+    fun seatCycle(seat: Int): List<SeatLevel> {
+        val allowed = seatLevels(seat)
+        return listOf(
+            SeatLevel.OFF, SeatLevel.HEAT_HIGH, SeatLevel.HEAT_MED, SeatLevel.HEAT_LOW,
+            SeatLevel.COOL_HIGH, SeatLevel.COOL_MED, SeatLevel.COOL_LOW,
+        ).filter { it in allowed }
+    }
+
+    fun nextSeatLevel(seat: Int, currentCode: Int): SeatLevel {
+        val cycle = seatCycle(seat)
+        val i = cycle.indexOfFirst { it.code == currentCode }
+        return cycle[(i + 1).mod(cycle.size)]
+    }
     val splitHeating: Boolean get() = strgWhlHeatingOption == 1
 
     fun heatingOptions(): List<Heating> =
@@ -67,6 +89,16 @@ enum class SeatLevel(val code: Int, val label: String) {
     COOL_MED(4, "Cool medium"),
     COOL_HIGH(5, "Cool high");
 
+    val isHeat: Boolean get() = code >= 6
+    val isCool: Boolean get() = code in 3..5
+    /** Bars lit on a seat indicator, like the car's own seat buttons (3 = high). */
+    val bars: Int get() = when (this) {
+        OFF -> 0
+        HEAT_LOW, COOL_LOW -> 1
+        HEAT_MED, COOL_MED -> 2
+        HEAT_HIGH, COOL_HIGH -> 3
+    }
+
     companion object {
         fun of(code: Int?) = entries.firstOrNull { it.code == code } ?: OFF
 
@@ -93,17 +125,26 @@ data class ClimateSettings(
     val rearLeftSeat: Int = 0,
     val rearRightSeat: Int = 0,
 ) {
+    val seats: List<Int> get() = listOf(driverSeat, passengerSeat, rearLeftSeat, rearRightSeat)
+
+    fun withSeat(index: Int, code: Int) = when (index) {
+        0 -> copy(driverSeat = code)
+        1 -> copy(passengerSeat = code)
+        2 -> copy(rearLeftSeat = code)
+        else -> copy(rearRightSeat = code)
+    }
+
+    /** Short plain-language description, e.g. "22 °C for 10 min, defrost, 2 seats heated". */
     fun summary(): String {
         val parts = mutableListOf<String>()
-        parts += if (climateOn) "${fmt(tempC)} °C" else "A/C off"
+        parts += if (climateOn) "${fmt(tempC)} °C for $durationMin min" else "Fan only for $durationMin min"
         if (defrost) parts += "defrost"
-        if (heating != 0) parts += Heating.of(heating).label.lowercase()
-        val seats = listOf("D" to driverSeat, "P" to passengerSeat, "RL" to rearLeftSeat, "RR" to rearRightSeat)
-            .filter { it.second != 0 }
-            .joinToString(" ") { "${it.first}:${SeatLevel.of(it.second).label.lowercase()}" }
-        if (seats.isNotEmpty()) parts += "seats $seats"
-        parts += "${durationMin} min"
-        return parts.joinToString(" · ")
+        if (heating != 0) parts += "heated wheel"
+        val heated = seats.count { SeatLevel.of(it).isHeat }
+        val cooled = seats.count { SeatLevel.of(it).isCool }
+        if (heated > 0) parts += if (heated == 1) "1 seat heated" else "$heated seats heated"
+        if (cooled > 0) parts += if (cooled == 1) "1 seat cooled" else "$cooled seats cooled"
+        return parts.joinToString(", ")
     }
 
     companion object {
@@ -113,3 +154,19 @@ data class ClimateSettings(
 
 /** A preset saved on the Bluelink server (gtfvsttng) — the ones you make on mybluelink.ca. */
 data class ServerPreset(val id: Int?, val isDefault: Boolean, val settings: ClimateSettings)
+
+/**
+ * One remote surround-view capture. The car uploads a single JPEG strip:
+ * front, rear, left and right camera frames (each [frameWidth] x [frameHeight]) side by side,
+ * followed by the top-down view ([topWidth] x [topHeight]). Layout from the official app 2.0.47.
+ */
+class SvmCapture(
+    val utcTime: String?,
+    val jpeg: ByteArray,
+    val imageSize: List<Int>,
+) {
+    val frameWidth: Int? get() = imageSize.getOrNull(2)
+    val frameHeight: Int? get() = imageSize.getOrNull(3)
+    val topWidth: Int? get() = imageSize.getOrNull(4)
+    val topHeight: Int? get() = imageSize.getOrNull(5)
+}
