@@ -56,7 +56,10 @@ fun SoundAutoStart(vm: MainViewModel) {
     val bluetoothOk = Build.VERSION.SDK_INT < 31 || has(Manifest.permission.BLUETOOTH_CONNECT)
     val locationOk = has(Manifest.permission.ACCESS_FINE_LOCATION)
     val backgroundOk = Build.VERSION.SDK_INT < 29 || has(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
-    val batteryOk = preview || context.getSystemService(PowerManager::class.java)?.isIgnoringBatteryOptimizations(context.packageName) == true
+    // runCatching: the screenshot renderer has no power service.
+    val batteryOk = preview || runCatching {
+        context.getSystemService(PowerManager::class.java)?.isIgnoringBatteryOptimizations(context.packageName) == true
+    }.getOrDefault(true)
 
     val askBluetooth = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { tick++ }
     val askBackground = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
