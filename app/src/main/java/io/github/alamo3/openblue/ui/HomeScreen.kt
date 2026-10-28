@@ -70,7 +70,7 @@ fun HomeScreen(vm: MainViewModel, open: (Route) -> Unit, onUnlock: () -> Unit) {
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                Avatar(vm.avatar, vm.avatarVersion, vm.username.orEmpty(), onClick = { open(Route.Settings) })
+                Avatar(caps.photoUrl, v?.nickname.orEmpty(), onClick = { open(Route.Settings) })
             }
 
             // Battery and range

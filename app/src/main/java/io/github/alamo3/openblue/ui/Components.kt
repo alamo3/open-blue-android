@@ -378,23 +378,21 @@ fun <T> Picker(
     }
 }
 
-/** Round profile picture, or the first letter of [name] when there isn't one. */
+/** Round car photo (Bluelink's vehicle picture), or the first letter of [name] when there isn't one. */
 @Composable
-fun Avatar(file: java.io.File?, version: Int, name: String, onClick: () -> Unit, size: Dp = 44.dp) {
+fun Avatar(url: String?, name: String, onClick: () -> Unit, size: Dp = 44.dp) {
     val scheme = MaterialTheme.colorScheme
     Box(
         Modifier.size(size).clip(CircleShape).background(scheme.surfaceContainerHigh).pressable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        if (file != null) {
-            androidx.compose.runtime.key(version) {
-                coil.compose.AsyncImage(
-                    model = file,
-                    contentDescription = "Profile picture",
-                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                    modifier = Modifier.matchParentSize(),
-                )
-            }
+        if (url != null) {
+            coil.compose.AsyncImage(
+                model = url,
+                contentDescription = "Car photo",
+                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                modifier = Modifier.matchParentSize(),
+            )
         } else {
             Text(name.take(1).uppercase().ifEmpty { "?" }, style = MaterialTheme.typography.titleMedium)
         }

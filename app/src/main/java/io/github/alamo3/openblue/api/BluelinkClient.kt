@@ -251,6 +251,21 @@ class BluelinkClient(private val store: SecureStore) {
         },
     )
 
+    /**
+     * Replaces the car photo Bluelink shows as the vehicle's picture (vin/photo).
+     * [jpegBase64] is a small JPEG (the official app keeps it under ~100 KB). Returns the new URL.
+     */
+    suspend fun uploadVehiclePhoto(vehicleId: String, jpegBase64: String): String? = authed { t ->
+        val body = check(
+            post(
+                "vin/photo",
+                buildJsonObject { put("photo", jpegBase64); put("extension", "jpeg") },
+                mapOf("accessToken" to t, "vehicleId" to vehicleId),
+            )
+        )
+        body.str("result.photoUrl")
+    }
+
     // ------------------------------------------------------------ surround view
 
     /**

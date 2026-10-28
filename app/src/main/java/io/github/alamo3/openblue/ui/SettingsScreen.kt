@@ -47,7 +47,7 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
     var editingPin by remember { mutableStateOf(false) }
     var confirmSignOut by remember { mutableStateOf(false) }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-        if (uri != null) vm.setAvatar(uri)
+        if (uri != null) vm.changeCarPhoto(uri)
     }
     fun pickPhoto() = picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
 
@@ -56,18 +56,12 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 48.dp)) {
             SectionTitle("Account")
             Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Avatar(vm.avatar, vm.avatarVersion, vm.username.orEmpty(), onClick = { pickPhoto() }, size = 56.dp)
+                Avatar(vm.caps.photoUrl, vm.vehicle?.nickname.orEmpty(), onClick = { pickPhoto() }, size = 56.dp)
                 Spacer(Modifier.width(16.dp))
                 Column(Modifier.weight(1f)) {
                     Text(vm.username ?: "Unknown", style = MaterialTheme.typography.titleMedium)
-                    Row {
-                        TextButton(onClick = { pickPhoto() }, contentPadding = PaddingValues(0.dp)) {
-                            Text(if (vm.avatar == null) "Add profile picture" else "Change picture")
-                        }
-                        if (vm.avatar != null) {
-                            Spacer(Modifier.width(16.dp))
-                            TextButton(onClick = { vm.clearAvatar() }, contentPadding = PaddingValues(0.dp)) { Text("Remove", color = app.alert) }
-                        }
+                    TextButton(onClick = { pickPhoto() }, enabled = vm.busy == null, contentPadding = PaddingValues(0.dp)) {
+                        Text("Change car photo")
                     }
                 }
             }
