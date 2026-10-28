@@ -27,6 +27,7 @@ import io.github.alamo3.openblue.data.SecureStore
 import io.github.alamo3.openblue.ui.CameraScreen
 import io.github.alamo3.openblue.ui.ClimateScreen
 import io.github.alamo3.openblue.ui.CommandStrip
+import io.github.alamo3.openblue.ui.DebugOverlay
 import io.github.alamo3.openblue.ui.HomeScreen
 import io.github.alamo3.openblue.ui.LoginScreen
 import io.github.alamo3.openblue.ui.OpenBlueTheme
@@ -118,7 +119,7 @@ class ScreenshotTest(private val night: Boolean) {
         shot {
             androidx.compose.foundation.layout.Box(Modifier.fillMaxSize()) {
                 HomeScreen(vm, open = {}, onUnlock = {})
-                io.github.alamo3.openblue.ui.DebugOverlay(vm, initiallyOpen = true)
+                DebugOverlay(vm, initiallyOpen = true)
             }
         }
     }
