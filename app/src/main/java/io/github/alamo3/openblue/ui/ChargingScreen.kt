@@ -20,6 +20,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -155,6 +156,13 @@ private fun LimitSlider(label: String, value: Int, onChange: (Int) -> Unit) {
         onValueChange = { onChange(((it / 10f).roundToInt() * 10).coerceIn(50, 100)) },
         valueRange = 50f..100f,
         steps = 4,
+        colors = SliderDefaults.colors(
+            thumbColor = MaterialTheme.colorScheme.primary,
+            activeTrackColor = AppTheme.colors.charge,
+            inactiveTrackColor = AppTheme.colors.hairline,
+            activeTickColor = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.6f),
+            inactiveTickColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+        ),
     )
 }
 
