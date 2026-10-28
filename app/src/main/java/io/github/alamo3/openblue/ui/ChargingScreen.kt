@@ -1,6 +1,8 @@
 package io.github.alamo3.openblue.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -185,11 +187,37 @@ private fun PublicCharging(vm: MainViewModel, open: (Route) -> Unit) {
                 )
             }
         }
-        error != null -> Text(
-            "Couldn't load Hyundai's charging service: $error",
-            style = MaterialTheme.typography.bodySmall,
-            color = scheme.onSurfaceVariant,
-        )
+        error != null -> {
+            var details by remember { mutableStateOf(false) }
+            Text(
+                "Couldn't load Hyundai's charging service: $error. Tap for details.",
+                style = MaterialTheme.typography.bodySmall,
+                color = scheme.onSurfaceVariant,
+                modifier = Modifier.clickable { details = true },
+            )
+            if (details) {
+                val text = vm.chargeServiceDetails ?: "No request was recorded."
+                val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
+                androidx.compose.material3.AlertDialog(
+                    onDismissRequest = { details = false },
+                    title = { Text("Charging service details") },
+                    text = {
+                        androidx.compose.foundation.text.selection.SelectionContainer {
+                            Text(
+                                text,
+                                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()),
+                            )
+                        }
+                    },
+                    confirmButton = {
+                        androidx.compose.material3.TextButton(onClick = { clipboard.setText(androidx.compose.ui.text.AnnotatedString(text)) }) { Text("Copy") }
+                    },
+                    dismissButton = { androidx.compose.material3.TextButton(onClick = { details = false }) { Text("Close") } },
+                )
+            }
+        }
         else -> Text("Loading…", style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
     }
     NavRow(Icons.Rounded.Map, "Find chargers", "Nearby stations with live availability and prices", onClick = { open(Route.Chargers) })

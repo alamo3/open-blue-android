@@ -462,6 +462,8 @@ class MainViewModel(
         private set
     var chargeServiceError by mutableStateOf<String?>(null)
         private set
+    /** What was sent and received the last time the service was asked, for troubleshooting. */
+    val chargeServiceDetails: String? get() = api.lastExchange
 
     fun loadChargeService(force: Boolean = false) {
         val v = vehicle ?: return

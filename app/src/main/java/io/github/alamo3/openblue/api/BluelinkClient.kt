@@ -413,9 +413,18 @@ class BluelinkClient(private val store: SecureStore) {
 
     /** Which charging services the account and car have, plus cards on file and the plan. */
     suspend fun iacServiceInfo(vehicleId: String, modelCode: String?, modelYear: String?): JsonObject = authed { t ->
-        val body = iacCheck(post("iac/serviceInfo", vehicleInfoBody(modelCode, modelYear), mapOf("accessToken" to t, "vehicleId" to vehicleId)))
+        val req = vehicleInfoBody(modelCode, modelYear)
+        val r = post("iac/serviceInfo", req, mapOf("accessToken" to t, "vehicleId" to vehicleId))
+        lastExchange = "POST iac/serviceInfo\n" + pretty.encodeToString(JsonObject.serializer(), req) +
+            "\n\nResponse:\n" + pretty.encodeToString(JsonObject.serializer(), r.body)
+        val body = iacCheck(r)
         (body["result"] as? JsonObject) ?: JsonObject(emptyMap())
     }
+
+    /** The last charging-service request and its raw answer, for troubleshooting. */
+    var lastExchange: String? = null
+        private set
+    private val pretty = Json { prettyPrint = true }
 
     suspend fun iacSubscriptions(vehicleId: String, modelCode: String?, modelYear: String?): JsonArray = authed { t ->
         val body = iacCheck(post("iac/subscriptionInfo", vehicleInfoBody(modelCode, modelYear), mapOf("accessToken" to t, "vehicleId" to vehicleId)))
