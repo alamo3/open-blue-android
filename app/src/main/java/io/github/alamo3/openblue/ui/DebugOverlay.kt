@@ -73,6 +73,8 @@ fun BoxScope.DebugOverlay(vm: MainViewModel, initiallyOpen: Boolean = false) {
         DebugPanel(vm, onClose = { open = false })
     }
 
+    // The button hides while the panel is open so it can't cover the panel's controls.
+    if (open) return
     Box(
         Modifier
             .align(Alignment.CenterEnd)
