@@ -106,7 +106,7 @@ fun ChargersScreen(vm: MainViewModel, onBack: () -> Unit) {
                 onPin = { selected = it },
                 onMoved = { la, lo -> mapCentre = la to lo },
             )
-            AnimatedVisibility(
+            androidx.compose.animation.AnimatedVisibility(
                 visible = movedFar && !vm.stationsLoading,
                 enter = fadeIn(),
                 exit = fadeOut(),
