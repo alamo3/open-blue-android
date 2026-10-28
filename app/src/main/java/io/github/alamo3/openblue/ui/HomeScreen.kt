@@ -38,9 +38,7 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
-import coil.compose.SubcomposeAsyncImage
 import io.github.alamo3.openblue.MainViewModel
 import io.github.alamo3.openblue.api.ClimateSettings
 
@@ -100,14 +98,9 @@ fun HomeScreen(vm: MainViewModel, open: (Route) -> Unit, onUnlock: () -> Unit) {
                 )
             }
 
-            // The car, in 3D: doors/frunk/tailgate follow the status, glow shows climate and charging.
-            Car3D(
-                pose = st.toPose(),
-                climateTint = if (st?.climateOn == true) (if ((st.setTempC ?: vm.editor.tempC) >= 20) app.heat else app.cool) else null,
-                charging = st?.charging == true,
-                modifier = Modifier.fillMaxWidth().height(260.dp),
-                fallback = { CarPicture(caps.photoUrl, Modifier.fillMaxSize().padding(vertical = 8.dp)) },
-            )
+            // The car, in 3D: doors, frunk and tailgate follow the status; airflow shows climate,
+            // and the charging cable shows when it's plugged in.
+            Car3D(st.toPose(vm.editor.tempC), Modifier.fillMaxWidth().height(290.dp))
 
             // One-tap controls
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
@@ -142,23 +135,6 @@ fun HomeScreen(vm: MainViewModel, open: (Route) -> Unit, onUnlock: () -> Unit) {
 
             NavRow(Icons.Rounded.DirectionsCar, "Vehicle", st?.let { vehicleLine(it) }, onClick = { open(Route.Vehicle) },
                 iconTint = if (st != null && needsAttention(st)) app.alert else MaterialTheme.colorScheme.onSurface)
-        }
-    }
-}
-
-@Composable
-private fun CarPicture(url: String?, modifier: Modifier) {
-    Box(modifier, contentAlignment = Alignment.Center) {
-        if (url == null) {
-            Icon(Icons.Rounded.DirectionsCar, null, Modifier.size(96.dp), tint = MaterialTheme.colorScheme.outline)
-        } else {
-            SubcomposeAsyncImage(
-                model = url,
-                contentDescription = "Your car",
-                contentScale = ContentScale.Fit,
-                modifier = Modifier.fillMaxSize(),
-                error = { Icon(Icons.Rounded.DirectionsCar, null, Modifier.size(96.dp), tint = MaterialTheme.colorScheme.outline) },
-            )
         }
     }
 }

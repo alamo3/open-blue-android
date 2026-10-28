@@ -110,7 +110,7 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
                 "Open Blue ${BuildConfig.VERSION_NAME}. An unofficial app, not affiliated with Hyundai. " +
                     "Set in Barlow, licensed under the SIL Open Font License. " +
                     "3D car based on \"2024 Hyundai Ioniq 5 N\" by Ddiaz Design (sketchfab.com/ddiaz-design), " +
-                    "licensed under CC BY-NC 4.0 and modified (doors, frunk and tailgate separated, repainted, simplified).",
+                    "licensed under CC BY-NC 4.0 and modified (doors, frunk and tailgate separated, repainted, simplified, shadow and charging cable added).",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

@@ -135,7 +135,11 @@ private fun DebugPanel(vm: MainViewModel, onClose: () -> Unit) {
 
                 DebugHeading("Climate")
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    DebugToggle("Climate on", d.climateOn) { vm.updateDebug { it.copy(climateOn = !it.climateOn) } }
+                    // The app shows heating or cooling from the set temperature (20 °C and up heats).
+                    val heating = d.climateOn && d.tempC >= 20
+                    DebugToggle("Off", !d.climateOn) { vm.updateDebug { it.copy(climateOn = false) } }
+                    DebugToggle("Heating", heating) { vm.updateDebug { it.copy(climateOn = true, tempC = if (it.tempC >= 20) it.tempC else 24.0) } }
+                    DebugToggle("Cooling", d.climateOn && !heating) { vm.updateDebug { it.copy(climateOn = true, tempC = if (it.tempC < 20) it.tempC else 18.0) } }
                     DebugToggle("Defrost", d.defrost) { vm.updateDebug { it.copy(defrost = !it.defrost) } }
                     DebugToggle("Heated wheel", d.wheelHeat) { vm.updateDebug { it.copy(wheelHeat = !it.wheelHeat) } }
                 }

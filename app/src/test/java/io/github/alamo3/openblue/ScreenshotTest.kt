@@ -8,7 +8,16 @@ import androidx.activity.result.ActivityResultRegistryOwner
 import androidx.activity.result.contract.ActivityResultContract
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.core.app.ActivityOptionsCompat
+import android.graphics.BitmapFactory
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import io.github.alamo3.openblue.ui.CarCamera
+import io.github.alamo3.openblue.ui.CarEffects
+import io.github.alamo3.openblue.ui.ClimateFx
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -115,11 +124,27 @@ class ScreenshotTest(private val night: Boolean) {
     @Test fun debugPanel() {
         val vm = demoVm()
         vm.changeDeveloperMode(true)
-        vm.updateDebug { it.copy(simulate = true, frunk = true, climateOn = true, tempC = 18.5, seats = listOf(8, 3, 6, 2)).withDoor(0, true) }
+        vm.updateDebug { it.copy(simulate = true, frunk = true, climateOn = true, tempC = 18.5, defrost = true, seats = listOf(8, 3, 6, 2)).withDoor(0, true) }
         shot {
             androidx.compose.foundation.layout.Box(Modifier.fillMaxSize()) {
                 HomeScreen(vm, open = {}, onUnlock = {})
                 DebugOverlay(vm, initiallyOpen = true)
+            }
+        }
+    }
+
+    /**
+     * Effects over a still of the car from the charge-port side (rendered from the same model and
+     * camera by tools/model/appview.py), to check they line up: cooling airflow with defrost, and
+     * current running down the cable.
+     */
+    @Test fun carEffects() {
+        val still = javaClass.getResourceAsStream("/car_still_port.webp")!!.use { BitmapFactory.decodeStream(it) }.asImageBitmap()
+        val camera = CarCamera().apply { azimuth = CarCamera.PORT_AZIMUTH }
+        shot {
+            Box(Modifier.fillMaxWidth().aspectRatio(still.width.toFloat() / still.height)) {
+                Image(still, contentDescription = null, contentScale = ContentScale.FillBounds, modifier = Modifier.fillMaxSize())
+                CarEffects(camera, ClimateFx.COOL, defrost = true, charging = true, cablePlugged = { 1f }, Modifier.fillMaxSize(), ownsCamera = true)
             }
         }
     }

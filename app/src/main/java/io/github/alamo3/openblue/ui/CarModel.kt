@@ -4,40 +4,51 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.opengl.Matrix
 import android.view.Choreographer
+import android.view.GestureDetector
+import android.view.MotionEvent
+import android.view.ScaleGestureDetector
+import android.view.Surface
 import android.view.TextureView
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalInspectionMode
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.viewinterop.AndroidView
+import com.google.android.filament.Colors
+import com.google.android.filament.Engine
+import com.google.android.filament.EntityManager
 import com.google.android.filament.IndirectLight
+import com.google.android.filament.LightManager
+import com.google.android.filament.SwapChain
+import com.google.android.filament.Texture
 import com.google.android.filament.View
+import com.google.android.filament.Viewport
+import com.google.android.filament.android.DisplayHelper
 import com.google.android.filament.android.UiHelper
+import com.google.android.filament.gltfio.AssetLoader
+import com.google.android.filament.gltfio.FilamentAsset
+import com.google.android.filament.gltfio.ResourceLoader
+import com.google.android.filament.gltfio.UbershaderProvider
 import com.google.android.filament.utils.HDRLoader
 import com.google.android.filament.utils.IBLPrefilterContext
-import com.google.android.filament.utils.Manipulator
-import com.google.android.filament.utils.ModelViewer
 import com.google.android.filament.utils.Utils
+import io.github.alamo3.openblue.R
 import java.nio.ByteBuffer
+import kotlin.math.abs
+import kotlin.math.exp
 
-/** What the 3D car should show. Doors/trunk/frunk open, plus cabin climate and charging. */
+/** What the 3D car should show. */
 data class CarPose(
     val frontLeft: Boolean = false,
     val frontRight: Boolean = false,
@@ -45,9 +56,17 @@ data class CarPose(
     val rearRight: Boolean = false,
     val frunk: Boolean = false,
     val trunk: Boolean = false,
+    val pluggedIn: Boolean = false,
+    val charging: Boolean = false,
+    val climate: ClimateFx? = null,
+    val defrost: Boolean = false,
 )
 
-fun CarStatus?.toPose(): CarPose {
+/** Heating or cooling, judged from the set temperature (Bluelink doesn't say which). */
+fun climateFx(on: Boolean, setTempC: Double?): ClimateFx? =
+    if (!on) null else if ((setTempC ?: 22.0) >= 20) ClimateFx.HEAT else ClimateFx.COOL
+
+fun CarStatus?.toPose(fallbackTempC: Double = 22.0): CarPose {
     if (this == null) return CarPose()
     return CarPose(
         frontLeft = "front left" in openDoors,
@@ -56,6 +75,10 @@ fun CarStatus?.toPose(): CarPose {
         rearRight = "rear right" in openDoors,
         frunk = frunkOpen,
         trunk = trunkOpen,
+        pluggedIn = pluggedIn || charging,
+        charging = charging,
+        climate = climateFx(climateOn, setTempC ?: fallbackTempC),
+        defrost = climateOn && defrost,
     )
 }
 
@@ -82,95 +105,213 @@ private enum class Part(val node: String, val axis: FloatArray, val openDegrees:
     }
 }
 
-/** Owns the Filament viewer for one TextureView and animates the hinged parts toward the pose. */
-private class CarRenderer(context: Context, val view: TextureView) : Choreographer.FrameCallback {
-    private val viewer: ModelViewer
+/**
+ * Renders the car with Filament into a TextureView: an orbit camera the user can drag (and that
+ * swings round to whatever just changed), hinged parts easing open and shut, and the charging
+ * cable sliding into the port. Based on Filament's ModelViewer, with our own camera so the
+ * effects overlay can project points exactly as the renderer does.
+ */
+private class CarRenderer(context: Context, private val textureView: TextureView) : Choreographer.FrameCallback {
+    val camera = CarCamera()
+
+    /** How far the charging cable is pushed in, 0 (away) to 1 (seated). Read by the overlay. */
+    var cablePlugged = 0f
+        private set
+
+    private val engine = Engine.create()
+    private val renderer = engine.createRenderer()
+    private val scene = engine.createScene()
+    private val view = engine.createView()
+    private val filamentCamera = engine.createCamera(EntityManager.get().create())
+    private val uiHelper = UiHelper(UiHelper.ContextErrorPolicy.DONT_CHECK)
+    private val displayHelper = DisplayHelper(context)
+    private var swapChain: SwapChain? = null
+    private val materials = UbershaderProvider(engine)
+    private val assetLoader = AssetLoader(engine, materials, EntityManager.get())
+    private val resourceLoader = ResourceLoader(engine, true)
+    private val asset: FilamentAsset
+    private val sun = EntityManager.get().create()
+    private var indirectLight: IndirectLight? = null
+    private var reflections: Texture? = null
+    private val readyRenderables = IntArray(128)
+
     private val choreographer = Choreographer.getInstance()
+    private var running = false
+    private var destroyed = false
+    private var lastFrame = 0L
+
     private val transforms = mutableMapOf<Part, Pair<Int, FloatArray>>() // transform instance, rest pose
     private val current = FloatArray(Part.entries.size) // 0 = closed, 1 = open
-    private var lastFrame = 0L
-    private var running = false
+    private var cable: Triple<Int, Int, FloatArray>? = null // transform instance, renderable instance, rest pose
+    private var cableShown = false
+    private var shadowEntity = 0
+
+    // Camera motion: the user's drag and fling, and automatic swings toward what changed.
+    private var spin = 0.0 // degrees per second, from a fling
+    private var touching = false
+    private var focusAzimuth: Double? = null
+    private var focusElevation: Double? = null
+    private var hasPose = false
+
     var pose = CarPose()
-
-    init {
-        val uiHelper = UiHelper(UiHelper.ContextErrorPolicy.DONT_CHECK).apply { isOpaque = false }
-        // Front three-quarter view from the driver's side, slightly above.
-        val manipulator = Manipulator.Builder()
-            .targetPosition(0f, -0.12f, -4f)
-            .orbitHomePosition(2.35f, 0.75f, -1.55f)
-            .upVector(0f, 1f, 0f)
-            .zoomSpeed(0.02f)
-            .orbitSpeed(0.006f, 0.006f)
-            .build(Manipulator.Mode.ORBIT)
-        viewer = ModelViewer(view, uiHelper = uiHelper, manipulator = manipulator)
-        view.isOpaque = false
-
-        // Transparent background so the app's own background and glow show through.
-        viewer.view.blendMode = View.BlendMode.TRANSLUCENT
-        viewer.renderer.clearOptions = viewer.renderer.clearOptions.apply {
-            clear = true
-            clearColor = floatArrayOf(0f, 0f, 0f, 0f)
-        }
-        viewer.scene.skybox = null
-
-        // Image-based lighting from a studio environment (assets/envs/studio.hdr, generated by
-        // tools/env). The car's metallic materials need something to reflect or they render black.
-        viewer.scene.indirectLight = studioLight(context, viewer) ?: IndirectLight.Builder()
-            .irradiance(1, floatArrayOf(0.95f, 0.96f, 1.0f))
-            .intensity(32_000f)
-            .build(viewer.engine)
-        val lm = viewer.engine.lightManager
-        lm.getInstance(viewer.light).let { li ->
-            lm.setDirection(li, 0.45f, -1f, -0.55f)
-            lm.setIntensity(li, 60_000f)
-        }
-        viewer.view.multiSampleAntiAliasingOptions = viewer.view.multiSampleAntiAliasingOptions.apply {
-            enabled = true
-            sampleCount = 4
-        }
-        viewer.view.ambientOcclusionOptions = viewer.view.ambientOcclusionOptions.apply { enabled = true }
-
-        val bytes = context.assets.open("models/car.glb").use { it.readBytes() }
-        val buffer = ByteBuffer.allocateDirect(bytes.size).put(bytes).also { it.rewind() }
-        viewer.loadModelGlb(buffer)
-        viewer.transformToUnitCube()
-
-        val asset = viewer.asset
-        if (asset != null) {
-            val tm = viewer.engine.transformManager
-            for (part in Part.entries) {
-                val entity = asset.getFirstEntityByName(part.node)
-                if (entity == 0) continue
-                val inst = tm.getInstance(entity)
-                val rest = FloatArray(16)
-                tm.getTransform(inst, rest)
-                transforms[part] = inst to rest
+        set(next) {
+            val prev = field
+            field = next
+            if (!hasPose) {
+                hasPose = true
+                if (next.pluggedIn) jump(CarCamera.PORT_AZIMUTH)
+                return
+            }
+            when {
+                next.pluggedIn && !prev.pluggedIn || next.charging && !prev.charging -> focus(CarCamera.PORT_AZIMUTH)
+                next.frontRight && !prev.frontRight || next.rearRight && !prev.rearRight -> focus(-45.0)
+                next.frontLeft && !prev.frontLeft || next.rearLeft && !prev.rearLeft -> focus(45.0)
+                next.trunk && !prev.trunk -> focus(150.0, 16.0)
+                next.frunk && !prev.frunk -> focus(25.0, 20.0)
+                next.climate != null && prev.climate == null -> focus(CarCamera.HOME_AZIMUTH)
             }
         }
 
-        @SuppressLint("ClickableViewAccessibility")
-        view.setOnTouchListener { v, e ->
-            v.parent?.requestDisallowInterceptTouchEvent(true)
-            viewer.onTouchEvent(e)
+    init {
+        uiHelper.isOpaque = false
+        textureView.isOpaque = false
+        uiHelper.renderCallback = SurfaceCallback()
+        uiHelper.attachTo(textureView)
+
+        view.scene = scene
+        view.camera = filamentCamera
+        filamentCamera.setExposure(16f, 1f / 125f, 100f)
+        // Transparent background so the app shows through.
+        view.blendMode = View.BlendMode.TRANSLUCENT
+        renderer.clearOptions = renderer.clearOptions.apply {
+            clear = true
+            clearColor = floatArrayOf(0f, 0f, 0f, 0f)
+        }
+        view.multiSampleAntiAliasingOptions = view.multiSampleAntiAliasingOptions.apply {
+            enabled = true
+            sampleCount = 4
+        }
+        view.ambientOcclusionOptions = view.ambientOcclusionOptions.apply { enabled = true }
+
+        // Image-based lighting from a studio environment (assets/envs/studio.hdr, generated by
+        // tools/env). The car's metallic materials need something to reflect or they render black.
+        indirectLight = studioLight(context) ?: IndirectLight.Builder()
+            .irradiance(1, floatArrayOf(0.95f, 0.96f, 1.0f))
+            .intensity(32_000f)
+            .build(engine)
+        scene.indirectLight = indirectLight
+        val (r, g, b) = Colors.cct(6_500f)
+        LightManager.Builder(LightManager.Type.DIRECTIONAL)
+            .color(r, g, b)
+            .intensity(60_000f)
+            .direction(0.45f, -1f, -0.55f)
+            .castShadows(true)
+            .build(engine, sun)
+        scene.addEntity(sun)
+
+        val bytes = context.assets.open("models/car.glb").use { it.readBytes() }
+        val buffer = ByteBuffer.allocateDirect(bytes.size).put(bytes).also { it.rewind() }
+        asset = assetLoader.createAsset(buffer) ?: error("Couldn't read the car model")
+        resourceLoader.asyncBeginLoad(asset)
+        asset.releaseSourceData()
+
+        val tm = engine.transformManager
+        val rm = engine.renderableManager
+        for (part in Part.entries) {
+            val entity = asset.getFirstEntityByName(part.node)
+            if (entity == 0) continue
+            val inst = tm.getInstance(entity)
+            transforms[part] = inst to FloatArray(16).also { tm.getTransform(inst, it) }
+        }
+        asset.getFirstEntityByName("charge_cable").takeIf { it != 0 }?.let { e ->
+            val inst = tm.getInstance(e)
+            val ri = rm.getInstance(e)
+            if (ri != 0) {
+                rm.setLayerMask(ri, 0xFF, 0x00) // hidden until plugged in
+                cable = Triple(inst, ri, FloatArray(16).also { tm.getTransform(inst, it) })
+            }
+        }
+        shadowEntity = asset.getFirstEntityByName("ground_shadow")
+
+        setUpTouch(context)
+        textureView.addOnAttachStateChangeListener(object : android.view.View.OnAttachStateChangeListener {
+            override fun onViewAttachedToWindow(v: android.view.View) = start()
+            override fun onViewDetachedFromWindow(v: android.view.View) = destroy()
+        })
+        if (textureView.isAttachedToWindow) start()
+    }
+
+    private fun focus(azimuth: Double, elevation: Double = CarCamera.HOME_ELEVATION) {
+        if (touching) return
+        spin = 0.0
+        focusAzimuth = azimuth
+        focusElevation = elevation
+    }
+
+    private fun jump(azimuth: Double) {
+        camera.azimuth = azimuth
+        focusAzimuth = null
+    }
+
+    @SuppressLint("ClickableViewAccessibility")
+    private fun setUpTouch(context: Context) {
+        val degPerPx = 0.55 / context.resources.displayMetrics.density
+        var scaling = false
+        val gestures = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
+            override fun onDown(e: MotionEvent): Boolean {
+                spin = 0.0
+                focusAzimuth = null
+                focusElevation = null
+                return true
+            }
+
+            override fun onScroll(e1: MotionEvent?, e2: MotionEvent, dx: Float, dy: Float): Boolean {
+                if (scaling) return true
+                camera.azimuth += dx * degPerPx
+                camera.elevation = (camera.elevation - dy * degPerPx * 0.6)
+                    .coerceIn(CarCamera.MIN_ELEVATION, CarCamera.MAX_ELEVATION)
+                return true
+            }
+
+            override fun onFling(e1: MotionEvent?, e2: MotionEvent, vx: Float, vy: Float): Boolean {
+                if (!scaling) spin = -vx * degPerPx
+                return true
+            }
+
+            override fun onDoubleTap(e: MotionEvent): Boolean {
+                camera.zoom = 1.0
+                focusAzimuth = CarCamera.HOME_AZIMUTH
+                focusElevation = CarCamera.HOME_ELEVATION
+                return true
+            }
+        })
+        val pinch = ScaleGestureDetector(context, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
+            override fun onScaleBegin(d: ScaleGestureDetector) = true.also { scaling = true }
+            override fun onScale(d: ScaleGestureDetector): Boolean {
+                camera.zoom = (camera.zoom / d.scaleFactor).coerceIn(0.7, 1.25)
+                return true
+            }
+        })
+        textureView.setOnTouchListener { v, e ->
+            when (e.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    touching = true
+                    scaling = false
+                    v.parent?.requestDisallowInterceptTouchEvent(true)
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> touching = false
+            }
+            pinch.onTouchEvent(e)
+            gestures.onTouchEvent(e)
             true
         }
-        view.addOnAttachStateChangeListener(object : android.view.View.OnAttachStateChangeListener {
-            override fun onViewAttachedToWindow(v: android.view.View) = start()
-            // ModelViewer tears its engine down on detach; stop rendering first.
-            override fun onViewDetachedFromWindow(v: android.view.View) = stop()
-        })
-        if (view.isAttachedToWindow) start()
     }
 
     private fun start() {
-        if (running) return
+        if (running || destroyed) return
         running = true
+        lastFrame = 0L
         choreographer.postFrameCallback(this)
-    }
-
-    private fun stop() {
-        running = false
-        choreographer.removeFrameCallback(this)
     }
 
     override fun doFrame(frameTimeNanos: Long) {
@@ -178,23 +319,79 @@ private class CarRenderer(context: Context, val view: TextureView) : Choreograph
         choreographer.postFrameCallback(this)
         val dt = if (lastFrame == 0L) 0f else ((frameTimeNanos - lastFrame) / 1e9f).coerceAtMost(0.1f)
         lastFrame = frameTimeNanos
+
+        resourceLoader.asyncUpdateLoad()
+        addReadyRenderables()
+        moveCamera(dt.toDouble())
         animateParts(dt)
-        viewer.render(frameTimeNanos)
+        animateCable(dt)
+
+        val e = camera.eye
+        filamentCamera.lookAt(
+            e[0], e[1], e[2],
+            CarCamera.TARGET[0], CarCamera.TARGET[1], CarCamera.TARGET[2],
+            0.0, 1.0, 0.0,
+        )
+        val chain = swapChain ?: return
+        if (uiHelper.isReadyToRender && renderer.beginFrame(chain, frameTimeNanos)) {
+            renderer.render(view)
+            renderer.endFrame()
+        }
+    }
+
+    private fun addReadyRenderables() {
+        val rm = engine.renderableManager
+        while (true) {
+            val count = asset.popRenderables(readyRenderables)
+            if (count == 0) break
+            for (i in 0 until count) {
+                val ri = rm.getInstance(readyRenderables[i])
+                if (readyRenderables[i] == shadowEntity) {
+                    rm.setCastShadows(ri, false)
+                    rm.setReceiveShadows(ri, false)
+                } else {
+                    rm.setScreenSpaceContactShadows(ri, true)
+                }
+            }
+            scene.addEntities(readyRenderables.copyOf(count))
+        }
+    }
+
+    private fun moveCamera(dt: Double) {
+        if (!touching && abs(spin) > 0.5) {
+            camera.azimuth += spin * dt
+            spin *= exp(-dt * 3.2)
+        }
+        val k = 1 - exp(-dt * 3.5)
+        focusAzimuth?.let { target ->
+            // Shortest way round.
+            val diff = ((target - camera.azimuth) % 360 + 540) % 360 - 180
+            camera.azimuth += diff * k
+            if (abs(diff) < 0.05) focusAzimuth = null
+        }
+        focusElevation?.let { target ->
+            val diff = target - camera.elevation
+            camera.elevation += diff * k
+            if (abs(diff) < 0.05) focusElevation = null
+        }
+        camera.azimuth = ((camera.azimuth % 360) + 360) % 360
+        if (camera.azimuth > 180) camera.azimuth -= 360
+        camera.update()
     }
 
     private val rotation = FloatArray(16)
     private val out = FloatArray(16)
 
     private fun animateParts(dt: Float) {
-        val tm = viewer.engine.transformManager
+        val tm = engine.transformManager
         for (part in Part.entries) {
             val (inst, rest) = transforms[part] ?: continue
             val target = if (part.isOpen(pose)) 1f else 0f
             val i = part.ordinal
             val prev = current[i]
             // Ease toward the target (~0.4 s), like a door swinging.
-            current[i] = if (dt == 0f) target else prev + (target - prev) * (1f - kotlin.math.exp(-dt * 7f))
-            if (kotlin.math.abs(current[i] - prev) < 1e-4f && dt != 0f) continue
+            current[i] = if (dt == 0f) target else prev + (target - prev) * (1f - exp(-dt * 7f))
+            if (abs(current[i] - prev) < 1e-4f && dt != 0f) continue
             val t = current[i]
             val eased = t * t * (3 - 2 * t)
             Matrix.setRotateM(rotation, 0, part.openDegrees * eased, part.axis[0], part.axis[1], part.axis[2])
@@ -203,92 +400,157 @@ private class CarRenderer(context: Context, val view: TextureView) : Choreograph
         }
     }
 
+    /** Slides the plug in along the port's normal when plugged in, and back out when not. */
+    private fun animateCable(dt: Float) {
+        val (inst, ri, rest) = cable ?: return
+        val target = if (pose.pluggedIn) 1f else 0f
+        val prev = cablePlugged
+        cablePlugged = if (dt == 0f) target else prev + (target - prev) * (1f - exp(-dt * 5f))
+        if (abs(target - cablePlugged) < 1e-3f) cablePlugged = target
+        val show = cablePlugged > 0.002f
+        if (show != cableShown) {
+            engine.renderableManager.setLayerMask(ri, 0xFF, if (show) 0xFF else 0x00)
+            cableShown = show
+        }
+        if (cablePlugged == prev && dt != 0f) return
+        val t = cablePlugged
+        val away = (1 - t * t * (3 - 2 * t)) * 0.35f
+        rest.copyInto(out)
+        out[12] += PORT_NORMAL[0] * away
+        out[13] += PORT_NORMAL[1] * away
+        out[14] += PORT_NORMAL[2] * away
+        engine.transformManager.setTransform(inst, out)
+    }
+
+    private fun destroy() {
+        if (destroyed) return
+        running = false
+        destroyed = true
+        choreographer.removeFrameCallback(this)
+        uiHelper.detach()
+        resourceLoader.asyncCancelLoad()
+        resourceLoader.evictResourceData()
+        scene.removeEntities(asset.entities)
+        assetLoader.destroyAsset(asset)
+        assetLoader.destroy()
+        materials.destroyMaterials()
+        materials.destroy()
+        resourceLoader.destroy()
+        indirectLight?.let { engine.destroyIndirectLight(it) }
+        reflections?.let { engine.destroyTexture(it) }
+        engine.destroyEntity(sun)
+        EntityManager.get().destroy(sun)
+        engine.destroyRenderer(renderer)
+        engine.destroyView(view)
+        engine.destroyScene(scene)
+        engine.destroyCameraComponent(filamentCamera.entity)
+        EntityManager.get().destroy(filamentCamera.entity)
+        engine.destroy()
+    }
+
+    private inner class SurfaceCallback : UiHelper.RendererCallback {
+        override fun onNativeWindowChanged(surface: Surface) {
+            swapChain?.let { engine.destroySwapChain(it) }
+            swapChain = engine.createSwapChain(surface, uiHelper.swapChainFlags)
+            textureView.display?.let { displayHelper.attach(renderer, it) }
+        }
+
+        override fun onDetachedFromSurface() {
+            displayHelper.detach()
+            swapChain?.let {
+                engine.destroySwapChain(it)
+                engine.flushAndWait()
+                swapChain = null
+            }
+        }
+
+        override fun onResized(width: Int, height: Int) {
+            view.viewport = Viewport(0, 0, width, height)
+            camera.setSize(width, height)
+            camera.update()
+            filamentCamera.setCustomProjection(camera.projection, CarCamera.NEAR, CarCamera.FAR)
+        }
+    }
+
+    /** Prefilters the studio HDR into a reflections cubemap on the GPU. Null if anything fails. */
+    private fun studioLight(context: Context): IndirectLight? = runCatching {
+        val hdr = context.assets.open("envs/studio.hdr").use { it.readBytes() }
+        val buf = ByteBuffer.allocateDirect(hdr.size).put(hdr).also { it.rewind() }
+        val equirect = HDRLoader.createTexture(engine, buf) ?: return@runCatching null
+        val ibl = IBLPrefilterContext(engine)
+        val toCube = IBLPrefilterContext.EquirectangularToCubemap(ibl)
+        val filter = IBLPrefilterContext.SpecularFilter(ibl)
+        val cube = toCube.run(equirect)
+        val filtered = filter.run(cube)
+        engine.destroyTexture(equirect)
+        engine.destroyTexture(cube)
+        toCube.destroy()
+        filter.destroy()
+        ibl.destroy()
+        reflections = filtered
+        // No explicit irradiance: Filament derives it from the reflections cubemap.
+        IndirectLight.Builder().reflections(filtered).intensity(28_000f).build(engine)
+    }.onFailure { android.util.Log.w("OpenBlue", "Studio lighting unavailable", it) }.getOrNull()
+
     companion object {
+        /** Outward normal of the charge port (see CarEffects' anchors). */
+        private val PORT_NORMAL = floatArrayOf(-0.991f, 0f, -0.133f)
+
         init {
             Utils.init()
         }
-
-        /** Prefilters the studio HDR into a reflections cubemap on the GPU. Null if anything fails. */
-        private fun studioLight(context: Context, viewer: ModelViewer): IndirectLight? = runCatching {
-            val engine = viewer.engine
-            val hdr = context.assets.open("envs/studio.hdr").use { it.readBytes() }
-            val buf = ByteBuffer.allocateDirect(hdr.size).put(hdr).also { it.rewind() }
-            val equirect = HDRLoader.createTexture(engine, buf) ?: return@runCatching null
-            val ibl = IBLPrefilterContext(engine)
-            val toCube = IBLPrefilterContext.EquirectangularToCubemap(ibl)
-            val filter = IBLPrefilterContext.SpecularFilter(ibl)
-            val cube = toCube.run(equirect)
-            val reflections = filter.run(cube)
-            engine.destroyTexture(equirect)
-            engine.destroyTexture(cube)
-            toCube.destroy()
-            filter.destroy()
-            ibl.destroy()
-            // No explicit irradiance: Filament derives it from the reflections cubemap.
-            IndirectLight.Builder().reflections(reflections).intensity(28_000f).build(engine)
-        }.onFailure { android.util.Log.w("OpenBlue", "Studio lighting unavailable", it) }.getOrNull()
     }
 }
 
 /**
- * The car in 3D, with doors, frunk and tailgate following [pose], a warm or cool glow while
- * the cabin is being conditioned, and a green pulse while charging. Drag to look around.
- * Falls back to [fallback] where 3D can't run (previews, screenshot tests).
+ * The car in 3D: doors, frunk and tailgate follow [pose], air streams into the intake and
+ * through the cabin while climate runs, and the charging cable is plugged in while it charges.
+ * Drag to look around, pinch to zoom, double-tap to reset.
+ *
+ * Where 3D can't run (previews, screenshot tests, or if Filament fails) it shows a still render
+ * of the same model from the default angle, with the same effects over it.
  */
 @Composable
-fun Car3D(
-    pose: CarPose,
-    climateTint: Color?,
-    charging: Boolean,
-    modifier: Modifier = Modifier,
-    fallback: @Composable () -> Unit,
-) {
-    val app = AppTheme.colors
-    val glow by animateColorAsState(climateTint ?: Color.Transparent, tween(700), label = "glow")
-    val pulse = rememberInfiniteTransition(label = "charge")
-    val chargeAlpha by pulse.animateFloat(0.12f, 0.45f, infiniteRepeatable(tween(1400), RepeatMode.Reverse), label = "chargeAlpha")
-    val shadow = Color.Black.copy(alpha = if (androidx.compose.foundation.isSystemInDarkTheme()) 0.55f else 0.16f)
-
-    Box(modifier) {
-        Canvas(Modifier.fillMaxSize()) {
-            val c = Offset(size.width / 2, size.height * 0.56f)
-            if (glow.alpha > 0f) {
-                drawCircle(Brush.radialGradient(listOf(glow.copy(alpha = 0.35f), Color.Transparent), c, size.width * 0.5f), size.width * 0.5f, c)
-            }
-            if (charging) {
-                drawCircle(
-                    Brush.radialGradient(listOf(app.charge.copy(alpha = chargeAlpha), Color.Transparent), c, size.width * 0.42f),
-                    size.width * 0.42f, c,
+fun Car3D(pose: CarPose, modifier: Modifier = Modifier) {
+    var failed by remember { mutableStateOf(false) }
+    var renderer by remember { mutableStateOf<CarRenderer?>(null) }
+    if (LocalInspectionMode.current || failed) {
+        Box(modifier, contentAlignment = Alignment.Center) {
+            Box(Modifier.aspectRatio(STILL_ASPECT)) {
+                Image(
+                    painterResource(R.drawable.car_still),
+                    contentDescription = "Your car",
+                    contentScale = ContentScale.FillBounds,
+                    modifier = Modifier.fillMaxSize(),
                 )
+                val still = remember { CarCamera() }
+                CarEffects(still, pose.climate, pose.defrost, pose.charging, { 1f }, Modifier.fillMaxSize(), ownsCamera = true)
             }
-            // Ground shadow
-            val sw = size.width * 0.78f
-            val sh = size.height * 0.16f
-            drawOval(
-                Brush.radialGradient(listOf(shadow, Color.Transparent), Offset(size.width / 2, size.height * 0.74f), sw / 2),
-                topLeft = Offset((size.width - sw) / 2, size.height * 0.74f - sh / 2),
-                size = Size(sw, sh),
-            )
         }
-        var failed by remember { mutableStateOf(false) }
-        if (LocalInspectionMode.current || failed) {
-            fallback()
-        } else {
-            val currentPose by rememberUpdatedState(pose)
-            AndroidView(
-                factory = { ctx ->
-                    TextureView(ctx).also { tv ->
-                        val r = runCatching { CarRenderer(ctx, tv) }
-                            .onFailure { android.util.Log.e("OpenBlue", "3D car unavailable", it) }
-                            .getOrNull()
-                        if (r == null) failed = true
-                        tv.tag = r
-                        r?.pose = currentPose
-                    }
-                },
-                update = { tv -> (tv.tag as? CarRenderer)?.pose = currentPose },
-                modifier = Modifier.fillMaxSize(),
-            )
+        return
+    }
+    val currentPose by rememberUpdatedState(pose)
+    Box(modifier) {
+        AndroidView(
+            factory = { ctx ->
+                TextureView(ctx).also { tv ->
+                    val r = runCatching { CarRenderer(ctx, tv) }
+                        .onFailure { android.util.Log.e("OpenBlue", "3D car unavailable", it) }
+                        .getOrNull()
+                    if (r == null) failed = true
+                    r?.pose = currentPose
+                    tv.tag = r
+                    renderer = r
+                }
+            },
+            update = { tv -> (tv.tag as? CarRenderer)?.pose = currentPose },
+            modifier = Modifier.fillMaxSize(),
+        )
+        renderer?.let { r ->
+            CarEffects(r.camera, pose.climate, pose.defrost, pose.charging, { r.cablePlugged }, Modifier.fillMaxSize())
         }
     }
 }
+
+/** Width / height of res/drawable-nodpi/car_still.webp, rendered by tools/model/appview.py. */
+private const val STILL_ASPECT = 1.217f

@@ -120,8 +120,172 @@ for m in bpy.data.materials:
         bsdf.inputs["Base Color"].default_value = (0.05, 0.05, 0.055, 1)
     m.use_backface_culling = False
 
+# ---------------------------------------------------------------- anchors for the app's effects
+import json
+import numpy as np
+V = mathutils.Vector
+
+def cast(origin, direction, skip=("interior", "engine", "wheels")):
+    """Nearest hit on the car's outer skin: (point, normal) in world space, or None."""
+    origin, direction = V(origin), V(direction).normalized()
+    best = None
+    for o in O:
+        if o.type != 'MESH' or o.name in skip: continue
+        inv = o.matrix_world.inverted()
+        ok, loc, nrm, _ = o.ray_cast(inv @ origin, (inv.to_3x3() @ direction).normalized())
+        if not ok: continue
+        w = o.matrix_world @ loc
+        n = (o.matrix_world.to_3x3().inverted().transposed() @ nrm).normalized()
+        if best is None or (w - origin).length < (best[0] - origin).length: best = (w, n)
+    return best
+
+def gl(v):  # Blender -> glTF axes
+    return [round(v[0], 3), round(v[2], 3), round(-v[1], 3)]
+
+anchors = {}
+# Charge port: rear right quarter panel, just behind and above the rear wheel.
+port, port_n = cast((-3, 1.67, 0.96), (1, 0, 0))
+port_n = V((port_n.x, port_n.y, 0)).normalized()  # keep the plug level
+anchors["chargePort"] = gl(port); anchors["chargePortNormal"] = gl(port_n)
+# Top surface profiles (hood, windshield, roof) along the car at a few lateral offsets.
+for x in (0.0, 0.35, 0.6):
+    prof = []
+    for k in range(0, 56):
+        y = -2.45 + k * 0.05
+        h = cast((x, y, 3), (0, 0, -1), skip=("interior", "engine", "wheels", "door_fl", "door_fr", "door_rl", "door_rr"))
+        prof.append(round(h[0].z, 3) if h else None)
+    anchors[f"profile_x{x}"] = prof
+print("ANCHORS", json.dumps(anchors))
+json.dump(anchors, open(os.path.splitext(OUT)[0] + "-anchors.json", "w"), indent=1)
+
+# ---------------------------------------------------------------- baked ground contact shadow
+HALF = (1.45, 2.9)        # shadow plane half-size in metres (x, y); the render below covers exactly this
+RES = (256, 512)
+
+def silhouette(objs):
+    """Top-down orthographic coverage (alpha, rows bottom-up like Blender pixels) of the given objects."""
+    sc = bpy.context.scene
+    hidden = [o for o in O if o.type == 'MESH' and o not in objs and not o.hide_render]
+    for o in hidden: o.hide_render = True
+    sc.render.engine = 'CYCLES'; sc.cycles.samples = 8; sc.cycles.device = 'CPU'
+    sc.render.film_transparent = True
+    sc.render.resolution_x, sc.render.resolution_y = RES; sc.render.resolution_percentage = 100
+    cam = bpy.data.cameras.new("top"); cam.type = 'ORTHO'; cam.ortho_scale = 2 * HALF[1]
+    co = bpy.data.objects.new("top", cam); sc.collection.objects.link(co)
+    co.location = (0, 0, 10)  # looking down -Z: image right = +X, image up = +Y
+    sc.camera = co
+    path = "/tmp/_sil.png"; sc.render.filepath = path
+    bpy.ops.render.render(write_still=True)
+    img = bpy.data.images.load(path)
+    w, h = img.size
+    a = np.array(img.pixels[:]).reshape(h, w, 4)[:, :, 3].copy()
+    bpy.data.objects.remove(co); bpy.data.images.remove(img)
+    for o in hidden: o.hide_render = False
+    return a
+
+def blur(a, sigma_m):
+    r = sigma_m / (2 * HALF[1] / RES[1])  # metres -> pixels
+    xs = np.arange(-int(3 * r) - 1, int(3 * r) + 2)
+    k = np.exp(-0.5 * (xs / r) ** 2); k /= k.sum()
+    a = np.apply_along_axis(lambda m: np.convolve(m, k, mode='same'), 0, a)
+    return np.apply_along_axis(lambda m: np.convolve(m, k, mode='same'), 1, a)
+
+meshes = [o for o in O if o.type == 'MESH']
+body_a = silhouette(meshes)
+wheel_a = silhouette([O["wheels"]])
+# Broad soft shade under the whole car, darker core under the floor, tight contact under the tyres.
+shadow = 0.42 * blur(body_a, 0.16) + 0.33 * blur(body_a, 0.05) + 0.5 * blur(wheel_a, 0.025)
+shadow = np.clip(shadow, 0, 0.88)
+h, w = shadow.shape
+rgba = np.zeros((h, w, 4), dtype=np.float32); rgba[:, :, 3] = shadow
+img = bpy.data.images.new("ground_shadow", w, h, alpha=True)
+img.pixels = rgba.ravel().tolist()
+img.filepath_raw = "/tmp/ground_shadow.png"; img.file_format = 'PNG'; img.save()
+img.pack()
+
+me = bpy.data.meshes.new("ground_shadow")
+hx, hy, gz = HALF[0], HALF[1], 0.003
+me.from_pydata([(-hx, -hy, gz), (hx, -hy, gz), (hx, hy, gz), (-hx, hy, gz)], [], [(0, 1, 2, 3)])
+uv = me.uv_layers.new(name="UVMap")
+for li, (u, v) in enumerate([(0, 0), (1, 0), (1, 1), (0, 1)]): uv.data[li].uv = (u, v)
+plane = bpy.data.objects.new("ground_shadow", me); coll.objects.link(plane)
+mat = bpy.data.materials.new("ground_shadow"); mat.use_nodes = True
+nt = mat.node_tree; bsdf = next(n for n in nt.nodes if n.type == 'BSDF_PRINCIPLED')
+tex = nt.nodes.new("ShaderNodeTexImage"); tex.image = img
+nt.links.new(tex.outputs["Color"], bsdf.inputs["Base Color"])
+nt.links.new(tex.outputs["Alpha"], bsdf.inputs["Alpha"])
+if hasattr(mat, "surface_render_method"): mat.surface_render_method = 'BLENDED'
+else: mat.blend_method = 'BLEND'
+me.materials.append(mat)
+
+# ---------------------------------------------------------------- charging cable (hidden unless charging)
+def catmull(points, steps=10):
+    pts = [points[0]] + points + [points[-1]]
+    out = []
+    for i in range(1, len(pts) - 2):
+        p0, p1, p2, p3 = pts[i - 1], pts[i], pts[i + 1], pts[i + 2]
+        for s in range(steps):
+            t = s / steps
+            out.append(0.5 * ((2 * p1) + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t * t + (-p0 + 3 * p1 - 3 * p2 + p3) * t ** 3))
+    out.append(points[-1])
+    return out
+
+n = V(port_n); up = V((0, 0, 1)); back = V((0, 1, 0))
+PLUG = 0.15
+ctrl = [port + n * (PLUG + 0.04), port + n * (PLUG + 0.16) - up * 0.06, port + n * 0.42 - up * 0.5 + back * 0.08,
+        port + n * 0.62 - up * 0.92 + back * 0.25, V((port.x + n.x * 1.05, port.y + 0.75, 0.02)),
+        V((port.x + n.x * 1.9, port.y + 1.5, 0.02))]
+for p in ctrl[-2:]: p.z = 0.016
+path = catmull(ctrl, 12)
+cu = bpy.data.curves.new("cable", 'CURVE'); cu.dimensions = '3D'
+cu.bevel_depth = 0.013; cu.bevel_resolution = 3; cu.use_fill_caps = True
+sp = cu.splines.new('POLY'); sp.points.add(len(path) - 1)
+for i, p in enumerate(path): sp.points[i].co = (p.x, p.y, p.z, 1)
+cobj = bpy.data.objects.new("cable_tmp", cu); coll.objects.link(cobj)
+dg = bpy.context.evaluated_depsgraph_get()
+cable_me = bpy.data.meshes.new_from_object(cobj.evaluated_get(dg))
+bpy.data.objects.remove(cobj)
+
+bm = bmesh.new(); bm.from_mesh(cable_me)
+def add_cyl(r1, r2, length, start):
+    """Cylinder/cone along the port normal, from start outward."""
+    rot = n.to_track_quat('Z', 'Y').to_matrix().to_4x4()
+    m = mathutils.Matrix.Translation(start + n * (length / 2)) @ rot
+    bmesh.ops.create_cone(bm, cap_ends=True, segments=24, radius1=r1, radius2=r2, depth=length, matrix=m)
+add_cyl(0.034, 0.036, 0.11, port)                     # connector body, seated in the port
+add_cyl(0.036, 0.03, 0.04, port + n * 0.11)           # grip
+add_cyl(0.022, 0.015, 0.05, port + n * (PLUG - 0.002))  # strain relief where the cable leaves
+bm.to_mesh(cable_me); bm.free()
+cable = bpy.data.objects.new("charge_cable", cable_me); coll.objects.link(cable)
+rub = bpy.data.materials.new("charge_cable"); rub.use_nodes = True
+rb = next(x for x in rub.node_tree.nodes if x.type == 'BSDF_PRINCIPLED')
+rb.inputs["Base Color"].default_value = (0.012, 0.013, 0.014, 1); rb.inputs["Roughness"].default_value = 0.55
+cable_me.materials.append(rub)
+for poly in cable_me.polygons: poly.use_smooth = True
+set_origin(cable, port)   # the app slides it along the port normal to plug in / out
+anchors["cablePath"] = [gl(p - port) for p in path[::3]]  # relative to the port, for the energy pulses
+json.dump(anchors, open(os.path.splitext(OUT)[0] + "-anchors.json", "w"), indent=1)
+
 total = sum(len(p.vertices) - 2 for o in O if o.type == 'MESH' for p in o.data.polygons)
 print("triangles after reduction:", total)
 bpy.ops.object.select_all(action='SELECT')
 bpy.ops.export_scene.gltf(filepath=OUT, export_format='GLB', export_yup=True, export_apply=True)
 print("exported", OUT, os.path.getsize(OUT))
+
+# The shadow should not be lit: mark its material unlit (KHR_materials_unlit) in the GLB's JSON chunk.
+import struct
+data = open(OUT, "rb").read()
+jlen = struct.unpack_from("<I", data, 12)[0]
+doc = json.loads(data[20:20 + jlen])
+for m in doc["materials"]:
+    if m.get("name") == "ground_shadow":
+        m.setdefault("extensions", {})["KHR_materials_unlit"] = {}
+        m["alphaMode"] = "BLEND"
+doc.setdefault("extensionsUsed", [])
+if "KHR_materials_unlit" not in doc["extensionsUsed"]: doc["extensionsUsed"].append("KHR_materials_unlit")
+js = json.dumps(doc, separators=(",", ":")).encode()
+js += b" " * (-len(js) % 4)
+rest = data[20 + jlen:]
+out = struct.pack("<III", 0x46546C67, 2, 12 + 8 + len(js) + len(rest)) + struct.pack("<II", len(js), 0x4E4F534A) + js + rest
+open(OUT, "wb").write(out)
+print("patched", OUT, len(out))
