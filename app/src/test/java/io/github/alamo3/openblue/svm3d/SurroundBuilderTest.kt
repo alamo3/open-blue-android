@@ -86,9 +86,11 @@ class SurroundBuilderTest {
             assertEquals(wallX, x, 0.35)
             assertTrue("height $h", h > 1.4)
         }
-        // The floor picture exists and isn't all black.
-        assertEquals(SurroundBuilder.GROUND_N * SurroundBuilder.GROUND_N, scene.ground.size)
-        assertTrue(scene.ground.count { it != 0 } > scene.ground.size / 2)
+        // The floor picture exists and isn't black inside the bowl.
+        val n = SurroundBuilder.GROUND_N; val res = 2 * SurroundBuilder.GROUND_EXT / n
+        assertEquals(n * n, scene.ground.size)
+        val inside = (0 until n * n).filter { k -> hypot(-SurroundBuilder.GROUND_EXT + (k % n + 0.5) * res, SurroundBuilder.GROUND_EXT - (k / n + 0.5) * res) < 8.0 }
+        assertTrue(inside.count { scene.ground[it] != 0 } > inside.size * 0.8)
     }
 
     @Test fun paintedSurfaceLiesOnTheWall() {
@@ -185,11 +187,8 @@ class SurroundBuilderTest {
         val zenith = (0 until w).count { seen[row(78.0) * w + it] }
         assertTrue("horizon seen in $horizon of $w columns", horizon > w * 0.9)
         assertTrue("near the top only $zenith", zenith < w / 2)
-        // With an inpainter, nothing is left unpainted.
-        val grey = object : Inpainter {
-            override fun inpaint(rgb: ByteArray, hole: BooleanArray) = ByteArray(rgb.size) { 77 }
-        }
-        val bd = Backdrop.build(frames, grey)
+        // Filled, nothing is left black: the sky carries on up.
+        val bd = Backdrop.build(frames)
         val top = row(78.0)
         assertTrue((0 until w).all { bd.rgb[top * w + it] != 0 })
     }

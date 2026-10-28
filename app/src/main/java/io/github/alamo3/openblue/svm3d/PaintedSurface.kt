@@ -22,8 +22,14 @@ object PaintedSurface {
     private const val STEP = 2
     /** Ignore anything further than this along the ray: depth gets too coarse to be worth drawing. */
     private const val MAX_T = 25f
-    /** Only what's within this of the car (metres, along the ground). */
-    const val REACH = 11.5
+    /** Only what's within this of the car (metres, along the ground): further out, the bowl. */
+    val REACH = Backdrop.FLOOR_REACH - 0.4
+    /** A piece of surface counts as standing on the ground if it comes down to this height (metres). */
+    private const val GROUNDED = 0.35f
+    /** Pieces smaller than this many grid points are crumbs. */
+    private const val MIN_PIECE = 40
+    /** Grid points either side used to judge a surface's slope. */
+    private const val SPAN = 2
     /** A pixel whose depth jumps by more than this (in log) to a neighbour sits on an edge: neither side. */
     private const val EDGE = 0.06
 
@@ -62,7 +68,7 @@ object PaintedSurface {
                 // ...and to the camera whose side of the car it's on.
                 if (angle(Math.toDegrees(atan2(px, py)), SvmCalibration.SECTOR.getValue(c.camera.name)) > 50) continue
                 if (abs(px) < W / 2 + 0.05 && abs(py) < L / 2 + 0.05 && pz < 1.7) continue
-                // Further out the depth is too rough for a surface; the backdrop panorama shows it.
+                // Further out the depth is too rough for a surface; the bowl (backdrop) shows it.
                 if (hypot(px, py) > REACH) continue
                 // The floor is drawn separately (stitched, with the gaps painted in); keep what stands up.
                 val tg = c.floorT[k]
@@ -83,23 +89,53 @@ object PaintedSurface {
             grids += Grid(c, m, x, y, z, keep, col, lt)
         }
 
-        // Level patches standing off the floor outside any vehicle aren't real: they're floor the
-        // depth put a little too near (so it hovers), far floor the depth scale bent upwards, or
-        // ceiling. Find them as 10 cm columns whose points are all at one height.
-        val ext = MAX_T + 3.0; val cell = 0.1; val cn = (2 * ext / cell).toInt()
-        val zmin = FloatArray(cn * cn) { Float.MAX_VALUE }; val zmax = FloatArray(cn * cn) { -Float.MAX_VALUE }; val cnt = IntArray(cn * cn)
-        fun cellOf(x: Float, y: Float): Int {
-            val ci = ((ext - y) / cell).toInt(); val cj = ((x + ext) / cell).toInt()
-            return if (ci in 0 until cn && cj in 0 until cn) ci * cn + cj else -1
+        // Level surfaces outside any vehicle aren't real here: floor the depth put a little too near
+        // (so it hovers over the real floor, which the floor picture shows anyway), far floor the
+        // depth bent upwards, or ceiling. Judge "level" by the surface's slope across nearby grid
+        // points, so leaning surfaces (a hedge, a wall seen at an angle) stay.
+        for (gd in grids) {
+            val m = gd.m
+            val was = gd.keep.copyOf()
+            fun at(g: Int) = g in 0 until m * m && was[g]
+            for (gi in 0 until m) for (gj in 0 until m) {
+                val g = gi * m + gj
+                if (!was[g]) continue
+                val s = SPAN
+                val l = if (gj >= s && at(g - s)) g - s else g; val r = if (gj + s < m && at(g + s)) g + s else g
+                val u = if (gi >= s && at(g - s * m)) g - s * m else g; val d = if (gi + s < m && at(g + s * m)) g + s * m else g
+                if (l == r || u == d) continue
+                val ax = gd.x[r] - gd.x[l]; val ay = gd.y[r] - gd.y[l]; val az = gd.z[r] - gd.z[l]
+                val bx = gd.x[d] - gd.x[u]; val by = gd.y[d] - gd.y[u]; val bz = gd.z[d] - gd.z[u]
+                val nx = ay * bz - az * by; val ny = az * bx - ax * bz; val nz = ax * by - ay * bx
+                val nl = kotlin.math.sqrt(nx * nx + ny * ny + nz * nz) + 1e-9f
+                if (abs(nz) / nl > 0.85f && !SurroundBuilder.inAnyVehicle(vehicles, gd.x[g].toDouble(), gd.y[g].toDouble())) gd.keep[g] = false
+            }
         }
-        for (gd in grids) for (g in gd.keep.indices) if (gd.keep[g]) {
-            val q = cellOf(gd.x[g], gd.y[g]); if (q < 0) { gd.keep[g] = false; continue }
-            zmin[q] = minOf(zmin[q], gd.z[g]); zmax[q] = maxOf(zmax[q], gd.z[g]); cnt[q]++
-        }
-        for (gd in grids) for (g in gd.keep.indices) if (gd.keep[g]) {
-            val q = cellOf(gd.x[g], gd.y[g])
-            val flat = cnt[q] >= 2 && zmax[q] - zmin[q] < 0.12f
-            if (flat && !SurroundBuilder.inAnyVehicle(vehicles, gd.x[g].toDouble(), gd.y[g].toDouble())) gd.keep[g] = false
+
+        // Keep only pieces of surface that stand on the ground. Things seen over the top of something
+        // nearer (a building behind a hedge, a tree canopy) are cut off from the ground by a jump in
+        // depth, and that's exactly where the depth model is least sure how far away they are: the
+        // bowl (backdrop) shows them instead.
+        for (gd in grids) {
+            val m = gd.m
+            val parent = IntArray(m * m) { it }
+            fun find(a: Int): Int { var x = a; while (parent[x] != x) { parent[x] = parent[parent[x]]; x = parent[x] }; return x }
+            fun join(a: Int, b: Int) {
+                if (!gd.keep[a] || !gd.keep[b] || abs(gd.lt[a] - gd.lt[b]) >= 2.0 * EDGE) return
+                val ra = find(a); val rb = find(b); if (ra != rb) parent[ra] = rb
+            }
+            for (gi in 0 until m) for (gj in 0 until m) {
+                val g = gi * m + gj
+                if (!gd.keep[g]) continue
+                if (gj + 1 < m) join(g, g + 1)
+                if (gi + 1 < m) join(g, g + m)
+            }
+            val size = IntArray(m * m); val low = FloatArray(m * m) { Float.MAX_VALUE }
+            for (g in 0 until m * m) if (gd.keep[g]) { val r = find(g); size[r]++; low[r] = minOf(low[r], gd.z[g]) }
+            for (g in 0 until m * m) if (gd.keep[g]) {
+                val r = find(g)
+                if (size[r] < MIN_PIECE || low[r] > GROUNDED) gd.keep[g] = false
+            }
         }
 
         // Join neighbours into triangles where nothing jumps between them; drop points left alone.

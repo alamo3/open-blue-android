@@ -151,8 +151,7 @@ private class SurroundRenderer(
         if (textureView.isAttachedToWindow) start()
     }
 
-    /** Painted, stay inside the backdrop dome (radius 12.5 m round a point 1 m up). */
-    private val maxDistance get() = if (painted) 11.5 else 22.0
+    private val maxDistance = 22.0
 
     val hasPainted: Boolean get() = env.getEntitiesByName("painted").isNotEmpty()
 
@@ -160,7 +159,6 @@ private class SurroundRenderer(
     fun showPainted(on: Boolean) {
         if (destroyed) return
         painted = on && hasPainted
-        distance = distance.coerceAtMost(maxDistance)
         applyLook()
     }
 

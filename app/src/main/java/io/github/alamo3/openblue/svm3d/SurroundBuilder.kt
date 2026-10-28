@@ -12,11 +12,24 @@ import kotlin.math.sqrt
 /** One fisheye frame, as 0xRRGGBB pixels. */
 class Fisheye(val camera: SvmCamera, val width: Int, val height: Int, val rgb: IntArray) {
     /**
-     * The lens's usable area: everything but the black border around the picture (found by
-     * flooding in from the edges, so dark things inside the picture stay usable), shrunk a little.
+     * The lens's usable area: everything but the flat border around the picture (found by flooding
+     * in from the edges over pixels of the border's colour, so dark things inside the picture stay
+     * usable), shrunk past the coloured fringe at the lens's edge. The border is black at night but
+     * mid-grey by day, so its colour is read from the frame's outer edge.
      */
     val mask: BooleanArray by lazy {
-        val dark = BooleanArray(width * height) { i -> maxChannel(rgb[i]) <= 14 }
+        val edge = ArrayList<Int>()
+        for (x in 0 until width) { edge += rgb[x]; edge += rgb[(height - 1) * width + x] }
+        for (y in 0 until height) { edge += rgb[y * width]; edge += rgb[y * width + width - 1] }
+        fun med(s: Int) = edge.map { (it shr s) and 0xFF }.sorted()[edge.size / 2]
+        val br = med(16); val bg = med(8); val bb = med(0)
+        fun like(p: Int, tol: Int) = abs(((p shr 16) and 0xFF) - br) <= tol && abs(((p shr 8) and 0xFF) - bg) <= tol && abs((p and 0xFF) - bb) <= tol
+        // Only if most of the edge really is a flat border (the picture itself touches the edge in places).
+        val flat = edge.count { like(it, 8) } > edge.size * 0.55
+        val dark = BooleanArray(width * height) { i ->
+            val p = rgb[i]
+            maxChannel(p) <= 14 || (flat && like(p, 10))
+        }
         val border = BooleanArray(width * height)
         val queue = IntArray(width * height); var head = 0; var tail = 0
         fun push(i: Int) { if (dark[i] && !border[i]) { border[i] = true; queue[tail++] = i } }
@@ -27,7 +40,7 @@ class Fisheye(val camera: SvmCamera, val width: Int, val height: Int, val rgb: I
             if (x > 0) push(i - 1); if (x < width - 1) push(i + 1)
             if (y > 0) push(i - width); if (y < height - 1) push(i + width)
         }
-        erode(BooleanArray(width * height) { !border[it] }, width, height, 4)
+        erode(BooleanArray(width * height) { !border[it] }, width, height, 8)
     }
 
     fun sample(u: Double, v: Double): Int {
@@ -636,7 +649,7 @@ object SurroundBuilder {
     }
 
     /** The floor fades out just before the backdrop dome (radius [Backdrop.RADIUS]) meets it. */
-    fun edgeFade(r: Double) = ((Backdrop.FLOOR_REACH - r) / 1.5).coerceIn(0.0, 1.0)
+    fun edgeFade(r: Double) = ((Backdrop.FLOOR_REACH - r) / 0.3).coerceIn(0.0, 1.0)
 
     /** Fills the holes in an image by averaging down a pyramid and back up. */
     private fun pushPullFill(r: FloatArray, g: FloatArray, b: FloatArray, have: BooleanArray, n: Int): Array<FloatArray> {

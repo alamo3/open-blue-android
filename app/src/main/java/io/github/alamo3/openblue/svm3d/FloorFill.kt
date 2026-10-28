@@ -124,12 +124,14 @@ object FloorFill {
         return res
     }
 
-    /** Distance in pixels from each pixel to the nearest true one (two-pass chamfer). */
-    internal fun distanceTo(m: BooleanArray, n: Int): FloatArray {
+    internal fun distanceTo(m: BooleanArray, n: Int): FloatArray = distanceTo(m, n, n)
+
+    /** Distance in pixels from each pixel to the nearest true one (two-pass chamfer), [n] wide, [rows] high. */
+    internal fun distanceTo(m: BooleanArray, n: Int, rows: Int): FloatArray {
         val inf = 1e9f
-        val d = FloatArray(n * n) { if (m[it]) 0f else inf }
+        val d = FloatArray(n * rows) { if (m[it]) 0f else inf }
         val a = 1f; val dg = sqrt(2f)
-        for (y in 0 until n) for (x in 0 until n) {
+        for (y in 0 until rows) for (x in 0 until n) {
             val k = y * n + x
             var v = d[k]
             if (x > 0) v = min(v, d[k - 1] + a)
@@ -140,11 +142,11 @@ object FloorFill {
             }
             d[k] = v
         }
-        for (y in n - 1 downTo 0) for (x in n - 1 downTo 0) {
+        for (y in rows - 1 downTo 0) for (x in n - 1 downTo 0) {
             val k = y * n + x
             var v = d[k]
             if (x < n - 1) v = min(v, d[k + 1] + a)
-            if (y < n - 1) {
+            if (y < rows - 1) {
                 v = min(v, d[k + n] + a)
                 if (x < n - 1) v = min(v, d[k + n + 1] + dg)
                 if (x > 0) v = min(v, d[k + n - 1] + dg)
