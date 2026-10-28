@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Simple original mark: a car silhouette under a signal arc. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- signal arc -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="3.5"
+        android:strokeLineCap="round"
+        android:pathData="M40,40 A20,20 0 0,1 68,40" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="3.5"
+        android:strokeLineCap="round"
+        android:pathData="M46,46 A11,11 0 0,1 62,46" />
+    <!-- car body -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M36,70 L36,62 Q36,58 40,57 L44,51 Q45.5,49 48,49 L60,49 Q62.5,49 64,51 L68,57 Q72,58 72,62 L72,70 Z" />
+    <!-- windows -->
+    <path
+        android:fillColor="#0B3D91"
+        android:pathData="M45.5,56 L48.5,52 L53,52 L53,56 Z M55,52 L59.5,52 L62.5,56 L55,56 Z" />
+    <!-- wheels -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M42,70 m-5,0 a5,5 0 1,0 10,0 a5,5 0 1,0 -10,0 M66,70 m-5,0 a5,5 0 1,0 10,0 a5,5 0 1,0 -10,0" />
+    <path
+        android:fillColor="#0B3D91"
+        android:pathData="M42,70 m-2,0 a2,2 0 1,0 4,0 a2,2 0 1,0 -4,0 M66,70 m-2,0 a2,2 0 1,0 4,0 a2,2 0 1,0 -4,0" />
+</vector>
