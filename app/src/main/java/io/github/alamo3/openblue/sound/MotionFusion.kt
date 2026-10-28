@@ -74,6 +74,14 @@ class MotionFusion {
         if (v.size == 7) pendingMount = v.toFloatArray()
     }
 
+    /**
+     * Phone lying on the charging pad: +1 with its top towards the front of the car, -1 towards
+     * the back, null to learn the direction from driving instead. On the pad, forward is simply
+     * along the phone's long side, so there's nothing to learn but the sign, and GPS checks that.
+     */
+    var padSign: Int? = null
+    private var padDisagree = 0
+
     /** Phone moved in its mount (gravity swung): forget which way is forward. */
     private fun resetAxis() {
         forward.fill(0f)
@@ -105,6 +113,14 @@ class MotionFusion {
                 }
                 pendingMount = null
             }
+        }
+
+        padSign?.let { sgn ->
+            // The phone's long axis (+Y), laid flat onto the road plane.
+            val yUp = g[1]
+            forward[0] = -yUp * g[0] * sgn; forward[1] = (1 - yUp * g[1]) * sgn; forward[2] = -yUp * g[2] * sgn
+            evidence = 8f
+            probation = 0
         }
 
         // Horizontal part of the acceleration (the road plane).
@@ -155,7 +171,17 @@ class MotionFusion {
                 // whether GPS saw us speed up or slow down.
                 // Only above ~15 km/h, which no one reaches in reverse, and never while reversing.
                 val fastEnough = minOf(gpsSpeed, lastFixSpeed) > 4.2f
-                if (sinceFixCount > 0 && abs(lastGpsAccel) > 0.5f && fastEnough && !reversing) {
+                if (padSign != null && sinceFixCount > 0 && abs(lastGpsAccel) > 0.5f && fastEnough && !reversing) {
+                    // On the pad: just check the sign. Twice the wrong way round means the phone
+                    // is lying the other way, so flip.
+                    val n0 = norm(forward)
+                    val agree0 = if (n0 > 0f) dot(sinceFix, forward) / n0 / sinceFixCount * sign(lastGpsAccel) else 0f
+                    if (agree0 < -0.2f) padDisagree++ else if (agree0 > 0.2f) padDisagree = 0
+                    if (padDisagree >= 2) {
+                        padSign = -(padSign ?: 1)
+                        padDisagree = 0
+                    }
+                } else if (sinceFixCount > 0 && abs(lastGpsAccel) > 0.5f && fastEnough && !reversing) {
                     // Check a remembered mount against GPS: if the push points the opposite way
                     // to the speed change, the phone was put down turned round, so start over.
                     if (probation > 0) {

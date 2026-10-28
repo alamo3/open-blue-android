@@ -1343,6 +1343,15 @@ class MainViewModel(
         soundCtl?.gearshifts = on
     }
 
+    var soundPlacement by mutableStateOf(store.soundPlacement)
+        private set
+
+    fun changeSoundPlacement(p: Int) {
+        soundPlacement = p
+        store.soundPlacement = p
+        soundCtl?.padSign = p.takeIf { it != 0 }
+    }
+
     var autoSound by mutableStateOf(store.autoSound)
         private set
     var soundCarName by mutableStateOf(store.soundCarName)
@@ -1362,7 +1371,6 @@ class MainViewModel(
     }
 
     fun forgetSoundCar() {
-        if (online) io.github.alamo3.openblue.sound.CarLink.forget(getApplication())
         store.soundCarAddress = null
         store.soundCarName = null
         soundCarName = null

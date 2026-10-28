@@ -140,6 +140,10 @@ class SecureStore(private val prefs: SharedPreferences) {
         get() = read("soundMount")
         set(v) = write("soundMount", v)
     /** Start the engine sound when the car's Bluetooth connects, stop when it disconnects. */
+    /** Where the phone sits: 1 on the charging pad top to the front, -1 top to the back, 0 elsewhere. */
+    var soundPlacement: Int
+        get() = prefs.getInt("soundPlacement", 0)
+        set(v) = prefs.edit().putInt("soundPlacement", v).apply()
     var autoSound: Boolean
         get() = prefs.getBoolean("autoSound", false)
         set(v) = prefs.edit().putBoolean("autoSound", v).apply()

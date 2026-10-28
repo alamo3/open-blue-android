@@ -53,6 +53,11 @@ class SoundController(
      */
     @Volatile var lookaheadMs = 0f
 
+    /** Where the phone sits: see [MotionFusion.padSign]. */
+    var padSign: Int?
+        get() = fusion.padSign
+        set(v) { fusion.padSign = v }
+
     // Delay measurement: the audio thread plays a click when asked and notes when.
     @Volatile private var clickRequested = false
     @Volatile private var muted = false
@@ -248,8 +253,10 @@ class SoundController(
                 val a = fusedAccel
                 jerk += ((a - prevAccel) / dt - jerk) * minOf(1f, dt / 0.12f)
                 prevAccel = a
-                val ahead = lookaheadMs / 1000f
-                val aPred = (a + jerk * ahead * 0.7f).coerceIn(-9f, 10f)
+                // Not at walking pace, where the jolt of setting off would be stretched into a spike,
+                // and never more than a modest nudge.
+                val ahead = if (fusedSpeed < 2.5f) 0f else lookaheadMs / 1000f
+                val aPred = (a + (jerk * ahead * 0.7f).coerceIn(-0.8f, 0.8f)).coerceIn(-9f, 10f)
                 val vPred = max(0f, fusedSpeed + a * ahead)
 
                 val st = model.update(dt, vPred, aPred, revThrottle)

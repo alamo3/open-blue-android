@@ -12,16 +12,13 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
-    <!-- Starting the engine sound when the car connects: the car is linked as a companion
-         device, which lets the app start the sound from the background, and the Bluetooth
-         permission lets it hear the car connect. "All the time" location keeps GPS speed. -->
+    <!-- Starting the engine sound when the car connects: the Bluetooth permission lets the app
+         hear the car connect, unrestricted battery lets it start the sound from the background,
+         and "all the time" location keeps GPS speed. -->
     <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
-    <uses-permission android:name="android.permission.REQUEST_COMPANION_RUN_IN_BACKGROUND" />
-    <uses-permission android:name="android.permission.REQUEST_COMPANION_START_FOREGROUND_SERVICES_FROM_BACKGROUND" />
     <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
-    <uses-feature android:name="android.software.companion_device_setup" android:required="false" />
 
     <!-- allowBackup is off: credentials are encrypted with a device-bound
          Keystore key, so a restored copy could not be decrypted anyway. -->

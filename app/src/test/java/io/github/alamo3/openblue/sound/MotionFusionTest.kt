@@ -148,3 +148,34 @@ class ReversingTest {
         assertTrue(!f.reversing)
     }
 }
+
+class ChargingPadTest {
+    private val flat = floatArrayOf(0f, 0f, 9.81f)
+
+    @Test fun knowsForwardStraightAway() {
+        val f = MotionFusion().apply { padSign = 1 }
+        var t = 0L
+        repeat(60) { f.onAccel(floatArrayOf(0f, 2f, 0f), flat, t); t += 10_000_000L }
+        assertTrue("accel ${f.accel}", f.accel > 1.5f)
+        repeat(60) { f.onAccel(floatArrayOf(0.3f, -2f, 0f), flat, t); t += 10_000_000L }
+        assertTrue("braking ${f.accel}", f.accel < -1.5f)
+    }
+
+    @Test fun flipsWhenLyingTheOtherWay() {
+        val f = MotionFusion().apply { padSign = 1 }
+        var t = 0L
+        var v = 6f
+        // Really driving along the phone's -Y, speeding up and slowing down at 20-40 km/h.
+        repeat(1200) { i ->
+            val a = if ((i / 200) % 2 == 0) 2f else -2f
+            v += a * 0.01f
+            f.onAccel(floatArrayOf(0f, -a, 0f), flat, t)
+            t += 10_000_000L
+            if (i % 100 == 0) f.onGps(v, i * 10L)
+        }
+        assertEquals(-1, f.padSign)
+        f.onAccel(floatArrayOf(0f, -2f, 0f), flat, t)
+        repeat(60) { t += 10_000_000L; f.onAccel(floatArrayOf(0f, -2f, 0f), flat, t) }
+        assertTrue("now reads forward: ${f.accel}", f.accel > 1.5f)
+    }
+}

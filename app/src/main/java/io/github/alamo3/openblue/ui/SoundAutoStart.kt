@@ -1,7 +1,6 @@
 package io.github.alamo3.openblue.ui
 
 import android.Manifest
-import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -10,9 +9,17 @@ import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -32,12 +39,12 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import io.github.alamo3.openblue.MainViewModel
-import io.github.alamo3.openblue.sound.CarLink
 
 /**
  * Settings for starting the engine sound by itself when the car connects: which car, and the
  * permissions that make it work from the background (each shown with whether it's granted).
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SoundAutoStart(vm: MainViewModel) {
     val context = LocalContext.current
@@ -61,27 +68,61 @@ fun SoundAutoStart(vm: MainViewModel) {
         context.getSystemService(PowerManager::class.java)?.isIgnoringBatteryOptimizations(context.packageName) == true
     }.getOrDefault(true)
 
+    var picking by remember { mutableStateOf(false) }
     val askBluetooth = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { tick++ }
+    val askBluetoothThenPick = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
+        tick++
+        if (ok) picking = true else vm.soundMessage("Open Blue needs the Nearby devices permission to see your paired car.")
+    }
     val askBackground = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
         tick++
         if (!ok) openAppSettings(context)
     }
     val askLocation = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { tick++ }
-    val chooser = rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { r ->
-        if (r.resultCode == Activity.RESULT_OK) {
-            val car = CarLink.picked(context, r.data)
-            if (car != null) {
-                vm.setSoundCar(car.first, car.second)
-                if (!bluetoothOk && Build.VERSION.SDK_INT >= 31) askBluetooth.launch(Manifest.permission.BLUETOOTH_CONNECT)
-            } else {
-                vm.soundMessage("Couldn't read which car was picked. Try again.")
-            }
+    // Pick from the phone's paired Bluetooth devices (the car is one of them).
+    fun pickCar() {
+        if (bluetoothOk) picking = true
+        else if (Build.VERSION.SDK_INT >= 31) askBluetoothThenPick.launch(Manifest.permission.BLUETOOTH_CONNECT)
+    }
+    if (picking) {
+        val paired = remember { pairedDevices(context) }
+        AlertDialog(
+            onDismissRequest = { picking = false },
+            title = { Text("Which is your car?") },
+            text = {
+                if (paired.isEmpty()) {
+                    Text("No paired Bluetooth devices found. Pair the phone with the car first.")
+                } else {
+                    Column(Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState())) {
+                        paired.forEach { (address, name) ->
+                            ClickRow(name, address) {
+                                vm.setSoundCar(address, name)
+                                picking = false
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { picking = false }) { Text("Cancel") } },
+        )
+    }
+
+    HorizontalDivider(color = AppTheme.colors.hairline, modifier = Modifier.padding(top = 16.dp))
+    SectionTitle("Where the phone sits")
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        listOf(1 to "Charging pad, top to the front", -1 to "Charging pad, top to the back", 0 to "Somewhere else").forEach { (v, label) ->
+            OptionPill(label, vm.soundPlacement == v, { vm.changeSoundPlacement(v) })
         }
     }
-    fun pickCar() = CarLink.pick(
-        context,
-        launch = { chooser.launch(IntentSenderRequest.Builder(it).build()) },
-        failed = { vm.soundMessage(it) },
+    Text(
+        if (vm.soundPlacement != 0) {
+            "Lying flat on the pad, the phone's long side points along the car, so the sound knows which way is forward straight away. If it's actually the other way round, GPS notices within a few speed changes and it corrects itself."
+        } else {
+            "It works out which way is forward as you drive, above about 15 km/h. The phone needs to stay put."
+        },
+        style = MaterialTheme.typography.bodySmall,
+        color = scheme.onSurfaceVariant,
+        modifier = Modifier.padding(top = 8.dp),
     )
 
     HorizontalDivider(color = AppTheme.colors.hairline, modifier = Modifier.padding(top = 16.dp))
@@ -119,7 +160,7 @@ fun SoundAutoStart(vm: MainViewModel) {
             }
             PermissionRow(
                 "Battery: unrestricted",
-                "Stops Android putting the app to sleep, so it hears the car connect.",
+                "Needed: it's what lets Android start the sound in the background, and stops the app being put to sleep. On Samsung, also keep it out of Sleeping apps.",
                 batteryOk,
             ) {
                 @Suppress("BatteryLife")
@@ -132,7 +173,7 @@ fun SoundAutoStart(vm: MainViewModel) {
         }
     }
     Text(
-        "The phone's position in its mount is remembered between drives, so if it sits the same way the sound follows the car from the start.",
+        "Away from the pad, the phone's position is remembered between drives, so if it sits the same way the sound follows the car from the start.",
         style = MaterialTheme.typography.bodySmall,
         color = scheme.onSurfaceVariant,
         modifier = Modifier.padding(top = 8.dp),
@@ -152,3 +193,10 @@ private fun openAppSettings(context: Context) {
         )
     }
 }
+
+@android.annotation.SuppressLint("MissingPermission")
+private fun pairedDevices(context: Context): List<Pair<String, String>> = runCatching {
+    val adapter = context.getSystemService(android.bluetooth.BluetoothManager::class.java)?.adapter
+    adapter?.bondedDevices.orEmpty().map { it.address.uppercase() to (runCatching { it.name }.getOrNull() ?: it.address) }
+        .sortedBy { it.second.lowercase() }
+}.getOrDefault(emptyList())

@@ -37,7 +37,7 @@ class EngineModel(
     private val rpmPerKmh = floatArrayOf(108f, 65f, 47f, 36.5f, 29.5f, 24.5f)
 
     /** Acceleration (m/s²) treated as full throttle. */
-    var fullAccel = 4.0f
+    var fullAccel = 3.0f
 
     private var rpm = idleRpm
     private var gear = 1

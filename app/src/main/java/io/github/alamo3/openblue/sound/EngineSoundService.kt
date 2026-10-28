@@ -61,6 +61,7 @@ class EngineSoundService : Service() {
                 holdRevs = store.holdRevs
                 gearshifts = store.gearshifts
                 lookaheadMs = store.soundLookaheadMs.toFloat()
+                padSign = store.soundPlacement.takeIf { it != 0 }
                 start(canUseGps = gps)
             }
         }
@@ -68,6 +69,8 @@ class EngineSoundService : Service() {
     }
 
     override fun onDestroy() {
+        // If GPS showed the phone was lying the other way round on the pad, remember that.
+        current?.padSign?.let { SecureStore(this).soundPlacement = it }
         current?.stop()
         current = null
         super.onDestroy()
