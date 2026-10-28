@@ -12,10 +12,42 @@ data class VehicleInfo(
     val fuelKindCode: String,
 )
 
+/**
+ * Per-vehicle capabilities from sltvhcl. Field meanings follow the official app:
+ * genType "G3" -> Gen3 climate payload ("remoteControl"); strgWhlHeatingOption 1 -> the
+ * steering wheel and rear/mirror heaters are separately controllable, otherwise one combined
+ * switch (heating1 = 1). seatHeatVent option 1 appears to mean heat-only (rear seats).
+ */
+@Serializable
+data class VehicleCaps(
+    val genType: String? = null,
+    val hvacTempType: Int? = null,
+    val strgWhlHeatingOption: Int? = null,
+    /** drv, ast, rl, rr */
+    val seatOptions: List<Int?> = listOf(null, null, null, null),
+) {
+    val isGen3: Boolean get() = genType?.contains("3") == true
+    val splitHeating: Boolean get() = strgWhlHeatingOption == 1
+
+    fun heatingOptions(): List<Heating> =
+        if (splitHeating) listOf(Heating.OFF, Heating.STEERING, Heating.REAR_MIRRORS, Heating.STEERING_REAR_MIRRORS)
+        else listOf(Heating.OFF, Heating.ALL)
+
+    fun seatLevels(seat: Int): List<SeatLevel> =
+        if (seatOptions.getOrNull(seat) == 1) SeatLevel.entries.filter { it.code == 0 || it.code >= 6 }
+        else SeatLevel.entries.toList()
+}
+
+enum class ClimateFormat(val label: String) {
+    AUTO("Automatic"),
+    HVAC_INFO("Older cars (\"hvacInfo\")"),
+    REMOTE_CONTROL("Gen3 cars (\"remoteControl\")"),
+}
+
 /** heating1 values the Bluelink API accepts (from the official app's preset mapping). */
 enum class Heating(val code: Int, val label: String) {
     OFF(0, "Off"),
-    ALL(1, "All (combined)"),
+    ALL(1, "Steering wheel, mirrors & rear defrost"),
     REAR_MIRRORS(2, "Rear window + mirrors"),
     STEERING(3, "Steering wheel"),
     STEERING_REAR_MIRRORS(4, "Steering + rear + mirrors");

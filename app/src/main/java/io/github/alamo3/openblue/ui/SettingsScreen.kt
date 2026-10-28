@@ -29,6 +29,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import io.github.alamo3.openblue.MainViewModel
+import io.github.alamo3.openblue.api.ClimateFormat
 
 @Composable
 fun SettingsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
@@ -62,10 +63,19 @@ fun SettingsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
         }
 
         SectionCard("Climate request format") {
-            SwitchRow("Use Gen3 format (\"remoteControl\")", vm.useRemoteControl) { vm.setRemoteControlFormat(it) }
+            Picker(
+                label = "Format",
+                options = ClimateFormat.entries.toList(),
+                selected = vm.climateFormat,
+                optionLabel = { it.label },
+                onSelect = { vm.setFormat(it) },
+                modifier = Modifier.fillMaxWidth(),
+            )
+            InfoRow("Vehicle generation", vm.caps.genType ?: "unknown")
+            InfoRow("Currently sending", "\"${vm.climateKey}\"")
             Text(
-                "Off (default) sends settings as \"hvacInfo\", which is what works for most Ioniq 5s. " +
-                    "Only turn this on if climate commands are accepted but ignored by the car.",
+                "Automatic uses \"remoteControl\" for Gen3 cars (like the official app) and \"hvacInfo\" otherwise. " +
+                    "Only override this if climate starts are accepted but the car ignores the settings.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

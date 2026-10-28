@@ -8,6 +8,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import io.github.alamo3.openblue.api.ApiException
 import io.github.alamo3.openblue.api.BluelinkClient
+import io.github.alamo3.openblue.api.ClimateFormat
 import io.github.alamo3.openblue.api.ClimateSettings
 import io.github.alamo3.openblue.api.CommandResult
 import io.github.alamo3.openblue.api.LoginResult
@@ -15,8 +16,8 @@ import io.github.alamo3.openblue.api.OtpChallenge
 import io.github.alamo3.openblue.api.OtpRequiredException
 import io.github.alamo3.openblue.api.ServerPreset
 import io.github.alamo3.openblue.api.TempTables
+import io.github.alamo3.openblue.api.VehicleCaps
 import io.github.alamo3.openblue.api.VehicleInfo
-import io.github.alamo3.openblue.api.int
 import io.github.alamo3.openblue.data.SecureStore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
@@ -53,7 +54,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     var localPresets by mutableStateOf(store.localPresets)
         private set
     var editor by mutableStateOf(store.lastClimate ?: ClimateSettings())
-    var useRemoteControl by mutableStateOf(store.useRemoteControlFormat)
+    var climateFormat by mutableStateOf(store.climateFormat)
+        private set
+    var caps by mutableStateOf(store.caps ?: VehicleCaps())
         private set
     var diagnostics by mutableStateOf<String?>(null)
 
@@ -70,7 +73,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             val v = store.vehicle!!
             // One task for both: task() ignores calls while another is running.
             task("Refreshing…") {
-                applyStatus(api.cachedStatus(v.id))
+                // sltvhcl returns status too, and refreshes capabilities (genType, heating, seats).
+                val selected = api.selectVehicle(v.id)
+                updateCaps(selected)
+                (selected["status"] as? JsonObject)?.let { applyStatus(it) } ?: applyStatus(api.cachedStatus(v.id))
                 serverPresets = api.serverPresets(v.id, tempTable)
             }
         }
@@ -79,7 +85,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val tempTable: List<TempTables.Entry>
         get() {
             val v = vehicle
-            val type = store.hvacTempType ?: if (v?.fuelKindCode.equals("E", true)) 1 else 0
+            val type = caps.hvacTempType ?: if (v?.fuelKindCode.equals("E", true)) 1 else 0
             return TempTables.forVehicle(type, v?.model.orEmpty(), v?.fuelKindCode.orEmpty())
         }
 
@@ -171,7 +177,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         vehicle = v
         try {
             val selected = api.selectVehicle(v.id)
-            store.hvacTempType = selected.int("features.hvacTempType")
+            updateCaps(selected)
             (selected["status"] as? JsonObject)?.let { applyStatus(it) }
         } catch (e: ApiException) {
             // Not fatal: fall back to defaults and the regular status call.
@@ -180,6 +186,15 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         runCatching { applyStatus(api.cachedStatus(v.id)) }
         runCatching { serverPresets = api.serverPresets(v.id, tempTable) }
     }
+
+    private fun updateCaps(selected: JsonObject) {
+        val c = api.capsFrom(selected)
+        store.caps = c
+        caps = c
+    }
+
+    /** The JSON key the next climate start will use, for display. */
+    val climateKey: String get() = api.climateKey()
 
     fun signOut() {
         store.signOut()
@@ -234,7 +249,15 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun startClimate(settings: ClimateSettings = editor) {
         store.lastClimate = editor
-        command("climate start", "Climate started") { api.startClimate(it, settings) }
+        val fixed = settings.copy(heating = normalizeHeating(settings.heating))
+        command("climate start", "Climate started") { api.startClimate(it, fixed) }
+    }
+
+    /** Map heating1 onto what this car accepts: split cars use 2/3/4, others a single on (1)/off (0). */
+    private fun normalizeHeating(code: Int): Int = when {
+        code == 0 -> 0
+        caps.splitHeating -> if (code == 1) 4 else code
+        else -> 1
     }
 
     // --------------------------------------------------------------- presets
@@ -269,9 +292,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     // -------------------------------------------------------------- settings
 
-    fun setRemoteControlFormat(on: Boolean) {
-        store.useRemoteControlFormat = on
-        useRemoteControl = on
+    fun setFormat(f: ClimateFormat) {
+        store.climateFormat = f
+        climateFormat = f
     }
 
     fun loadDiagnostics() {

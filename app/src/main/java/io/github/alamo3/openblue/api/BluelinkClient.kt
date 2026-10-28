@@ -27,7 +27,10 @@ class OtpRequiredException(val challenge: OtpChallenge) : Exception("Bluelink ne
 
 data class OtpChallenge(
     val userInfoUuid: String,
+    /** The login email, sent back as userAccount. */
+    val account: String,
     val email: String,
+    /** Phone exactly as mfa/selverifmeth returned it (possibly masked); echoed back for SMS. */
     val phone: String?,
     val otpKey: String? = null,
 )
@@ -135,22 +138,25 @@ class BluelinkClient(private val store: SecureStore) {
             val uuid = result.str("userInfoUuid") ?: throw ApiException(null, "Bluelink didn't return a verification ID")
             val email = (result.arr("emailList").firstOrNull() as? JsonPrimitive)?.contentOrNull ?: username
             val phone = result.str("userPhone")?.takeIf { it.isNotBlank() }
-            return LoginResult.NeedsOtp(OtpChallenge(uuid, email, phone))
+            return LoginResult.NeedsOtp(OtpChallenge(userInfoUuid = uuid, account = username, email = email, phone = phone))
         }
         saveToken(check(r))
         return LoginResult.Success
     }
 
-    /** Asks Bluelink to send the code; returns the challenge with its otpKey filled in. */
+    /**
+     * Asks Bluelink to send the code; returns the challenge with its otpKey filled in.
+     * Matches the official app: "M" (mobile) + userPhone for SMS, "E" without a phone for email.
+     */
     suspend fun sendOtp(challenge: OtpChallenge, bySms: Boolean): OtpChallenge {
         val body = check(
             post(
                 "mfa/sendotp",
                 buildJsonObject {
-                    put("otpMethod", if (bySms) "S" else "E")
+                    put("otpMethod", if (bySms) "M" else "E")
                     put("mfaApiCode", MFA_API_CODE)
-                    put("userAccount", challenge.email)
-                    put("userPhone", if (bySms) challenge.phone.orEmpty() else "")
+                    put("userAccount", challenge.account)
+                    if (bySms) put("userPhone", challenge.phone.orEmpty())
                     put("userInfoUuid", challenge.userInfoUuid)
                 },
                 withDeviceId = true,
@@ -231,6 +237,13 @@ class BluelinkClient(private val store: SecureStore) {
         }
     }
 
+    fun capsFrom(selected: JsonObject) = VehicleCaps(
+        genType = selected.str("vehicle.genType"),
+        hvacTempType = selected.int("features.hvacTempType"),
+        strgWhlHeatingOption = selected.int("features.strgWhlHeatingOption"),
+        seatOptions = listOf("drv", "ast", "rl", "rr").map { selected.int("features.seatHeatVent.${it}SeatHeatOption") },
+    )
+
     /** sltvhcl: vehicle + status + feature flags (hvacTempType etc). Returns the "result" object. */
     suspend fun selectVehicle(vehicleId: String): JsonObject = authed { t ->
         val body = check(post("sltvhcl", headers = mapOf("accessToken" to t, "vehicleId" to vehicleId)))
@@ -295,8 +308,15 @@ class BluelinkClient(private val store: SecureStore) {
     suspend fun unlock(vehicleId: String) = command("drulck", vehicleId)
     suspend fun stopClimate(vehicleId: String) = command("evc/rfoff", vehicleId)
 
+    /** The JSON key for climate settings: Gen3 cars use "remoteControl", older ones "hvacInfo". */
+    fun climateKey(): String = when (store.climateFormat) {
+        ClimateFormat.HVAC_INFO -> "hvacInfo"
+        ClimateFormat.REMOTE_CONTROL -> "remoteControl"
+        ClimateFormat.AUTO -> if (store.caps?.isGen3 == true) "remoteControl" else "hvacInfo"
+    }
+
     suspend fun startClimate(vehicle: VehicleInfo, s: ClimateSettings): String {
-        val hvacTempType = store.hvacTempType ?: if (vehicle.fuelKindCode.equals("E", true)) 1 else 0
+        val hvacTempType = store.caps?.hvacTempType ?: if (vehicle.fuelKindCode.equals("E", true)) 1 else 0
         val table = TempTables.forVehicle(hvacTempType, vehicle.model, vehicle.fuelKindCode)
         val entry = TempTables.nearest(table, s.tempC)
         val settings = buildJsonObject {
@@ -316,8 +336,7 @@ class BluelinkClient(private val store: SecureStore) {
                 put("rrSeatOptCmd", s.rearRightSeat)
             }
         }
-        val key = if (store.useRemoteControlFormat) "remoteControl" else "hvacInfo"
-        return command("evc/rfon", vehicle.id, buildJsonObject { put(key, settings) })
+        return command("evc/rfon", vehicle.id, buildJsonObject { put(climateKey(), settings) })
     }
 
     /** Polls rmtsts until the car confirms (C), fails, or we give up. */

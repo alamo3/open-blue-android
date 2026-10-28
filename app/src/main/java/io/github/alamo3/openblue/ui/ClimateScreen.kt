@@ -66,10 +66,13 @@ fun ClimateScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
             }
             SwitchRow("Climate (A/C / heat)", e.climateOn) { on -> update { it.copy(climateOn = on) } }
             SwitchRow("Front defrost", e.defrost) { on -> update { it.copy(defrost = on) } }
+            val heatingOptions = vm.caps.heatingOptions()
+            val heatingSelected = Heating.of(e.heating).takeIf { it in heatingOptions }
+                ?: if (e.heating == 0) Heating.OFF else heatingOptions.last()
             Picker(
                 label = "Heated steering wheel / rear window / mirrors",
-                options = Heating.entries.toList(),
-                selected = Heating.of(e.heating),
+                options = heatingOptions,
+                selected = heatingSelected,
                 optionLabel = { it.label },
                 onSelect = { h -> update { it.copy(heating = h.code) } },
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
@@ -85,21 +88,21 @@ fun ClimateScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
         }
 
         SectionCard("Heated / ventilated seats") {
-            val levels = SeatLevel.entries.toList()
+            val caps = vm.caps
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Picker("Driver", levels, SeatLevel.of(e.driverSeat), { it.label },
+                Picker("Driver", caps.seatLevels(0), SeatLevel.of(e.driverSeat), { it.label },
                     { l -> update { it.copy(driverSeat = l.code) } }, Modifier.weight(1f))
-                Picker("Passenger", levels, SeatLevel.of(e.passengerSeat), { it.label },
+                Picker("Passenger", caps.seatLevels(1), SeatLevel.of(e.passengerSeat), { it.label },
                     { l -> update { it.copy(passengerSeat = l.code) } }, Modifier.weight(1f))
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
-                Picker("Rear left", levels, SeatLevel.of(e.rearLeftSeat), { it.label },
+                Picker("Rear left", caps.seatLevels(2), SeatLevel.of(e.rearLeftSeat), { it.label },
                     { l -> update { it.copy(rearLeftSeat = l.code) } }, Modifier.weight(1f))
-                Picker("Rear right", levels, SeatLevel.of(e.rearRightSeat), { it.label },
+                Picker("Rear right", caps.seatLevels(3), SeatLevel.of(e.rearRightSeat), { it.label },
                     { l -> update { it.copy(rearRightSeat = l.code) } }, Modifier.weight(1f))
             }
             Text(
-                "Pick only what your seats support (e.g. rear seats usually heat only).",
+                "Options are limited to what Bluelink reports for each seat.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 8.dp),

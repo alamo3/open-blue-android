@@ -4,7 +4,9 @@ import android.content.Context
 import android.content.SharedPreferences
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import io.github.alamo3.openblue.api.ClimateFormat
 import io.github.alamo3.openblue.api.ClimateSettings
+import io.github.alamo3.openblue.api.VehicleCaps
 import io.github.alamo3.openblue.api.VehicleInfo
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -55,14 +57,14 @@ class SecureStore(context: Context) {
     var tokenExpiresAt: Long
         get() = prefs.getLong("tokenExpiresAt", 0L)
         set(v) = prefs.edit().putLong("tokenExpiresAt", v).apply()
-    var hvacTempType: Int?
-        get() = prefs.getInt("hvacTempType", -1).takeIf { it >= 0 }
-        set(v) = prefs.edit().apply { if (v == null) remove("hvacTempType") else putInt("hvacTempType", v) }.apply()
+    var caps: VehicleCaps?
+        get() = read("caps")?.let { runCatching { json.decodeFromString<VehicleCaps>(it) }.getOrNull() }
+        set(v) = write("caps", v?.let { json.encodeToString(it) })
 
-    /** Send climate settings under "remoteControl" (Gen3 format) instead of "hvacInfo". */
-    var useRemoteControlFormat: Boolean
-        get() = prefs.getBoolean("useRemoteControl", false)
-        set(v) = prefs.edit().putBoolean("useRemoteControl", v).apply()
+    /** Which JSON key climate settings go under; AUTO picks from the vehicle's genType. */
+    var climateFormat: ClimateFormat
+        get() = read("climateFormat")?.let { runCatching { ClimateFormat.valueOf(it) }.getOrNull() } ?: ClimateFormat.AUTO
+        set(v) = write("climateFormat", v.name)
 
     var vehicle: VehicleInfo?
         get() = read("vehicle")?.let { runCatching { json.decodeFromString<VehicleInfo>(it) }.getOrNull() }
