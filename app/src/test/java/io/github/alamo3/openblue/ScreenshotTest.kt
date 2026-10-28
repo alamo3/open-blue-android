@@ -124,6 +124,12 @@ class ScreenshotTest(private val night: Boolean) {
     }
     @Test fun chargers() = demoVm().let { vm -> vm.showDemoCharging(); shot { ChargersScreen(vm, onBack = {}) } }
     @Test fun trip() = demoVm().let { vm -> vm.showDemoTrip(); shot { TripScreen(vm, onBack = {}) } }
+    @Test fun tripOptions() = demoVm().let { vm ->
+        vm.changeDeveloperMode(true)
+        vm.tripDestination = MainViewModel.Place("Demo destination", "About 450 km away", 44.4, -83.9)
+        vm.planTrip(15, 30, listOf(22, 0, 1))
+        shot { TripScreen(vm, onBack = {}) }
+    }
     @Test fun chargeHistory() = demoVm().let { vm -> vm.showDemoCharging(); shot { ChargeHistoryScreen(vm, onBack = {}) } }
     @Test fun vehicle() = demoVm().let { vm -> shot { VehicleScreen(vm, onBack = {}) } }
     @Test fun settings() = demoVm().let { vm ->

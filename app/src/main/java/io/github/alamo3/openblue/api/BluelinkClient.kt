@@ -516,7 +516,8 @@ class BluelinkClient(private val store: SecureStore) {
     /**
      * EV route planning (iac/rp): a route from [from] to [to] with charging stops, planned so
      * the car reaches each charger with at least [chargerSoc]% and the destination with
-     * [destinationSoc]%. Route option 22 is what the official app always asks for.
+     * [destinationSoc]%. Route option 22 is what the official app always asks for; several
+     * [options] get one route each (what the other codes mean is still being worked out).
      */
     suspend fun iacRoute(
         vehicleId: String,
@@ -526,6 +527,7 @@ class BluelinkClient(private val store: SecureStore) {
         chargerSoc: Int,
         destinationSoc: Int,
         vendorNum: Int,
+        options: List<Int> = listOf(22),
     ): JsonObject = authed { t ->
         val req = buildJsonObject {
             put("version", "1.0")
@@ -536,7 +538,7 @@ class BluelinkClient(private val store: SecureStore) {
                 putJsonArray("points") { add(buildJsonObject { put("lat", to.first); put("lon", to.second) }) }
             }
             put("evChargingStationCandidates", 0)
-            putJsonArray("route") { add(buildJsonObject { put("routeOption", 22) }) }
+            putJsonArray("route") { options.forEach { o -> add(buildJsonObject { put("routeOption", o) }) } }
             putJsonObject("vehicleInfo") {
                 put("chargerType", 37) // CCS and NACS
                 put("chargerSpeed", 7) // every speed

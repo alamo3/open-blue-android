@@ -348,6 +348,8 @@ data class TripStop(
 
 /** One way to get there, with its charging stops and the line to draw. */
 data class TripRoute(
+    /** The route option code this route answers (22 is what the official app asks for). */
+    val option: Int = 22,
     val distanceM: Int,
     val seconds: Int,
     val fee: Int,
@@ -372,6 +374,7 @@ data class TripPlan(val status: Int, val routes: List<TripRoute>, val reachedDes
             reachedDestination = r.int("arriveToDstFlag")?.let { it == 1 },
             routes = r.arr("route").map { rt ->
                 TripRoute(
+                    option = rt.int("routeOption") ?: 22,
                     distanceM = rt.int("totalDistance") ?: 0,
                     seconds = rt.int("totalTime") ?: 0,
                     fee = rt.int("totalFee") ?: 0,

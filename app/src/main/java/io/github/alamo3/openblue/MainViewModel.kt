@@ -750,7 +750,7 @@ class MainViewModel(
     }
 
     /** Plans a trip from the car to [tripDestination] with Hyundai's EV route planner. */
-    fun planTrip(chargerSoc: Int, destinationSoc: Int) {
+    fun planTrip(chargerSoc: Int, destinationSoc: Int, options: List<Int> = listOf(22)) {
         val v = vehicle ?: return
         val dest = tripDestination ?: return
         val from = location ?: run {
@@ -761,13 +761,14 @@ class MainViewModel(
         tripError = null
         trip = null
         if (!online || dryRunning) {
+            demoOptions = options.ifEmpty { listOf(22) }
             showDemoTrip()
             return
         }
         tripLoading = true
         launchSafely(onDone = { tripLoading = false }, onError = { tripError = describe(it) }) {
             val plan = io.github.alamo3.openblue.api.TripPlan.from(
-                api.iacRoute(v.id, v.vin, from.lat to from.lon, dest.lat to dest.lon, chargerSoc, destinationSoc, chargeService?.vendorNum ?: 0),
+                api.iacRoute(v.id, v.vin, from.lat to from.lon, dest.lat to dest.lon, chargerSoc, destinationSoc, chargeService?.vendorNum ?: 0, options.ifEmpty { listOf(22) }),
             )
             trip = plan
             tripError = when {
@@ -792,16 +793,20 @@ class MainViewModel(
         trip = io.github.alamo3.openblue.api.TripPlan(
             status = 0,
             reachedDestination = true,
-            routes = listOf(
+            routes = demoOptions.mapIndexed { n, opt ->
                 io.github.alamo3.openblue.api.TripRoute(
-                    distanceM = 452_000, seconds = 5 * 3600 + 20 * 60, fee = 31,
+                    option = opt,
+                    distanceM = 452_000 + n * 23_000, seconds = 5 * 3600 + 20 * 60 + n * 900, fee = 31 - n * 2,
                     stops = listOf(stop(14, "Highway Services", "Electrify Canada", 18, 75, 160), stop(29, "Lakeside Plaza", "Petro-Canada", 21, 70, 325)),
                     line = listOf(0 to pts.take(15), 1 to pts.subList(14, 21), 0 to pts.drop(20)),
                     arriveSoc = 34, unreachable = 0,
-                ),
-            ),
+                )
+            },
         )
     }
+
+    /** Route option codes the demo trip answers (dry run uses what the screen asked for). */
+    private var demoOptions = listOf(22)
 
     var chargeHistory by mutableStateOf<ChargeHistory?>(null)
         private set

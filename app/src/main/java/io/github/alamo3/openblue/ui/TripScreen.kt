@@ -5,6 +5,7 @@ import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -66,8 +67,12 @@ fun TripScreen(vm: MainViewModel, onBack: () -> Unit) {
     var query by rememberSaveable { mutableStateOf("") }
     var chargerSoc by rememberSaveable { mutableIntStateOf(15) }
     var destinationSoc by rememberSaveable { mutableIntStateOf(30) }
+    var codes by rememberSaveable { mutableStateOf("22") }
+    var routeIndex by rememberSaveable { mutableIntStateOf(0) }
     val dest = vm.tripDestination
-    val route = vm.trip?.routes?.firstOrNull()
+    val routes = vm.trip?.routes.orEmpty()
+    val route = routes.getOrNull(routeIndex) ?: routes.firstOrNull()
+    LaunchedEffect(vm.trip) { routeIndex = 0 }
     val loc = vm.location
 
     LaunchedEffect(Unit) {
@@ -137,6 +142,19 @@ fun TripScreen(vm: MainViewModel, onBack: () -> Unit) {
                     listOf(10, 20, 30, 50).forEach { v -> OptionPill("$v%", destinationSoc == v, { destinationSoc = v }) }
                 }
 
+                // Developer mode: try other route option codes (comma separated); each gets its own route.
+                if (vm.developerMode) {
+                    OutlinedTextField(
+                        value = codes,
+                        onValueChange = { v -> codes = v.filter { it.isDigit() || it == ',' || it == ' ' } },
+                        label = { Text("Route option codes (developer)") },
+                        supportingText = { Text("The official app sends 22. Try e.g. 22, 0, 1, 2, 6, 18 and compare.") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
+                        modifier = Modifier.fillMaxWidth().padding(top = 14.dp),
+                    )
+                }
+
                 val ready = dest != null && loc != null && !vm.tripLoading
                 Row(
                     Modifier
@@ -144,7 +162,10 @@ fun TripScreen(vm: MainViewModel, onBack: () -> Unit) {
                         .padding(top = 18.dp)
                         .clip(CircleShape)
                         .background(if (ready) scheme.primary else scheme.primary.copy(alpha = 0.35f))
-                        .pressable(ready) { vm.planTrip(chargerSoc, destinationSoc) }
+                        .pressable(ready) {
+                            val options = if (vm.developerMode) codes.split(',', ' ').mapNotNull { it.trim().toIntOrNull() }.distinct() else listOf(22)
+                            vm.planTrip(chargerSoc, destinationSoc, options)
+                        }
                         .padding(vertical = 14.dp),
                     horizontalArrangement = Arrangement.Center,
                     verticalAlignment = Alignment.CenterVertically,
@@ -166,6 +187,25 @@ fun TripScreen(vm: MainViewModel, onBack: () -> Unit) {
 
             // Result
             if (route != null && dest != null) {
+                if (routes.size > 1) {
+                    // One route per option code: compare them.
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState())
+                            .padding(horizontal = 20.dp)
+                            .padding(top = 16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        routes.forEachIndexed { i, r ->
+                            OptionPill(
+                                "${r.option}: ${(r.distanceM / 1000.0).roundToInt()} km, ${hours(r.seconds.toLong())}",
+                                route === r,
+                                { routeIndex = i },
+                            )
+                        }
+                    }
+                }
                 Spacer(Modifier.height(16.dp))
                 CarMap(
                     car = loc?.let { MapCar(it.lat, it.lon, it.heading) },
