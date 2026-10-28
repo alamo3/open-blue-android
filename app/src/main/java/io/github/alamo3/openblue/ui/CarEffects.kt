@@ -232,7 +232,7 @@ private fun DrawScope.drawStreams(
     lead: Double,
 ) {
     if (alpha <= 0.01f) return
-    val segments = 9
+    val segments = 12
     paths.forEachIndexed { pi, path ->
         val cycle = path.length + tail
         for (k in 0 until perPath) {
@@ -275,9 +275,9 @@ private fun DrawScope.drawAirflow(cam: CarCamera, t: Float, tint: Color, strengt
     val glass = smoothstep(-0.25, 0.3, cam.facing(Flows.glassPoint, Flows.glassNormal))
     val wobble = if (heat) 0.014 else 0.004
     // Inside first, since it's behind the glass.
-    drawStreams(cam, Flows.cabin, t, tint, strength * 0.42f, 0.55, 3, 0.32, 0.02, wobble, 0.25)
-    if (defrost) drawStreams(cam, Flows.defrost, t, tint, strength * 0.5f * glass, 0.45, 2, 0.26, 0.016, wobble * 0.5, 0.2)
-    drawStreams(cam, Flows.intake, t, tint, strength * 0.85f * front, 0.8, 3, 0.42, 0.024, wobble, 0.3)
+    drawStreams(cam, Flows.cabin, t, tint, strength * 0.4f, 0.5, 4, 0.45, 0.014, wobble, 0.25)
+    if (defrost) drawStreams(cam, Flows.defrost, t, tint, strength * 0.55f * glass, 0.45, 3, 0.35, 0.012, wobble * 0.5, 0.2)
+    drawStreams(cam, Flows.intake, t, tint, strength * 0.8f * front, 0.8, 4, 0.6, 0.017, wobble, 0.3)
 }
 
 private fun DrawScope.drawCharging(cam: CarCamera, t: Float, green: Color, strength: Float) {

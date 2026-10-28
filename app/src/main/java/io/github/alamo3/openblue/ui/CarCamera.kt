@@ -141,8 +141,8 @@ class CarCamera {
             return hi
         }
 
-        private const val FIT_X = 0.96
-        private const val FIT_Y = 0.88
+        private const val FIT_X = 1.0
+        private const val FIT_Y = 0.92
 
         fun perspective(m: DoubleArray, fovY: Double, aspect: Double, near: Double, far: Double) {
             val f = 1 / tan(fovY * PI / 360)

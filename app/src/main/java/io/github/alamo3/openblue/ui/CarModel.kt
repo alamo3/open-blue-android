@@ -553,4 +553,4 @@ fun Car3D(pose: CarPose, modifier: Modifier = Modifier) {
 }
 
 /** Width / height of res/drawable-nodpi/car_still.webp, rendered by tools/model/appview.py. */
-private const val STILL_ASPECT = 1.217f
+private const val STILL_ASPECT = 1.47f

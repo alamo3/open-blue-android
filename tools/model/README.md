@@ -22,8 +22,8 @@ Source: "2024 Hyundai Ioniq 5 N" by Ddiaz Design (Sketchfab), CC BY-NC 4.0. Outp
 4. `appview.py car.glb studio.hdr out.png <azimuth> <elevation> <cable 0|1> <parts|none> <w> <h>`
    renders the car exactly as the app frames it (`appcam.py` mirrors `ui/CarCamera.kt`). The
    still shown where 3D can't run (`res/drawable-nodpi/car_still.webp`) is
-   `... 40 12 0 none 1100 904`; the screenshot-test still `car_still_port.webp` is
-   `... -120 12 1 none 1100 904`.
+   `... 40 12 0 none 1100 748`; the screenshot-test still `car_still_port.webp` is
+   `... -120 12 1 none 1100 748`.
 
 Run with Blender's Python module (`pip install bpy`). Part names and hinge axes are mirrored in
 `ui/CarModel.kt` (`Part`).

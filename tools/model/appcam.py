@@ -32,7 +32,7 @@ def eye(az, el, d):
     return (TARGET[0] + d * math.cos(e) * math.sin(a), TARGET[1] + d * math.sin(e), TARGET[2] + d * math.cos(e) * math.cos(a))
 
 
-def fits(az, el, d, aspect, mx=0.96, my=0.88):
+def fits(az, el, d, aspect, mx=1.0, my=0.92):
     vp = perspective(FOV_Y, aspect) @ look_at(eye(az, el, d), TARGET)
     for p in BOX:
         c = vp @ np.array([*p, 1.0])
