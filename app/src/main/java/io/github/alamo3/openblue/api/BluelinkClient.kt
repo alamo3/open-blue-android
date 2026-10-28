@@ -360,6 +360,33 @@ class BluelinkClient(private val store: SecureStore) {
 
     suspend fun lock(vehicleId: String) = command("drlck", vehicleId)
 
+    /**
+     * Where the car is. EVs use evc/fme with PIN authorisation; others use fndmcr. The car
+     * reports it over its modem, so this can take a few seconds.
+     */
+    suspend fun locate(vehicleId: String, isEv: Boolean): CarLocation {
+        val pin = store.pin ?: throw ApiException(null, "No Bluelink PIN saved")
+        val body = authed { t ->
+            val r = if (isEv) {
+                post("evc/fme", JsonObject(emptyMap()), mapOf("accessToken" to t, "vehicleId" to vehicleId, "pAuth" to pAuth(t, vehicleId, pin)))
+            } else {
+                post("fndmcr", JsonObject(emptyMap()), mapOf("accessToken" to t, "vehicleId" to vehicleId))
+            }
+            check(r)
+        }
+        fun pick(vararg paths: String) = paths.firstNotNullOfOrNull { body.dbl(it) }
+        val lat = pick("result.coord.lat", "result.gpsDetail.coord.lat")
+        val lon = pick("result.coord.lon", "result.gpsDetail.coord.lon")
+        if (lat == null || lon == null || (lat == 0.0 && lon == 0.0)) throw ApiException(null, "The car didn't send its location")
+        return CarLocation(
+            lat = lat,
+            lon = lon,
+            heading = pick("result.head", "result.gpsDetail.head"),
+            time = body.str("result.time") ?: body.str("result.gpsDetail.time"),
+            fetchedAt = System.currentTimeMillis(),
+        )
+    }
+
     /** Flashes the hazard lights, sounding the horn too when [horn] is set (hrnlght). */
     suspend fun hornLights(vehicleId: String, horn: Boolean) =
         command("hrnlght", vehicleId, buildJsonObject { put("horn", horn) })

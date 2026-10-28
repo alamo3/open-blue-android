@@ -170,3 +170,15 @@ class SvmCapture(
     val topWidth: Int? get() = imageSize.getOrNull(4)
     val topHeight: Int? get() = imageSize.getOrNull(5)
 }
+
+/** Where the car was, as reported by evc/fme or fndmcr. [heading] in degrees from north. */
+@Serializable
+data class CarLocation(
+    val lat: Double,
+    val lon: Double,
+    val heading: Double? = null,
+    /** The car's own timestamp, if it sent one. */
+    val time: String? = null,
+    /** When the app asked (ms since epoch). */
+    val fetchedAt: Long = 0,
+)

@@ -72,6 +72,8 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.compose.animation:animation")
     implementation("io.coil-kt:coil-compose:2.7.0")
+    // Embedded maps (vector tiles from openfreemap.org, no API key).
+    implementation("org.maplibre.gl:android-sdk:11.7.0")
     implementation("androidx.biometric:biometric:1.1.0")
     implementation("androidx.fragment:fragment-ktx:1.8.3")
     implementation("androidx.compose.ui:ui-tooling-preview")

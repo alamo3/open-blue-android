@@ -63,6 +63,7 @@ data class CommandProgress(val action: Action, val stage: Stage, val note: Strin
         PRECONDITION_ON("Turning on battery preconditioning", "Battery preconditioning on"),
         PRECONDITION_OFF("Turning off battery preconditioning", "Battery preconditioning off"),
         CHARGE_LIMITS("Saving charge limits", "Charge limits saved"),
+        LOCATE("Asking the car where it is", "Found the car"),
     }
 }
 
@@ -260,6 +261,10 @@ class MainViewModel(
     fun chooseVehicle(v: VehicleInfo) = task("Loading ${v.nickname}") { chooseVehicleNow(v) }
 
     private suspend fun chooseVehicleNow(v: VehicleInfo) {
+        if (store.vehicle?.id != v.id) {
+            store.lastLocation = null
+            location = null
+        }
         store.vehicle = v
         vehicle = v
         svm = emptyList()
@@ -295,6 +300,7 @@ class MainViewModel(
         serverPresets = emptyList()
         svm = emptyList()
         svmLoaded = false
+        location = null
         progress = null
         screen = Screen.Login
     }
@@ -434,6 +440,28 @@ class MainViewModel(
                 wheelHeat = fixed.heating != 0, seats = fixed.seats.map { s -> if (s == 0) 2 else s },
             )
         }) { api.startClimate(it, fixed) }
+    }
+
+    /** The car's last known location; [locate] asks the car for a fresh one. */
+    var location by mutableStateOf(store.lastLocation)
+        private set
+
+    fun locate() {
+        val v = vehicle ?: return
+        if (!canAct || !online) return
+        val action = CommandProgress.Action.LOCATE
+        if (developerMode && debug.dryRun) {
+            dryRun(action) { it }
+            if (location == null) location = io.github.alamo3.openblue.api.CarLocation(43.6534, -79.3841, 90.0, fetchedAt = System.currentTimeMillis())
+            return
+        }
+        showProgress(CommandProgress(action, CommandProgress.Stage.WAITING, "This can take up to a minute."))
+        launchSafely(onError = { finish(action, false, describe(it)) }) {
+            val loc = api.locate(v.id, isEv = v.fuelKindCode.equals("E", ignoreCase = true))
+            store.lastLocation = loc
+            location = loc
+            finish(action, true)
+        }
     }
 
     fun hornLights(horn: Boolean) = command(if (horn) CommandProgress.Action.HORN else CommandProgress.Action.LIGHTS) {

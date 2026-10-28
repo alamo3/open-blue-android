@@ -43,6 +43,7 @@ import io.github.alamo3.openblue.ui.ClimateScreen
 import io.github.alamo3.openblue.ui.DebugOverlay
 import io.github.alamo3.openblue.ui.CommandStrip
 import io.github.alamo3.openblue.ui.HomeScreen
+import io.github.alamo3.openblue.ui.LocationScreen
 import io.github.alamo3.openblue.ui.LoginScreen
 import io.github.alamo3.openblue.ui.OpenBlueTheme
 import io.github.alamo3.openblue.ui.OtpScreen
@@ -136,6 +137,7 @@ private fun App(vm: MainViewModel = viewModel()) {
                         Route.Home -> HomeScreen(vm, open = ::open, onUnlock = ::unlock)
                         Route.Climate -> ClimateScreen(vm, onBack = ::back)
                         Route.Charging -> ChargingScreen(vm, onBack = ::back)
+                        Route.Location -> LocationScreen(vm, onBack = ::back)
                         Route.Camera -> CameraScreen(vm, onBack = ::back)
                         Route.Vehicle -> VehicleScreen(vm, onBack = ::back)
                         Route.Settings -> SettingsScreen(vm, onBack = ::back)

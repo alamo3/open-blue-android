@@ -39,6 +39,7 @@ import io.github.alamo3.openblue.ui.ClimateScreen
 import io.github.alamo3.openblue.ui.CommandStrip
 import io.github.alamo3.openblue.ui.DebugOverlay
 import io.github.alamo3.openblue.ui.HomeScreen
+import io.github.alamo3.openblue.ui.LocationScreen
 import io.github.alamo3.openblue.ui.LoginScreen
 import io.github.alamo3.openblue.ui.OpenBlueTheme
 import io.github.alamo3.openblue.ui.SettingsScreen
@@ -109,6 +110,7 @@ class ScreenshotTest(private val night: Boolean) {
         val vm = demoVm()
         shot { ClimateScreen(vm, onBack = {}) }
     }
+    @Test fun location() = demoVm().let { vm -> shot { LocationScreen(vm, onBack = {}) } }
     @Test fun charging() = demoVm().let { vm -> shot { ChargingScreen(vm, onBack = {}) } }
     @Test fun vehicle() = demoVm().let { vm -> shot { VehicleScreen(vm, onBack = {}) } }
     @Test fun settings() = demoVm().let { vm ->

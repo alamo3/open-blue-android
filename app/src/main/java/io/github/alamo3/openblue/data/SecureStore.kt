@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import io.github.alamo3.openblue.api.CarLocation
 import io.github.alamo3.openblue.api.ClimateFormat
 import io.github.alamo3.openblue.api.ClimateSettings
 import io.github.alamo3.openblue.api.VehicleCaps
@@ -93,6 +94,11 @@ class SecureStore(private val prefs: SharedPreferences) {
     var lastClimate: ClimateSettings?
         get() = read("lastClimate")?.let { runCatching { json.decodeFromString<ClimateSettings>(it) }.getOrNull() }
         set(v) = write("lastClimate", v?.let { json.encodeToString(it) })
+
+    /** The car's last known location (kept encrypted like everything else here). */
+    var lastLocation: CarLocation?
+        get() = read("lastLocation")?.let { runCatching { json.decodeFromString<CarLocation>(it) }.getOrNull() }
+        set(v) = write("lastLocation", v?.let { json.encodeToString(it) })
 
     var cachedStatus: String?
         get() = read("cachedStatus")
