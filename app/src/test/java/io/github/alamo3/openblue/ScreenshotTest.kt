@@ -172,6 +172,14 @@ class ScreenshotTest(private val night: Boolean) {
             }
         }
     }
+    @Test fun surround3dDownload() = demoVm().let { vm ->
+        vm.showDemoSurround(null)
+        shot { io.github.alamo3.openblue.ui.Surround3DScreen(vm, onBack = {}) }
+    }
+    @Test fun surround3dBuilding() = demoVm().let { vm ->
+        vm.showDemoSurround("Estimating depth (5 of 12)")
+        shot { io.github.alamo3.openblue.ui.Surround3DScreen(vm, onBack = {}) }
+    }
     @Test fun camera() = demoVm().let { vm -> shot { CameraScreen(vm, onBack = {}) } }
     @Test fun login() = demoVm(signedIn = false).let { vm -> shot { LoginScreen(vm) } }
 

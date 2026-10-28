@@ -30,6 +30,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.PhotoCamera
+import androidx.compose.material.icons.rounded.ViewInAr
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -64,7 +65,7 @@ private val dateFormat = SimpleDateFormat("MMM d, yyyy 'at' h:mm a", Locale.getD
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun CameraScreen(vm: MainViewModel, onBack: () -> Unit) {
+fun CameraScreen(vm: MainViewModel, onBack: () -> Unit, onOpen3d: (SvmShot) -> Unit = {}) {
     LaunchedEffect(Unit) { vm.loadSurroundView() }
     var selected by remember { mutableStateOf<String?>(null) }
     val shown = vm.svm.firstOrNull { it.utcTime == selected } ?: vm.svm.firstOrNull()
@@ -121,6 +122,22 @@ fun CameraScreen(vm: MainViewModel, onBack: () -> Unit) {
                         if (top != null) {
                             ViewTile(top, Modifier.fillMaxWidth(), onClick = { zoomed = top })
                             Spacer(Modifier.height(12.dp))
+                        }
+                        // Turn these photos into a 3D scene around the car.
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 12.dp)
+                                .clip(CircleShape)
+                                .background(scheme.surfaceContainerHigh)
+                                .pressable { onOpen3d(shown) }
+                                .padding(vertical = 14.dp),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(Icons.Rounded.ViewInAr, null, modifier = Modifier.size(20.dp))
+                            Spacer(Modifier.size(10.dp))
+                            Text("3D view", style = MaterialTheme.typography.labelLarge)
                         }
                         views.filter { it.name != "Top" }.chunked(2).forEach { pair ->
                             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(bottom = 12.dp)) {

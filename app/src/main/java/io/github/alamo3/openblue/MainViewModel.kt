@@ -1250,6 +1250,141 @@ class MainViewModel(
         confirmUnlock = on
     }
 
+    // ------------------------------------------------------- 3D surroundings
+
+    class SurroundResult(val glb: ByteArray, val vehicles: List<io.github.alamo3.openblue.svm3d.Vehicle>)
+    data class SurroundState(
+        val stage: String? = null,
+        val progress: Float = 0f,
+        val error: String? = null,
+        val needsDownload: Boolean = false,
+        val scene: SurroundResult? = null,
+    )
+
+    var surround by mutableStateOf(SurroundState())
+        private set
+    private var surroundShot: SvmShot? = null
+    private var surroundJob: Job? = null
+    private val modelStore by lazy { io.github.alamo3.openblue.svm3d.ModelStore(java.io.File(getApplication<Application>().filesDir, "models")) }
+    private fun surroundCache(shot: SvmShot) = java.io.File(getApplication<Application>().filesDir, "svm3d/v1_${shot.utcTime ?: "latest"}")
+
+    /** Picks which set of photos the 3D view is for. */
+    fun openSurround3d(shot: SvmShot) {
+        if (surroundShot !== shot) {
+            surroundJob?.cancel()
+            surroundShot = shot
+            surround = SurroundState()
+        }
+    }
+
+    /** Loads the saved 3D scene, or builds it (asking to download the models first if needed). */
+    fun prepareSurround3d() {
+        val shot = surroundShot ?: return
+        if (surround.scene != null || surroundJob?.isActive == true) return
+        if (!online) return
+        surroundJob = viewModelScope.launch {
+            val cached = withContext(Dispatchers.IO) { runCatching { loadSurround(surroundCache(shot)) }.getOrNull() }
+            if (cached != null) {
+                surround = SurroundState(scene = cached)
+                return@launch
+            }
+            if (!modelStore.ready) {
+                surround = SurroundState(needsDownload = true)
+                return@launch
+            }
+            buildSurround(shot)
+        }
+    }
+
+    fun downloadSurroundModels() {
+        val shot = surroundShot ?: return
+        surroundJob?.cancel()
+        surroundJob = viewModelScope.launch {
+            surround = SurroundState(stage = "Downloading the models", progress = 0f)
+            try {
+                withContext(Dispatchers.IO) {
+                    modelStore.download { f -> viewModelScope.launch { surround = surround.copy(progress = f * 0.99f) } }
+                }
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                surround = SurroundState(needsDownload = true, error = "Download failed: ${e.message}")
+                message = "Couldn't download the 3D models. Check your connection and try again."
+                return@launch
+            }
+            buildSurround(shot)
+        }
+    }
+
+    private suspend fun buildSurround(shot: SvmShot) {
+        surround = SurroundState(stage = "Reading the photos", progress = 0f)
+        try {
+            val result = withContext(Dispatchers.Default) {
+                val cams = mapOf(
+                    "Front" to io.github.alamo3.openblue.svm3d.SvmCalibration.FRONT,
+                    "Rear" to io.github.alamo3.openblue.svm3d.SvmCalibration.REAR,
+                    "Left" to io.github.alamo3.openblue.svm3d.SvmCalibration.LEFT,
+                    "Right" to io.github.alamo3.openblue.svm3d.SvmCalibration.RIGHT,
+                )
+                val frames = shot.views().mapNotNull { (name, bmp) ->
+                    val cam = cams[name] ?: return@mapNotNull null
+                    val px = IntArray(bmp.width * bmp.height)
+                    bmp.getPixels(px, 0, bmp.width, 0, 0, bmp.width, bmp.height)
+                    for (i in px.indices) px[i] = px[i] and 0xFFFFFF
+                    io.github.alamo3.openblue.svm3d.Fisheye(cam, bmp.width, bmp.height, px)
+                }
+                if (frames.size < 4) error("These photos don't have all four camera views.")
+                if (frames.any { it.width != io.github.alamo3.openblue.svm3d.SvmCalibration.FRAME_WIDTH || it.height != io.github.alamo3.openblue.svm3d.SvmCalibration.FRAME_HEIGHT }) {
+                    error("These photos are a different size from the ones the cameras were calibrated with.")
+                }
+                val depth = io.github.alamo3.openblue.svm3d.OnnxDepth(modelStore.file(io.github.alamo3.openblue.svm3d.ModelStore.DEPTH))
+                val detector = runCatching { io.github.alamo3.openblue.svm3d.OnnxVehicles(modelStore.file(io.github.alamo3.openblue.svm3d.ModelStore.DETECTOR)) }.getOrNull()
+                val scene = try {
+                    io.github.alamo3.openblue.svm3d.SurroundBuilder.run(frames, depth, detector) { stage, f ->
+                        viewModelScope.launch { surround = surround.copy(stage = stage, progress = f) }
+                    }
+                } finally {
+                    depth.close(); detector?.close()
+                }
+                val n = scene.groundSize
+                val argb = IntArray(n * n) { scene.ground[it] or (0xFF shl 24) }
+                val bmp = Bitmap.createBitmap(argb, n, n, Bitmap.Config.ARGB_8888)
+                val jpeg = java.io.ByteArrayOutputStream().also { bmp.compress(Bitmap.CompressFormat.JPEG, 88, it) }.toByteArray()
+                val glb = io.github.alamo3.openblue.svm3d.SceneGlb.write(scene, jpeg)
+                val res = SurroundResult(glb, scene.vehicles)
+                runCatching { saveSurround(surroundCache(shot), res) }
+                res
+            }
+            surround = SurroundState(scene = result)
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            android.util.Log.e("OpenBlue", "3D build failed", e)
+            surround = SurroundState(stage = "Couldn't build the 3D view", error = e.message ?: e.javaClass.simpleName)
+        } catch (e: OutOfMemoryError) {
+            surround = SurroundState(stage = "Couldn't build the 3D view", error = "The phone ran out of memory.")
+        }
+    }
+
+    private fun saveSurround(base: java.io.File, r: SurroundResult) {
+        base.parentFile?.mkdirs()
+        java.io.File(base.path + ".glb").writeBytes(r.glb)
+        java.io.File(base.path + ".txt").writeText(r.vehicles.joinToString("\n") { "${it.x} ${it.y} ${it.heading} ${it.length} ${it.height} ${it.kind}" })
+    }
+
+    private fun loadSurround(base: java.io.File): SurroundResult? {
+        val g = java.io.File(base.path + ".glb"); val t = java.io.File(base.path + ".txt")
+        if (!g.exists() || !t.exists()) return null
+        val vs = t.readLines().filter { it.isNotBlank() }.map { l ->
+            val p = l.split(" ")
+            io.github.alamo3.openblue.svm3d.Vehicle(p[0].toDouble(), p[1].toDouble(), p[2].toDouble(), p[3].toDouble(), p[4].toDouble(), p[5])
+        }
+        return SurroundResult(g.readBytes(), vs)
+    }
+
+    /** Fills the 3D screen's states for screenshots: [stage] null = the download offer. */
+    fun showDemoSurround(stage: String?) {
+        surround = if (stage == null) SurroundState(needsDownload = true) else SurroundState(stage = stage, progress = 0.42f)
+    }
+
     // ----------------------------------------------------------- engine sound
 
     private val soundCtl: SoundController? get() = EngineSoundService.current

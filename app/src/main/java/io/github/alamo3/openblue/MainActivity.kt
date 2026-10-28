@@ -157,11 +157,12 @@ private fun App(vm: MainViewModel = viewModel()) {
                         Route.ChargeHistory -> ChargeHistoryScreen(vm, onBack = ::back)
                         Route.Trip -> TripScreen(vm, onBack = ::back)
                         Route.Location -> LocationScreen(vm, onBack = ::back)
-                        Route.Camera -> CameraScreen(vm, onBack = ::back)
+                        Route.Camera -> CameraScreen(vm, onBack = ::back, onOpen3d = { shot -> vm.openSurround3d(shot); open(Route.Surround3D) })
                         Route.Vehicle -> VehicleScreen(vm, onBack = ::back)
                         Route.Settings -> SettingsScreen(vm, onBack = ::back, open = ::open)
                         Route.Probe -> ProbeScreen(vm, onBack = ::back)
                         Route.Sound -> io.github.alamo3.openblue.ui.SoundScreen(vm, onBack = ::back)
+                        Route.Surround3D -> io.github.alamo3.openblue.ui.Surround3DScreen(vm, onBack = ::back)
                     }
                 }
             }

@@ -85,6 +85,8 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.5")
     implementation("androidx.lifecycle:lifecycle-process:2.8.5")
     implementation("androidx.work:work-runtime-ktx:2.9.1")
+    // On-device AI for the 3D surroundings view (models are downloaded at first use).
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.20.0")
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
 
     implementation("com.google.android.filament:filament-android:1.54.5")
