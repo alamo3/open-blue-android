@@ -2,15 +2,23 @@
 
 A small, personal, **unofficial** Android client for Hyundai **Bluelink Canada** (mybluelink.ca), written in Kotlin + Jetpack Compose.
 
-It exists because the official app hides heated/ventilated seat controls for some EVs (it requires the vehicle to be flagged `Gen3` *and* to pass a server-side seat feature check), even though the API and the website support them.
+It exists because the official app hides heated/ventilated seat controls for some cars: it requires per-seat feature flags (`RshvDriverSeat` etc.) that Hyundai Canada's servers don't send for every vehicle, even though the API and the website support remote seat control.
 
 ## Features
 
-- **Status:** battery %, range, charging/plug state, 12V battery, locks, doors/trunk/frunk, climate and seat states. Cached refresh, or "wake car" for live data.
-- **Climate:** temperature, front defrost, heated steering wheel / rear window / mirrors, run time, and **heated/ventilated seats for all four seats**. Start and stop.
-- **Presets:** your existing presets from mybluelink.ca (start them as-is, or load them into the editor), plus presets saved on the phone.
-- **Lock / unlock.**
+- **Home:** car photo, battery and range, charging time, and one-tap controls for lock/unlock, climate, camera and waking the car. Pull down to refresh.
+- **Climate:** temperature, a top-down cabin map where you tap each seat to cycle heat/cool levels, front defrost, heated wheel and rear defrost, run time, start/stop. Matches what your car supports (combined or split heating, heat-only rear seats).
+- **Presets:** your presets from mybluelink.ca plus presets saved on the phone; start in one tap or load into the controls.
+- **Surroundings:** asks the car for surround-view photos and shows the top, front, rear, left and right views.
+- **Vehicle:** locks, doors, windows, trunk/frunk, charge limits, 12V battery, tires, odometer.
+- **Security:** optional fingerprint/screen-lock confirmation before unlocking.
 - Handles Bluelink's one-time email/SMS device verification, and re-logs in automatically when the token expires or your phone changes networks.
+
+Not possible from a third-party app: **Digital Key pairing**. The official app passes a pairing password to Samsung's/Google's car-key service, which only accepts the carmaker's signed app. Pairing is a one-time step; afterwards the key lives in your wallet app.
+
+## Screenshots
+
+CI renders every screen with made-up demo data (light and dark) using Paparazzi and pushes them to the [`screenshots`](../../tree/screenshots) branch.
 
 ## Install
 
@@ -49,6 +57,7 @@ Endpoints, headers and payloads mirror the official Android app (v2.0.47), cross
 | Lock / unlock | `drlck`, `drulck` |
 | Command result | `rmtsts` (with `transactionId`) |
 | Server presets | `gtfvsttng` |
+| Surround view | `rfc/fndmcrsvm` (request), `rfc/lastmcrsvm` (base64 JPEG strip + `imageSize`) |
 
 Seat codes: `0` off, `6/7/8` heat low/medium/high, `3/4/5` cool low/medium/high.
 
