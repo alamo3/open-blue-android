@@ -1,18 +1,18 @@
 # Car model pipeline
 
-`rig.py` turns the CC BY 4.0 "Hyundai Ioniq 5 - Lowpoly" glTF by andikapratamaw into the app's
-`app/src/main/assets/models/ioniq5.glb`:
+Source: "2024 Hyundai Ioniq 5 N" by Ddiaz Design (Sketchfab), CC BY-NC 4.0. Output:
+`app/src/main/assets/models/car.glb`.
 
-- cuts the four doors, the frunk (hood) and the tailgate out of the single body mesh along the
-  model's own panel seams and moves each part's origin onto its hinge;
-- adds a dark cabin so open doors don't show an empty shell;
-- makes materials double-sided.
+1. `prep.py <scene.gltf> stage1.blend` scales to metres and merges the 1,620 pieces by kind
+   (body, glass, interior, engine bay, wheels).
+2. `rig.py stage1.blend car.glb`:
+   - the model's panels are separate islands, so each moving part (`door_fl/fr/rl/rr`, `hood`,
+     `tailgate`) is the set of islands inside its region; pieces spanning regions stay on the body;
+   - origins moved onto the hinges;
+   - interior, wheels and engine bay simplified (paint panels left alone to keep smooth shading);
+   - paint set to Atlas White, the N's red accents to dark grey.
+3. `views.py car.glb <outdir> <tag> door_fl,hood|none` renders Cycles previews with parts open;
+   `envlook.py car.glb studio.hdr out.png` renders it under the app's studio HDR.
 
-Run with Blender's Python module (`pip install bpy`):
-
-```sh
-python rig.py <dir containing model/gltf/scene.gltf> out/ioniq5.glb
-python preview.py out/ioniq5.glb renders open   # Cycles renders with everything open
-```
-
-Part names and hinge axes are mirrored in `ui/CarModel.kt` (`Part`).
+Run with Blender's Python module (`pip install bpy`). Part names and hinge axes are mirrored in
+`ui/CarModel.kt` (`Part`).

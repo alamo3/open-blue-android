@@ -1,172 +1,127 @@
-"""Split the Ioniq 5 lowpoly body into articulated parts with hinge pivots, then export GLB.
+"""Rig the "2024 Hyundai Ioniq 5 N" model (Ddiaz Design, CC BY-NC 4.0) for the app.
 
-Blender axes after import: +X = car's left (driver side), -Y = front, +Z = up.
+Input: stage1.blend from prepN.py (metres, parts merged by kind: body, glass, interior, engine, wheels).
+Blender axes: +X = car's left (driver side), -Y = front, +Z = up.
+
+The model's panels are separate mesh islands, so each moving part is simply the set of islands
+that lie inside that part's region; anything spanning regions (B-pillar, body side) stays put.
 """
 import bpy, bmesh, sys, os, math, mathutils
-sys.path.insert(0, os.path.dirname(__file__))
-from common import *
+BLEND, OUT = sys.argv[-2], sys.argv[-1]
+bpy.ops.wm.open_mainfile(filepath=BLEND)
+O = bpy.data.objects
 
-S = sys.argv[-2]
-OUT = sys.argv[-1]
-reset()
-bpy.ops.import_scene.gltf(filepath=S + "/model/gltf/scene.gltf")
-
-# Apply transforms and join the four body meshes (paint, textured parts, black trim, lights).
-body_parts = [bpy.data.objects[n] for n in ("Object_4", "Object_5", "Object_6", "Object_7")]
-for o in bpy.data.objects:
-    o.select_set(False)
-for o in body_parts:
-    o.select_set(True)
-bpy.context.view_layer.objects.active = body_parts[0]
-bpy.ops.object.parent_clear(type='CLEAR_KEEP_TRANSFORM')
-bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
-bpy.ops.object.join()
-body = bpy.context.view_layer.objects.active
-body.name = "body"
-
-SEAM_FRONT, SEAM_MID, SEAM_REAR = -1.185, -0.005, 1.2
-REAR_WHEEL = mathutils.Vector((0, 1.31, 0.38))
-HOOD_REAR = -1.245
-
-def bisect(obj, co, no, select_fn):
-    bm = bmesh.new(); bm.from_mesh(obj.data)
-    geom = [f for f in bm.faces if select_fn(f)]
-    verts = list({v for f in geom for v in f.verts}); edges = list({e for f in geom for e in f.edges})
-    bmesh.ops.bisect_plane(bm, geom=verts + edges + geom, plane_co=co, plane_no=no)
-    bm.to_mesh(obj.data); bm.free()
-
-def side_region(f):
-    c = f.calc_center_median()
-    return abs(c.x) > 0.5 and 0.3 < c.z < 1.52
-
-for y in (SEAM_FRONT, SEAM_MID, SEAM_REAR):
-    bisect(body, (0, y, 0), (0, 1, 0), side_region)
-
-def separate(name, pred):
-    bpy.ops.object.select_all(action='DESELECT')
-    body.select_set(True); bpy.context.view_layer.objects.active = body
-    bm = bmesh.new(); bm.from_mesh(body.data)
-    n = 0
-    for f in bm.faces:
-        f.select = pred(f)
-        n += f.select
-    bm.to_mesh(body.data); bm.free()
-    if n == 0:
-        print("!! no faces for", name); return None
-    bpy.ops.object.mode_set(mode='EDIT')
-    bpy.ops.mesh.select_mode(type='FACE')
-    bpy.ops.object.mode_set(mode='OBJECT')
-    # sync face selection flags into edit mode selection
-    for p in body.data.polygons:
-        pass
-    bpy.ops.object.mode_set(mode='EDIT')
-    bpy.ops.mesh.separate(type='SELECTED')
-    bpy.ops.object.mode_set(mode='OBJECT')
-    part = [o for o in bpy.context.selected_objects if o != body][0]
-    part.name = name
-    print(name, "faces:", n)
-    return part
-
-def door_pred(left, y0, y1):
-    def p(f):
-        c = f.calc_center_median()
-        side = c.x > 0.55 if left else c.x < -0.55
-        if not (side and y0 < c.y < y1 and 0.36 < c.z < 1.47):
-            return False
-        # Keep the rear wheel-arch cladding on the body.
-        if (mathutils.Vector((0, c.y, c.z)) - REAR_WHEEL).length < 0.56:
-            return False
-        if c.z > 1.06:
-            # Above the beltline only the side window and its frame belong to the door: faces
-            # that point sideways. The windshield and A-pillar face forward and stay put.
-            # The mirror is door-mounted on this car, so it comes along.
-            mirror = abs(c.x) > 0.93 and -1.02 < c.y < -0.72 and c.z < 1.26
-            return mirror or (abs(f.normal.x) > 0.6 and c.y > -1.0)
-        return True
-    return p
-
-def islands_in_box(lo, hi, min_faces=6):
-    """Faces of whole connected pieces whose bounds lie inside the box (keeps panels intact)."""
-    bm = bmesh.new(); bm.from_mesh(body.data)
-    bm.faces.ensure_lookup_table()
-    seen, keep = set(), set()
+def islands(bm):
+    seen, out = set(), []
     for f in bm.faces:
         if f.index in seen: continue
-        comp, stack = [], [f]; seen.add(f.index)
-        while stack:
-            g = stack.pop(); comp.append(g.index)
+        comp, st = [], [f]; seen.add(f.index)
+        while st:
+            g = st.pop(); comp.append(g.index)
             for e in g.edges:
                 for h in e.link_faces:
-                    if h.index not in seen: seen.add(h.index); stack.append(h)
+                    if h.index not in seen: seen.add(h.index); st.append(h)
+        out.append(comp)
+    return out
+
+def classify(name, x0, x1, y0, y1, z0, z1, cy):
+    """Label for one island from its bounds and centre y, or None to keep it on the body."""
+    side = 'l' if x0 > 0.55 else ('r' if x1 < -0.55 else None)
+    if side and z0 >= 0.2 and z1 <= 1.46 and name in ("body", "glass", "interior"):
+        # A piece must fit inside one door's span; longer pieces (sills, body side) stay put.
+        front = y0 >= -1.0 and y1 <= 0.36
+        rear = y0 >= 0.1 and y1 <= 1.47
+        if front and rear:
+            return ("door_f" if cy < 0.22 else "door_r") + side
+        if front: return "door_f" + side
+        if rear: return "door_r" + side
+    if name in ("body", "glass") and y1 <= -1.0 and y0 < -1.3 and z0 >= 0.6 and z1 > 0.85 and max(abs(x0), abs(x1)) <= 0.96:
+        return "hood"
+    if name in ("body", "glass") and y0 >= 1.25 and z0 >= 0.6 and max(abs(x0), abs(x1)) <= 0.8:
+        return "tailgate"
+    return None
+
+pieces = {}
+coll = bpy.context.scene.collection
+for name in ("body", "glass", "interior"):
+    obj = O[name]
+    bm = bmesh.new(); bm.from_mesh(obj.data); bm.faces.ensure_lookup_table()
+    labels = {}
+    for comp in islands(bm):
         vs = [v.co for i in comp for v in bm.faces[i].verts]
-        inside = all(lo[k] <= min(v[k] for v in vs) and max(v[k] for v in vs) <= hi[k] for k in range(3))
-        if inside and len(comp) >= min_faces: keep.update(comp)
+        b = [f(v[k] for v in vs) for k in range(3) for f in (min, max)]
+        cy = sum(v.y for v in vs) / len(vs)
+        lab = classify(name, *b, cy)
+        if lab:
+            for i in comp: labels[i] = lab
     bm.free()
-    return lambda f: f.index in keep
+    # One copy per label keeping only that label's faces (face indices match across copies),
+    # then remove all labelled faces from the original.
+    for lab in sorted(set(labels.values())):
+        new = obj.copy(); new.data = obj.data.copy(); coll.objects.link(new)
+        bm = bmesh.new(); bm.from_mesh(new.data); bm.faces.ensure_lookup_table()
+        bmesh.ops.delete(bm, geom=[f for f in bm.faces if labels.get(f.index) != lab], context='FACES')
+        bm.to_mesh(new.data); bm.free()
+        pieces.setdefault(lab, []).append(new)
+    bm = bmesh.new(); bm.from_mesh(obj.data); bm.faces.ensure_lookup_table()
+    bmesh.ops.delete(bm, geom=[f for f in bm.faces if f.index in labels], context='FACES')
+    bm.to_mesh(obj.data); bm.free()
 
 parts = {}
-parts["door_fl"] = separate("door_fl", door_pred(True, SEAM_FRONT, SEAM_MID))
-parts["door_rl"] = separate("door_rl", door_pred(True, SEAM_MID, SEAM_REAR))
-parts["door_fr"] = separate("door_fr", door_pred(False, SEAM_FRONT, SEAM_MID))
-parts["door_rr"] = separate("door_rr", door_pred(False, SEAM_MID, SEAM_REAR))
+for lab, objs in pieces.items():
+    bpy.ops.object.select_all(action='DESELECT')
+    for o in objs: o.select_set(True)
+    bpy.context.view_layer.objects.active = objs[0]
+    bpy.ops.object.join()
+    j = bpy.context.view_layer.objects.active; j.name = lab; parts[lab] = j
 
-parts["hood"] = separate("hood", islands_in_box((-0.86, -2.5, 0.84), (0.86, -1.2, 1.25)))
-parts["tailgate"] = separate("tailgate", islands_in_box((-0.84, 1.25, 0.6), (0.84, 2.1, 1.52)))
+def verts(o): return [o.matrix_world @ v.co for v in o.data.vertices]
 
-def set_origin(obj, point):
-    m = obj.data
-    off = mathutils.Vector(point)
-    for v in m.vertices:
-        v.co -= off
-    obj.location = off
+def set_origin(o, p):
+    off = mathutils.Vector(p)
+    for v in o.data.vertices: v.co -= off
+    o.location = off
 
-def bounds(obj):
-    vs = [obj.matrix_world @ v.co for v in obj.data.vertices]
-    return [min(v[i] for v in vs) for i in range(3)], [max(v[i] for v in vs) for i in range(3)]
-
-for k, o in parts.items():
-    if o is None: continue
-    mn, mx = bounds(o)
-    if k.startswith("door"):
-        left = k.endswith("l")
-        # Hinge on the outer skin at the leading edge (not the mirror tip, which sticks out further).
-        edge = [o.matrix_world @ v.co for v in o.data.vertices if (o.matrix_world @ v.co).y < mn[1] + 0.06]
+for lab, o in parts.items():
+    vs = verts(o)
+    mn = [min(v[k] for v in vs) for k in range(3)]; mx = [max(v[k] for v in vs) for k in range(3)]
+    if lab.startswith("door"):
+        left = lab.endswith("l")
+        # Hinge on the outer skin at the leading edge, below the mirror.
+        edge = [v for v in vs if v.y < mn[1] + 0.06 and v.z < 0.98]
         hx = max(v.x for v in edge) if left else min(v.x for v in edge)
-        hinge = (hx, mn[1], (mn[2] + mx[2]) / 2)
-    elif k == "hood":
-        hinge = (0, mx[1], mx[2])                                           # rear edge, near windshield
-    else:  # tailgate: top edge at the roof
-        top = max(o.data.vertices, key=lambda v: v.co.z).co
+        hinge = (hx, mn[1], 0.8)
+    elif lab == "hood":
+        hinge = (0, mx[1], mx[2])
+    else:
         hinge = (0, mn[1], mx[2])
     set_origin(o, hinge)
-    print(k, "bounds", [round(x, 2) for x in mn], [round(x, 2) for x in mx], "hinge", [round(x, 3) for x in hinge])
+    print(lab, "faces", len(o.data.polygons), "bounds", [round(x, 2) for x in mn], [round(x, 2) for x in mx], "hinge", [round(x, 3) for x in hinge])
 
-# Dark cabin so an open door doesn't reveal an empty shell: a lower block filling the door
-# openings and a narrower upper block inside the greenhouse (kept inside the glass and roof).
-mat = bpy.data.materials.new("M_Cabin")
-mat.use_nodes = True
-bsdf = mat.node_tree.nodes["Principled BSDF"]
-bsdf.inputs["Base Color"].default_value = (0.03, 0.03, 0.035, 1)
-bsdf.inputs["Roughness"].default_value = 0.9
-def box(name, x, y0, y1, z0, z1):
-    bpy.ops.mesh.primitive_cube_add(size=1, location=(0, (y0 + y1) / 2, (z0 + z1) / 2))
-    b = bpy.context.active_object
-    b.name = name
-    b.scale = (2 * x, y1 - y0, z1 - z0)
-    bpy.ops.object.transform_apply(scale=True)
-    b.data.materials.append(mat)
-    return b
-lower = box("cabin", 0.82, -0.98, 1.17, 0.34, 1.02)
-upper = box("cabin_upper", 0.58, -0.5, 1.02, 1.0, 1.38)
-bpy.ops.object.select_all(action='DESELECT')
-lower.select_set(True); upper.select_set(True)
-bpy.context.view_layer.objects.active = lower
-bpy.ops.object.join()
+# Reduce triangle count for phones: heavy on hidden-ish detail, light on visible panels.
+ratios = {"interior": 0.3, "wheels": 0.3, "engine": 0.25}  # paint panels untouched: reducing them breaks the smooth shading
+for o in O:
+    if o.type != 'MESH': continue
+    r = ratios.get(o.name)
+    if r is None or len(o.data.polygons) < 400: continue
+    m = o.modifiers.new("dec", 'DECIMATE'); m.ratio = r
+    bpy.context.view_layer.objects.active = o
+    bpy.ops.object.modifier_apply(modifier="dec")
 
-# Double-sided so the inside of an open door isn't see-through.
+# Paint to match the car (Atlas White) and make the N's red accents a neutral dark grey.
 for m in bpy.data.materials:
+    if not m.node_tree: continue
+    bsdf = next((n for n in m.node_tree.nodes if n.type == 'BSDF_PRINCIPLED'), None)
+    if bsdf is None: continue
+    if "Paint_Material" in m.name:
+        m.name = "paint"
+        bsdf.inputs["Base Color"].default_value = (0.78, 0.78, 0.75, 1)
+    elif m.name == "red_paint":
+        bsdf.inputs["Base Color"].default_value = (0.05, 0.05, 0.055, 1)
     m.use_backface_culling = False
 
+total = sum(len(p.vertices) - 2 for o in O if o.type == 'MESH' for p in o.data.polygons)
+print("triangles after reduction:", total)
 bpy.ops.object.select_all(action='SELECT')
 bpy.ops.export_scene.gltf(filepath=OUT, export_format='GLB', export_yup=True, export_apply=True)
 print("exported", OUT, os.path.getsize(OUT))
