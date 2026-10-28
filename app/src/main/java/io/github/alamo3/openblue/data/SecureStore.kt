@@ -119,6 +119,34 @@ class SecureStore(private val prefs: SharedPreferences) {
         get() = read("cachedStatus")
         set(v) = write("cachedStatus", v)
 
+    /** Notify when a command finishes after you've left the app. */
+    var notifyCommands: Boolean
+        get() = prefs.getBoolean("notifyCommands", true)
+        set(v) = prefs.edit().putBoolean("notifyCommands", v).apply()
+
+    var askedNotifications: Boolean
+        get() = prefs.getBoolean("askedNotifications", false)
+        set(v) = prefs.edit().putBoolean("askedNotifications", v).apply()
+
+    /** Check the car's last reported status in the background and alert on changes. */
+    var watchEnabled: Boolean
+        get() = prefs.getBoolean("watchEnabled", false)
+        set(v) = prefs.edit().putBoolean("watchEnabled", v).apply()
+
+    /** Minutes between background checks (Android's minimum is 15). */
+    var watchMinutes: Int
+        get() = prefs.getInt("watchMinutes", 30)
+        set(v) = prefs.edit().putInt("watchMinutes", v).apply()
+
+    fun alertOn(alert: String): Boolean = prefs.getBoolean("alert.$alert", true)
+    fun setAlertOn(alert: String, on: Boolean) = prefs.edit().putBoolean("alert.$alert", on).apply()
+
+    /** Background-check memory, so each alert fires once per occurrence. */
+    var watchMemory: io.github.alamo3.openblue.work.WatchMemory
+        get() = read("watchMemory")?.let { runCatching { json.decodeFromString<io.github.alamo3.openblue.work.WatchMemory>(it) }.getOrNull() }
+            ?: io.github.alamo3.openblue.work.WatchMemory()
+        set(v) = write("watchMemory", json.encodeToString(v))
+
     /** Signs out but keeps the device ID (so the next login won't need a code) and local presets. */
     fun signOut() {
         val keep = mapOf(KEY_DEVICE to read(KEY_DEVICE), "localPresets" to read("localPresets"))

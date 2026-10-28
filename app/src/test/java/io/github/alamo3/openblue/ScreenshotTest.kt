@@ -140,6 +140,18 @@ class ScreenshotTest(private val night: Boolean) {
             }
         }
     }
+    /** Whole settings screen, with background checks on so every notification option shows. */
+    @Test fun settingsTall() {
+        paparazzi.unsafeUpdateConfig(
+            deviceConfig = DeviceConfig.PIXEL_5.copy(screenHeight = 3600, nightMode = if (night) NightMode.NIGHT else NightMode.NOTNIGHT),
+        )
+        val vm = demoVm().apply { changeWatch(true) }
+        shot {
+            CompositionLocalProvider(LocalActivityResultRegistryOwner provides NoopRegistryOwner) {
+                SettingsScreen(vm, onBack = {})
+            }
+        }
+    }
     @Test fun camera() = demoVm().let { vm -> shot { CameraScreen(vm, onBack = {}) } }
     @Test fun login() = demoVm(signedIn = false).let { vm -> shot { LoginScreen(vm) } }
 

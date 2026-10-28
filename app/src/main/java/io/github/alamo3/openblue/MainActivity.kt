@@ -1,6 +1,10 @@
 package io.github.alamo3.openblue
 
+import android.Manifest
+import android.os.Build
 import android.os.Bundle
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -99,6 +103,14 @@ private fun App(vm: MainViewModel = viewModel()) {
     }
 
     BackHandler(enabled = screen is Screen.Main && stack.size > 1) { back() }
+
+    // Android 13+ needs permission for notifications; ask once after signing in.
+    val askNotifications = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
+    LaunchedEffect(screen is Screen.Main) {
+        if (screen is Screen.Main && Build.VERSION.SDK_INT >= 33 && vm.takeNotificationPrompt()) {
+            askNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
 
     LaunchedEffect(vm.message) {
         // Clear only after showing: clearing first would change the key and cancel this effect.

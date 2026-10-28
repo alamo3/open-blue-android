@@ -35,6 +35,11 @@ import io.github.alamo3.openblue.api.VehicleCaps
 import io.github.alamo3.openblue.api.VehicleInfo
 import io.github.alamo3.openblue.data.SecureStore
 import io.github.alamo3.openblue.debug.DebugState
+import io.github.alamo3.openblue.work.AlertKind
+import io.github.alamo3.openblue.work.CommandWorker
+import io.github.alamo3.openblue.work.StatusWatchWorker
+import androidx.work.WorkManager
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -155,6 +160,10 @@ class MainViewModel(
             screen = Screen.Main
         }
         if (online && screen == Screen.Main && v != null) {
+            runCatching {
+                io.github.alamo3.openblue.work.Notifier.createChannels(getApplication())
+                StatusWatchWorker.sync(getApplication(), store)
+            }
             refreshing = true
             launchSafely(onDone = { refreshing = false }) {
                 loadVehicle(v)
@@ -304,7 +313,12 @@ class MainViewModel(
     }
 
     fun signOut() {
+        if (online) StatusWatchWorker.stop(getApplication())
         store.signOut()
+        notifyCommands = store.notifyCommands
+        watchEnabled = store.watchEnabled
+        watchMinutes = store.watchMinutes
+        alertsOn = AlertKind.entries.associateWith { store.alertOn(it.key) }
         vehicle = null
         realStatus = null
         caps = VehicleCaps()
@@ -427,16 +441,36 @@ class MainViewModel(
         launchSafely(onError = { finish(action, false, describe(it)) }) {
             val tx = send(v)
             showProgress(CommandProgress(action, CommandProgress.Stage.WAITING))
-            when (api.awaitResult(v.id, tx)) {
+            when (awaitCommand(v, tx, action)) {
                 CommandResult.SUCCESS -> finish(action, true)
                 CommandResult.FAILED -> finish(action, false, "The car didn't accept the command.")
                 CommandResult.TIMEOUT -> finish(action, false, "No answer from the car yet. It may still go through, so check again in a minute.")
             }
-            try {
-                applyStatus(api.cachedStatus(v.id))
-            } catch (e: ApiException) {
-                // The command result is what matters; status will refresh next time.
-            }
+        }
+    }
+
+    /**
+     * Waits for the car's answer. The waiting itself runs as background work, so it carries on
+     * (and ends in a notification) if the app is closed; the app just follows along while open.
+     * Leaves the latest status in [status] either way.
+     */
+    private suspend fun awaitCommand(v: VehicleInfo, tx: String, action: CommandProgress.Action): CommandResult {
+        if (!online) {
+            val r = api.awaitResult(v.id, tx)
+            runCatching { applyStatus(api.cachedStatus(v.id)) }
+            return r
+        }
+        val ctx = getApplication<Application>()
+        CommandWorker.watching += tx
+        try {
+            val id = CommandWorker.enqueue(ctx, v.id, tx, action, v.nickname.ifBlank { "Your car" })
+            val info = WorkManager.getInstance(ctx).getWorkInfoByIdFlow(id).first { it?.state?.isFinished == true }
+            store.cachedStatus?.let { raw -> runCatching { Json.parseToJsonElement(raw).jsonObject }.getOrNull() }?.let { realStatus = it }
+            return info?.outputData?.getString(CommandWorker.KEY_RESULT)
+                ?.let { runCatching { CommandResult.valueOf(it) }.getOrNull() }
+                ?: CommandResult.TIMEOUT
+        } finally {
+            CommandWorker.watching -= tx
         }
     }
 
@@ -472,7 +506,7 @@ class MainViewModel(
         launchSafely(onError = { chargeServiceError = describe(it) }) {
             // The service identifies the car by its vehicleKindCode from the vehicle list, as the
             // official app does; sltvhcl may not carry it, so fetch the list if we don't have it.
-            var code = v.kindCode ?: caps.modelCode
+            var code = v.kindCode
             if (code == null) {
                 api.vehicles().firstOrNull { it.id == v.id }?.let { fresh ->
                     store.vehicle = fresh
@@ -480,6 +514,7 @@ class MainViewModel(
                     code = fresh.kindCode
                 }
             }
+            if (code == null) code = caps.modelCode
             val r = api.iacServiceInfo(v.id, code, v.year)
             var service = ChargeService.from(r)
             if (service.plans.isEmpty()) {
@@ -1007,18 +1042,18 @@ class MainViewModel(
             val tx = api.setChargeLimits(v.id, ac, dc)
             if (tx != null) {
                 showProgress(CommandProgress(action, CommandProgress.Stage.WAITING))
-                when (api.awaitResult(v.id, tx)) {
+                when (awaitCommand(v, tx, action)) {
                     CommandResult.SUCCESS -> finish(action, true)
                     CommandResult.FAILED -> finish(action, false, "The car didn't accept the new limits.")
                     CommandResult.TIMEOUT -> finish(action, false, "No answer from the car yet. It may still go through, so check again in a minute.")
                 }
             } else {
                 finish(action, true, "The car picks them up next time it connects.")
-            }
-            try {
-                applyStatus(api.cachedStatus(v.id))
-            } catch (e: ApiException) {
-                // The command went through; the status will catch up on the next refresh.
+                try {
+                    applyStatus(api.cachedStatus(v.id))
+                } catch (e: ApiException) {
+                    // The limits are saved; the status will catch up on the next refresh.
+                }
             }
         }
     }
@@ -1209,6 +1244,48 @@ class MainViewModel(
     fun changeConfirmUnlock(on: Boolean) {
         store.confirmUnlock = on
         confirmUnlock = on
+    }
+
+    // ---------------------------------------------------------- notifications
+
+    var notifyCommands by mutableStateOf(store.notifyCommands)
+        private set
+    var watchEnabled by mutableStateOf(store.watchEnabled)
+        private set
+    var watchMinutes by mutableStateOf(store.watchMinutes)
+        private set
+    var alertsOn by mutableStateOf(AlertKind.entries.associateWith { store.alertOn(it.key) })
+        private set
+
+    /** True the first time it's asked (per sign-in), so the app requests notification permission once. */
+    fun takeNotificationPrompt(): Boolean {
+        if (!online || store.askedNotifications) return false
+        store.askedNotifications = true
+        return true
+    }
+
+    fun changeNotifyCommands(on: Boolean) {
+        store.notifyCommands = on
+        notifyCommands = on
+    }
+
+    fun changeWatch(on: Boolean) {
+        store.watchEnabled = on
+        watchEnabled = on
+        // Start fresh, so a state that was already there doesn't count as a change.
+        if (on) store.watchMemory = io.github.alamo3.openblue.work.WatchMemory()
+        if (online) StatusWatchWorker.sync(getApplication(), store, replace = true)
+    }
+
+    fun changeWatchMinutes(minutes: Int) {
+        store.watchMinutes = minutes
+        watchMinutes = minutes
+        if (online) StatusWatchWorker.sync(getApplication(), store, replace = true)
+    }
+
+    fun changeAlert(kind: AlertKind, on: Boolean) {
+        store.setAlertOn(kind.key, on)
+        alertsOn = alertsOn + (kind to on)
     }
 
     fun loadDiagnostics() {

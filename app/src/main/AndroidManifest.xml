@@ -2,6 +2,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Command results after leaving the app, and alerts from background checks. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!-- allowBackup is off: credentials are encrypted with a device-bound
          Keystore key, so a restored copy could not be decrypted anyway. -->

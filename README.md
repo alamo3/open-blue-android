@@ -14,6 +14,7 @@ It exists because the official app hides heated/ventilated seat controls for som
 - **Horn and lights:** flash the hazards, with or without the horn, to find the car.
 - **Surroundings:** asks the car for surround-view photos and shows the top, front, rear, left and right views. Every set is kept on the phone (Bluelink only keeps the latest), browsable in a history strip, and can be saved to the gallery (Pictures/Open Blue) whole or one view at a time.
 - **Vehicle:** locks, doors, windows, trunk/frunk, charge limits, 12V battery, tires, odometer.
+- **Notifications:** commands keep waiting for the car after you leave or close the app, and tell you how they went. Optional background checks (every 15, 30 or 60 minutes, reading what Bluelink already has so the car isn't woken) alert you when charging finishes or stops early, the car is left unlocked or open for 10 minutes, the 12V battery runs low, or the tire pressure warning comes on. Each alert can be switched off.
 - **Security:** optional fingerprint/screen-lock confirmation before unlocking.
 - Handles Bluelink's one-time email/SMS device verification, and re-logs in automatically when the token expires or your phone changes networks.
 

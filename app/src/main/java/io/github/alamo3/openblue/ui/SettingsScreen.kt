@@ -40,6 +40,14 @@ import androidx.compose.ui.unit.dp
 import io.github.alamo3.openblue.BuildConfig
 import io.github.alamo3.openblue.MainViewModel
 import io.github.alamo3.openblue.api.ClimateFormat
+import io.github.alamo3.openblue.work.AlertKind
+import io.github.alamo3.openblue.work.Notifier
+import android.Manifest
+import android.content.Intent
+import android.os.Build
+import android.provider.Settings
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalInspectionMode
 
 @Composable
 fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, open: (Route) -> Unit = {}) {
@@ -76,6 +84,9 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, open: (Route) -> Unit 
                 vm.confirmUnlock,
             ) { vm.changeConfirmUnlock(it) }
             ClickRow("Bluelink PIN", "Used for remote commands. Change it here if you change it on Bluelink.") { editingPin = true }
+
+            HorizontalDivider(color = app.hairline, modifier = Modifier.padding(top = 8.dp))
+            NotificationSettings(vm)
 
             HorizontalDivider(color = app.hairline, modifier = Modifier.padding(top = 8.dp))
             SectionTitle("Climate")
@@ -179,5 +190,66 @@ private fun ClickRow(title: String, subtitle: String?, enabled: Boolean = true, 
     Column(Modifier.fillMaxWidth().clickable(enabled = enabled, onClick = onClick).padding(vertical = 12.dp)) {
         Text(title, style = MaterialTheme.typography.titleMedium)
         if (subtitle != null) Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
+private fun NotificationSettings(vm: MainViewModel) {
+    val context = LocalContext.current
+    val inspecting = LocalInspectionMode.current
+    var allowed by remember { mutableStateOf(inspecting || runCatching { Notifier.allowed(context) }.getOrDefault(true)) }
+    val ask = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        allowed = granted || runCatching { Notifier.allowed(context) }.getOrDefault(false)
+    }
+    fun ensureAllowed() {
+        if (allowed) return
+        if (Build.VERSION.SDK_INT >= 33) {
+            ask.launch(Manifest.permission.POST_NOTIFICATIONS)
+        } else {
+            context.startActivity(
+                Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName),
+            )
+        }
+    }
+
+    SectionTitle("Notifications")
+    if (!allowed && (vm.notifyCommands || vm.watchEnabled)) {
+        ClickRow("Allow notifications", "Android is blocking them for Open Blue, so nothing below will show") { ensureAllowed() }
+    }
+    SettingSwitch(
+        "Command results",
+        "When a lock, climate or other command finishes after you've left the app",
+        vm.notifyCommands,
+    ) {
+        vm.changeNotifyCommands(it)
+        if (it) ensureAllowed()
+    }
+    SettingSwitch(
+        "Check the car in the background",
+        "Reads the status Bluelink already has, the same as pulling to refresh, so the car isn't woken",
+        vm.watchEnabled,
+    ) {
+        vm.changeWatch(it)
+        if (it) ensureAllowed()
+    }
+    if (vm.watchEnabled) {
+        Picker(
+            label = "How often",
+            options = listOf(15, 30, 60),
+            selected = vm.watchMinutes,
+            optionLabel = { if (it < 60) "Every $it minutes" else "Every hour" },
+            onSelect = { vm.changeWatchMinutes(it) },
+            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        )
+        AlertKind.entries.forEach { kind ->
+            SettingSwitch(kind.label, kind.detail, vm.alertsOn[kind] != false) { vm.changeAlert(kind, it) }
+        }
+        Text(
+            "Android decides the exact timing and may wait longer when the phone is idle or saving battery. " +
+                "Alerts are only as fresh as what the car last sent Bluelink.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 4.dp),
+        )
     }
 }
