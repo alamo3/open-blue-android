@@ -239,6 +239,7 @@ class BluelinkClient(private val store: SecureStore) {
                 year = v.str("modelYear").orEmpty(),
                 vin = v.str("vin").orEmpty(),
                 fuelKindCode = v.str("fuelKindCode").orEmpty(),
+                kindCode = v.str("vehicleKindCode")?.takeIf { it.isNotBlank() } ?: v.str("modelCode")?.takeIf { it.isNotBlank() },
             )
         }
     }

@@ -10,6 +10,8 @@ data class VehicleInfo(
     val year: String,
     val vin: String,
     val fuelKindCode: String,
+    /** Model code the charging services want (vehicleKindCode in vhcllst). */
+    val kindCode: String? = null,
 )
 
 /**

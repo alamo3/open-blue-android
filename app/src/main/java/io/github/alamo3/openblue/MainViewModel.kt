@@ -468,11 +468,21 @@ class MainViewModel(
         if (!online || (chargeService != null && !force)) return
         chargeServiceError = null
         launchSafely(onError = { chargeServiceError = describe(it) }) {
-            val r = api.iacServiceInfo(v.id, caps.modelCode, v.year)
+            // The service identifies the car by its vehicleKindCode from the vehicle list, as the
+            // official app does; sltvhcl may not carry it, so fetch the list if we don't have it.
+            var code = v.kindCode ?: caps.modelCode
+            if (code == null) {
+                api.vehicles().firstOrNull { it.id == v.id }?.let { fresh ->
+                    store.vehicle = fresh
+                    vehicle = fresh
+                    code = fresh.kindCode
+                }
+            }
+            val r = api.iacServiceInfo(v.id, code, v.year)
             var service = ChargeService.from(r)
             if (service.plans.isEmpty()) {
                 // Plans may only come from the subscription call.
-                runCatching { api.iacSubscriptions(v.id, caps.modelCode, v.year) }.getOrNull()?.let { list ->
+                runCatching { api.iacSubscriptions(v.id, code, v.year) }.getOrNull()?.let { list ->
                     service = service.copy(plans = list.map { ChargePlan.from(it) })
                 }
             }
