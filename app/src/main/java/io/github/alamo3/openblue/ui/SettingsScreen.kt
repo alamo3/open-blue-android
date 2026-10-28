@@ -54,7 +54,7 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
                 "Confirm before unlocking",
                 "Ask for your fingerprint or screen lock before unlocking the car",
                 vm.confirmUnlock,
-            ) { vm.setConfirmUnlock(it) }
+            ) { vm.changeConfirmUnlock(it) }
             ClickRow("Bluelink PIN", "Used for remote commands. Change it here if you change it on Bluelink.") { editingPin = true }
 
             HorizontalDivider(color = app.hairline, modifier = Modifier.padding(top = 8.dp))

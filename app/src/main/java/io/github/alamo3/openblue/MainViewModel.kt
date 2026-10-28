@@ -429,7 +429,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         climateFormat = f
     }
 
-    fun setConfirmUnlock(on: Boolean) {
+    fun changeConfirmUnlock(on: Boolean) {
         store.confirmUnlock = on
         confirmUnlock = on
     }
