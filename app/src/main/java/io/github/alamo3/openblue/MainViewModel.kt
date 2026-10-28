@@ -19,6 +19,10 @@ import io.github.alamo3.openblue.api.OtpChallenge
 import io.github.alamo3.openblue.api.OtpRequiredException
 import io.github.alamo3.openblue.api.ServerPreset
 import io.github.alamo3.openblue.api.SvmCapture
+import io.github.alamo3.openblue.api.ChargeHistory
+import io.github.alamo3.openblue.api.ChargePlan
+import io.github.alamo3.openblue.api.ChargeService
+import io.github.alamo3.openblue.api.Station
 import io.github.alamo3.openblue.data.Gallery
 import io.github.alamo3.openblue.data.SvmArchive
 import io.github.alamo3.openblue.data.SvmShot
@@ -264,6 +268,9 @@ class MainViewModel(
         if (store.vehicle?.id != v.id) {
             store.lastLocation = null
             location = null
+            chargeService = null
+            stations = emptyList()
+            chargeHistory = null
         }
         store.vehicle = v
         vehicle = v
@@ -301,6 +308,9 @@ class MainViewModel(
         svm = emptyList()
         svmLoaded = false
         location = null
+        chargeService = null
+        stations = emptyList()
+        chargeHistory = null
         progress = null
         screen = Screen.Login
     }
@@ -440,6 +450,134 @@ class MainViewModel(
                 wheelHeat = fixed.heating != 0, seats = fixed.seats.map { s -> if (s == 0) 2 else s },
             )
         }) { api.startClimate(it, fixed) }
+    }
+
+    // ------------------------------------------------- public charging (read-only)
+
+    var chargeService by mutableStateOf<ChargeService?>(null)
+        private set
+    var chargeServiceError by mutableStateOf<String?>(null)
+        private set
+
+    fun loadChargeService(force: Boolean = false) {
+        val v = vehicle ?: return
+        if (!online || (chargeService != null && !force)) return
+        chargeServiceError = null
+        launchSafely(onError = { chargeServiceError = describe(it) }) {
+            val r = api.iacServiceInfo(v.id, caps.modelCode, v.year)
+            var service = ChargeService.from(r)
+            if (service.plans.isEmpty()) {
+                // Plans may only come from the subscription call.
+                runCatching { api.iacSubscriptions(v.id, caps.modelCode, v.year) }.getOrNull()?.let { list ->
+                    service = service.copy(plans = list.map { ChargePlan.from(it) })
+                }
+            }
+            chargeService = service
+        }
+    }
+
+    /** Stations found around [stationsCenter], nearest first. */
+    var stations by mutableStateOf<List<Station>>(emptyList())
+        private set
+    var stationsLoading by mutableStateOf(false)
+        private set
+    var stationsError by mutableStateOf<String?>(null)
+        private set
+    var stationsCenter by mutableStateOf<Pair<Double, Double>?>(null)
+        private set
+    /** Bumped on every search, so the map reframes around the results. */
+    var stationsSearch by mutableStateOf(0)
+        private set
+
+    /** [speeds]: null for all, else e.g. "fast,rapid,ultra" or "slow". */
+    fun searchStations(lat: Double, lon: Double, speeds: String?, radiusKm: Int = 15) {
+        val v = vehicle ?: return
+        if (!online) return
+        stationsLoading = true
+        stationsError = null
+        stationsCenter = lat to lon
+        launchSafely(onDone = { stationsLoading = false }, onError = { stationsError = describe(it) }) {
+            stations = api.iacStations(v.id, lat, lon, radiusKm, speeds)
+                .mapNotNull { Station.from(it) }
+                .sortedBy { it.distanceKm ?: Double.MAX_VALUE }
+            stationsSearch++
+        }
+    }
+
+    /** Full details for one station (chargers and connectors), merged into the list. */
+    fun loadStation(id: String) {
+        val v = vehicle ?: return
+        if (!online) return
+        launchSafely(onError = { }) {
+            val detail = api.iacStation(v.id, id)?.let { Station.from(it) } ?: return@launchSafely
+            stations = stations.map { if (it.id == id) detail.copy(distanceKm = it.distanceKm ?: detail.distanceKm) else it }
+        }
+    }
+
+    /**
+     * Developer mode and screenshots: made-up stations around the car (or downtown Toronto),
+     * a plan, a card and a month of history, to see the charging screens without the service.
+     */
+    fun showDemoCharging() {
+        val (lat, lon) = location?.let { it.lat to it.lon } ?: (43.6534 to -79.3841)
+        chargeService = ChargeService(
+            inAppCharging = true, remoteStart = true, stationSearch = true, plugAndCharge = true, routePlanning = true,
+            cardRegistered = true,
+            cards = listOf(io.github.alamo3.openblue.api.PayCard("Visa", "Visa", "************4242")),
+            plans = listOf(ChargePlan("Demo charging plan", "ACTIVE", "20260101", "20271231")),
+        )
+        fun st(i: Int, name: String, net: String, dLat: Double, dLon: Double, kw: Double, speed: String, free: Int, total: Int, down: Int = 0) = Station(
+            id = "demo$i", name = name, address = "${100 + i * 7} Example Street", network = net,
+            lat = lat + dLat, lon = lon + dLon, distanceKm = kotlin.math.sqrt(dLat * dLat + dLon * dLon) * 111,
+            maxKw = kw, speed = io.github.alamo3.openblue.api.ChargeSpeed.of(speed), available = free, total = total, outOfService = down,
+            price = if (speed == "slow") "\$2.00 per hour" else "\$0.45 per kWh", phone = null,
+            chargers = (1..total).map { n ->
+                io.github.alamo3.openblue.api.Charger(
+                    "c$n", "Stall $n",
+                    listOf(io.github.alamo3.openblue.api.Connector(listOf(if (speed == "slow") "J1772" else "CCS1"), kw, if (n <= free) "AVAILABLE" else if (n > total - down) "OUTOFORDER" else "CHARGING", null)),
+                    null,
+                )
+            },
+        )
+        stations = listOf(
+            st(1, "Market Square", "ChargePoint", 0.004, 0.003, 7.2, "slow", 2, 4),
+            st(2, "Harbour Hub", "Electrify Canada", -0.012, 0.018, 350.0, "ultra", 3, 6),
+            st(3, "Union Plaza", "FLO", 0.015, -0.01, 100.0, "rapid", 0, 2),
+            st(4, "Library Garage", "ChargePoint", -0.02, -0.022, 7.2, "slow", 0, 2, down = 2),
+            st(5, "Highway Services", "Petro-Canada", 0.03, 0.035, 200.0, "ultra", 1, 4),
+        ).sortedBy { it.distanceKm }
+        stationsCenter = lat to lon
+        stationsSearch++
+        chargeHistory = ChargeHistory(
+            orders = listOf(
+                io.github.alamo3.openblue.api.ChargeOrder("1", "20261024183000", "20261024190500", "Harbour Hub", "107 Example Street, Toronto", 41.6, 18.72, "CAD", "4242", null, "COMPLETE"),
+                io.github.alamo3.openblue.api.ChargeOrder("2", "20261012120000", "20261012124000", "Highway Services", "135 Example Street, Toronto", 52.3, 23.54, "CAD", "4242", null, "COMPLETE"),
+            ),
+            kwh = 93.9, total = 42.26,
+        )
+    }
+
+    var chargeHistory by mutableStateOf<ChargeHistory?>(null)
+        private set
+    var chargeHistoryMonth by mutableStateOf(java.time.YearMonth.now())
+        private set
+    var chargeHistoryLoading by mutableStateOf(false)
+        private set
+    var chargeHistoryError by mutableStateOf<String?>(null)
+        private set
+
+    fun loadChargeHistory(month: java.time.YearMonth = chargeHistoryMonth) {
+        val v = vehicle ?: return
+        chargeHistoryMonth = month
+        if (!online) return
+        val profile = store.username ?: return
+        chargeHistoryLoading = true
+        chargeHistoryError = null
+        val f = java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd")
+        launchSafely(onDone = { chargeHistoryLoading = false }, onError = { chargeHistoryError = describe(it) }) {
+            val r = api.iacOrders(v.id, profile, month.atDay(1).format(f), month.atEndOfMonth().format(f))
+            if (chargeHistoryMonth == month) chargeHistory = ChargeHistory.from(r)
+        }
     }
 
     /** The car's last known location; [locate] asks the car for a fresh one. */

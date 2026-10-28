@@ -39,6 +39,8 @@ import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.alamo3.openblue.ui.CameraScreen
 import io.github.alamo3.openblue.ui.ChargingScreen
+import io.github.alamo3.openblue.ui.ChargersScreen
+import io.github.alamo3.openblue.ui.ChargeHistoryScreen
 import io.github.alamo3.openblue.ui.ClimateScreen
 import io.github.alamo3.openblue.ui.DebugOverlay
 import io.github.alamo3.openblue.ui.CommandStrip
@@ -136,7 +138,9 @@ private fun App(vm: MainViewModel = viewModel()) {
                     when (route) {
                         Route.Home -> HomeScreen(vm, open = ::open, onUnlock = ::unlock)
                         Route.Climate -> ClimateScreen(vm, onBack = ::back)
-                        Route.Charging -> ChargingScreen(vm, onBack = ::back)
+                        Route.Charging -> ChargingScreen(vm, onBack = ::back, open = ::open)
+                        Route.Chargers -> ChargersScreen(vm, onBack = ::back)
+                        Route.ChargeHistory -> ChargeHistoryScreen(vm, onBack = ::back)
                         Route.Location -> LocationScreen(vm, onBack = ::back)
                         Route.Camera -> CameraScreen(vm, onBack = ::back)
                         Route.Vehicle -> VehicleScreen(vm, onBack = ::back)

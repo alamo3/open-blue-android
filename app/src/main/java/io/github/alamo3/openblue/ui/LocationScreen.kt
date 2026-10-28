@@ -63,7 +63,7 @@ fun LocationScreen(vm: MainViewModel, onBack: () -> Unit) {
     Column(Modifier.fillMaxSize()) {
         ScreenHeader("Location", onBack)
         Box(Modifier.fillMaxWidth().weight(1f)) {
-            CarMap(loc?.let { MapCar(it.lat, it.lon, it.heading) }, Modifier.fillMaxSize())
+            CarMap(loc?.let { MapCar(it.lat, it.lon, it.heading) }, Modifier.fillMaxSize(), fitKey = loc?.fetchedAt)
             if (loc == null) {
                 Text(
                     if (vm.progress != null) "Asking the car where it is…" else "Location unknown",

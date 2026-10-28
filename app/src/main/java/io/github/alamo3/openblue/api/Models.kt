@@ -32,6 +32,8 @@ data class VehicleCaps(
     val odometerUnit: Int? = null,
     /** "ParkingSvm" in the Menu feature list: remote surround-view photos. */
     val hasSvm: Boolean = false,
+    /** Model code the charging services identify the car by (vehicleKindCode, else modelCode). */
+    val modelCode: String? = null,
 ) {
     val isGen3: Boolean get() = genType?.contains("3") == true
 

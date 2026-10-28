@@ -16,6 +16,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.EvStation
+import androidx.compose.material.icons.rounded.Map
+import androidx.compose.material.icons.rounded.ReceiptLong
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -40,7 +42,7 @@ import kotlin.math.roundToInt
  * preconditioning for faster DC fast charging.
  */
 @Composable
-fun ChargingScreen(vm: MainViewModel, onBack: () -> Unit) {
+fun ChargingScreen(vm: MainViewModel, onBack: () -> Unit, open: (Route) -> Unit = {}) {
     val st = vm.status?.let { CarStatus.from(it, vm.tempTable) }
     val app = AppTheme.colors
     val scheme = MaterialTheme.colorScheme
@@ -138,8 +140,66 @@ fun ChargingScreen(vm: MainViewModel, onBack: () -> Unit) {
                     if (pre == null) " The car doesn't report whether it's on." else "",
                 pre == true,
             ) { on -> if (vm.canAct) vm.batteryPreconditioning(on) }
+
+            // Hyundai's charging service (read-only for now)
+            HorizontalDivider(color = app.hairline, modifier = Modifier.padding(top = 8.dp))
+            SectionTitle("Public charging")
+            PublicCharging(vm, open)
         }
     }
+}
+
+@Composable
+private fun PublicCharging(vm: MainViewModel, open: (Route) -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    LaunchedEffect(Unit) { vm.loadChargeService() }
+    val service = vm.chargeService
+    val error = vm.chargeServiceError
+    when {
+        service != null -> {
+            val plan = service.plans.firstOrNull()
+            DetailRow(
+                "Plan",
+                plan?.let { p -> listOfNotNull(p.name, p.end?.let { "until ${shortDate(it)}" }).joinToString(", ") }
+                    ?: if (service.inAppCharging) "Pay as you go" else "Not set up",
+            )
+            DetailRow(
+                "Payment",
+                when {
+                    service.cards.isNotEmpty() -> service.cards.joinToString { it.label }
+                    service.cardRegistered -> "Card on file"
+                    else -> "No card yet"
+                },
+            )
+            if (!service.inAppCharging) {
+                Text(
+                    "Hyundai's in-app charging isn't turned on for this account. Set it up in the official app " +
+                        "(payment card and plan); it then shows up here.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = scheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 4.dp),
+                )
+            }
+        }
+        error != null -> Text(
+            "Couldn't load Hyundai's charging service: $error",
+            style = MaterialTheme.typography.bodySmall,
+            color = scheme.onSurfaceVariant,
+        )
+        else -> Text("Loading…", style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
+    }
+    NavRow(Icons.Rounded.Map, "Find chargers", "Nearby stations with live availability and prices", onClick = { open(Route.Chargers) })
+    NavRow(Icons.Rounded.ReceiptLong, "Charging history", "Sessions paid through the app, with receipts", onClick = { open(Route.ChargeHistory) })
+}
+
+/** yyyyMMdd (or yyyy-MM-dd…) to "Mar 4, 2027"; anything else as is. */
+private fun shortDate(raw: String): String {
+    val digits = raw.filter { it.isDigit() }
+    if (digits.length < 8) return raw
+    return runCatching {
+        java.time.LocalDate.parse(digits.take(8), java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd"))
+            .format(java.time.format.DateTimeFormatter.ofPattern("MMM d, yyyy", java.util.Locale.getDefault()))
+    }.getOrDefault(raw)
 }
 
 @Composable

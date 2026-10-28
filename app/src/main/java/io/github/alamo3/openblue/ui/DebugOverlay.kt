@@ -160,6 +160,7 @@ private fun DebugPanel(vm: MainViewModel, onClose: () -> Unit) {
                     DebugToggle("Charging", d.charging) { vm.updateDebug { it.copy(charging = !it.charging) } }
                     DebugToggle("Charge port open", d.chargePortOpen) { vm.updateDebug { it.copy(chargePortOpen = !it.chargePortOpen) } }
                     DebugToggle("Preconditioning", d.preconditioning) { vm.updateDebug { it.copy(preconditioning = !it.preconditioning) } }
+                    DebugToggle("Demo chargers & history", false) { vm.showDemoCharging() }
                 }
                 DebugSlider("Battery", "${d.battery}%", d.battery.toFloat(), 0f..100f) { v -> vm.updateDebug { it.copy(battery = v.roundToInt()) } }
                 DebugSlider("12V battery", "${d.battery12v}%", d.battery12v.toFloat(), 0f..100f) { v -> vm.updateDebug { it.copy(battery12v = v.roundToInt()) } }

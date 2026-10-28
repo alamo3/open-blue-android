@@ -17,6 +17,8 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import io.github.alamo3.openblue.ui.CarCamera
 import io.github.alamo3.openblue.ui.ChargingScreen
+import io.github.alamo3.openblue.ui.ChargersScreen
+import io.github.alamo3.openblue.ui.ChargeHistoryScreen
 import io.github.alamo3.openblue.ui.CarEffects
 import io.github.alamo3.openblue.ui.ClimateFx
 import androidx.compose.foundation.layout.fillMaxSize
@@ -111,7 +113,16 @@ class ScreenshotTest(private val night: Boolean) {
         shot { ClimateScreen(vm, onBack = {}) }
     }
     @Test fun location() = demoVm().let { vm -> shot { LocationScreen(vm, onBack = {}) } }
-    @Test fun charging() = demoVm().let { vm -> shot { ChargingScreen(vm, onBack = {}) } }
+    @Test fun charging() = demoVm().let { vm -> vm.showDemoCharging(); shot { ChargingScreen(vm, onBack = {}) } }
+    @Test fun chargingTall() {
+        paparazzi.unsafeUpdateConfig(
+            deviceConfig = DeviceConfig.PIXEL_5.copy(screenHeight = 3400, nightMode = if (night) NightMode.NIGHT else NightMode.NOTNIGHT),
+        )
+        val vm = demoVm().apply { showDemoCharging() }
+        shot { ChargingScreen(vm, onBack = {}) }
+    }
+    @Test fun chargers() = demoVm().let { vm -> vm.showDemoCharging(); shot { ChargersScreen(vm, onBack = {}) } }
+    @Test fun chargeHistory() = demoVm().let { vm -> vm.showDemoCharging(); shot { ChargeHistoryScreen(vm, onBack = {}) } }
     @Test fun vehicle() = demoVm().let { vm -> shot { VehicleScreen(vm, onBack = {}) } }
     @Test fun settings() = demoVm().let { vm ->
         shot {

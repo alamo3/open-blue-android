@@ -5,6 +5,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -77,6 +78,7 @@ class BluelinkClient(private val store: SecureStore) {
         body: JsonObject? = null,
         headers: Map<String, String> = emptyMap(),
         withDeviceId: Boolean = false,
+        method: String = "POST",
     ): Reply = withContext(Dispatchers.IO) {
         val builder = Request.Builder()
             .url(BASE_URL + path)
@@ -89,8 +91,11 @@ class BluelinkClient(private val store: SecureStore) {
             .header("client_secret", CLIENT_SECRET)
         if (withDeviceId) builder.header("deviceId", store.deviceId)
         headers.forEach { (k, v) -> builder.header(k, v) }
-        val payload = body?.toString()?.toRequestBody(JSON_MEDIA) ?: ByteArray(0).toRequestBody(null)
-        builder.post(payload)
+        if (method == "GET") {
+            builder.get()
+        } else {
+            builder.post(body?.toString()?.toRequestBody(JSON_MEDIA) ?: ByteArray(0).toRequestBody(null))
+        }
 
         http.newCall(builder.build()).execute().use { resp ->
             val text = resp.body?.string().orEmpty()
@@ -250,6 +255,7 @@ class BluelinkClient(private val store: SecureStore) {
         hasSvm = selected.arr("featuresModel.features").any { cat ->
             cat.arr("features").any { it.str("featureName") == "ParkingSvm" }
         },
+        modelCode = selected.str("vehicle.vehicleKindCode") ?: selected.str("vehicle.modelCode"),
     )
 
     /**
@@ -385,6 +391,76 @@ class BluelinkClient(private val store: SecureStore) {
             time = body.str("result.time") ?: body.str("result.gpsDetail.time"),
             fetchedAt = System.currentTimeMillis(),
         )
+    }
+
+    // ------------------------------------------------- Hyundai in-app charging (iac/*)
+    // Read-only for now: what the account has, stations nearby and charging history.
+
+    /** iac/* answers carry their own result codes; accept anything Bluelink didn't reject. */
+    private fun iacCheck(r: Reply): JsonObject {
+        val code = r.body.int("responseHeader.responseCode")
+        if (code == null || code == 0) return r.body
+        return check(r)
+    }
+
+    private fun vehicleInfoBody(modelCode: String?, modelYear: String?) = buildJsonObject {
+        putJsonObject("vehicleInfo") {
+            put("modelCode", modelCode.orEmpty())
+            put("modelYear", modelYear.orEmpty())
+        }
+    }
+
+    /** Which charging services the account and car have, plus cards on file and the plan. */
+    suspend fun iacServiceInfo(vehicleId: String, modelCode: String?, modelYear: String?): JsonObject = authed { t ->
+        val body = iacCheck(post("iac/serviceInfo", vehicleInfoBody(modelCode, modelYear), mapOf("accessToken" to t, "vehicleId" to vehicleId)))
+        (body["result"] as? JsonObject) ?: JsonObject(emptyMap())
+    }
+
+    suspend fun iacSubscriptions(vehicleId: String, modelCode: String?, modelYear: String?): JsonArray = authed { t ->
+        val body = iacCheck(post("iac/subscriptionInfo", vehicleInfoBody(modelCode, modelYear), mapOf("accessToken" to t, "vehicleId" to vehicleId)))
+        body.arr("result.icpSubscriptInfo")
+    }
+
+    /**
+     * Charging stations within [radiusKm] of a point, with live availability. [speeds] filters
+     * by charger speed: any of "slow" (Level 2), "fast", "rapid", "ultra", comma separated.
+     */
+    suspend fun iacStations(vehicleId: String, lat: Double, lon: Double, radiusKm: Int, speeds: String?): JsonArray = authed { t ->
+        val req = buildJsonObject {
+            put("country", "CA")
+            putJsonObject("coordinate") { put("lat", lat); put("lon", lon) }
+            put("radius", radiusKm)
+            put("radiusUnit", "km")
+            if (speeds != null) put("chargingSpeeds", speeds)
+            put("language", "en")
+            put("size", 50)
+            put("page", 0)
+        }
+        iacCheck(post("iac/csList", req, mapOf("accessToken" to t, "vehicleId" to vehicleId))).arr("result.chargingStations")
+    }
+
+    /** One station in full: chargers, connectors and their status, prices. */
+    suspend fun iacStation(vehicleId: String, stationId: String): JsonObject? = authed { t ->
+        val body = iacCheck(
+            post(
+                "iac/csDetail",
+                headers = mapOf("accessToken" to t, "vehicleId" to vehicleId, "country" to "CA", "ids" to stationId),
+                method = "GET",
+            )
+        )
+        body["result"] as? JsonObject
+    }
+
+    /** Charging sessions paid through the app between two dates (yyyyMMdd). */
+    suspend fun iacOrders(vehicleId: String, profileId: String, start: String, end: String): JsonObject = authed { t ->
+        val req = buildJsonObject {
+            put("profileId", profileId)
+            put("startDate", start)
+            put("endDate", end)
+            put("brandIndicator", "H")
+        }
+        val body = iacCheck(post("iac/orderInfo", req, mapOf("accessToken" to t, "vehicleId" to vehicleId)))
+        (body["result"] as? JsonObject) ?: JsonObject(emptyMap())
     }
 
     /** Flashes the hazard lights, sounding the horn too when [horn] is set (hrnlght). */
