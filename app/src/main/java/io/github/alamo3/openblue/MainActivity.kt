@@ -39,6 +39,7 @@ import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.alamo3.openblue.ui.CameraScreen
 import io.github.alamo3.openblue.ui.ClimateScreen
+import io.github.alamo3.openblue.ui.DebugOverlay
 import io.github.alamo3.openblue.ui.CommandStrip
 import io.github.alamo3.openblue.ui.HomeScreen
 import io.github.alamo3.openblue.ui.LoginScreen
@@ -153,6 +154,9 @@ private fun App(vm: MainViewModel = viewModel()) {
                 // While animating out, progress is already null, so keep showing the last value.
                 (vm.progress ?: lastProgress)?.let { CommandStrip(it, onDismiss = { vm.dismissProgress() }) }
             }
+
+            // Developer mode: floating panel over every screen.
+            DebugOverlay(vm)
         }
     }
 }

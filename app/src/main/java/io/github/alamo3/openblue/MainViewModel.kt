@@ -23,6 +23,7 @@ import io.github.alamo3.openblue.api.TempTables
 import io.github.alamo3.openblue.api.VehicleCaps
 import io.github.alamo3.openblue.api.VehicleInfo
 import io.github.alamo3.openblue.data.SecureStore
+import io.github.alamo3.openblue.debug.DebugState
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -85,8 +86,17 @@ class MainViewModel(
         private set
     var caps by mutableStateOf(store.caps ?: VehicleCaps())
         private set
-    var status by mutableStateOf(store.cachedStatus?.let { runCatching { Json.parseToJsonElement(it).jsonObject }.getOrNull() })
+    /** The last status Bluelink reported. Screens read [status], which developer mode can override. */
+    private var realStatus by mutableStateOf(store.cachedStatus?.let { runCatching { Json.parseToJsonElement(it).jsonObject }.getOrNull() })
+
+    var developerMode by mutableStateOf(store.developerMode)
         private set
+    var debug by mutableStateOf(DebugState())
+        private set
+
+    /** What the UI shows: Bluelink's status, or the simulated car when developer mode says so. */
+    val status: JsonObject?
+        get() = if (developerMode && debug.simulate) debug.toStatusJson(tempTable) else realStatus
     var serverPresets by mutableStateOf<List<ServerPreset>>(emptyList())
         private set
     var localPresets by mutableStateOf(store.localPresets)
@@ -268,7 +278,7 @@ class MainViewModel(
     fun signOut() {
         store.signOut()
         vehicle = null
-        status = null
+        realStatus = null
         caps = VehicleCaps()
         serverPresets = emptyList()
         svm = emptyList()
@@ -320,7 +330,7 @@ class MainViewModel(
     // ---------------------------------------------------------------- status
 
     private fun applyStatus(s: JsonObject) {
-        status = s
+        realStatus = s
         store.cachedStatus = s.toString()
     }
 
@@ -338,6 +348,10 @@ class MainViewModel(
     fun wakeCar() {
         val v = vehicle ?: return
         if (!canAct) return
+        if (developerMode && debug.dryRun) {
+            dryRun(CommandProgress.Action.WAKE) { it }
+            return
+        }
         val action = CommandProgress.Action.WAKE
         showProgress(CommandProgress(action, CommandProgress.Stage.WAITING, "This can take up to a minute."))
         launchSafely(onError = { finish(action, false, describe(it)) }) {
@@ -366,9 +380,17 @@ class MainViewModel(
         if (stage == CommandProgress.Stage.DONE || stage == CommandProgress.Stage.FAILED) progress = null
     }
 
-    private fun command(action: CommandProgress.Action, send: suspend (VehicleInfo) -> String) {
+    private fun command(
+        action: CommandProgress.Action,
+        simulate: (DebugState) -> DebugState = { it },
+        send: suspend (VehicleInfo) -> String,
+    ) {
         val v = vehicle ?: return
         if (!canAct) return
+        if (developerMode && debug.dryRun) {
+            dryRun(action, simulate)
+            return
+        }
         showProgress(CommandProgress(action, CommandProgress.Stage.SENDING))
         launchSafely(onError = { finish(action, false, describe(it)) }) {
             val tx = send(v)
@@ -386,13 +408,59 @@ class MainViewModel(
         }
     }
 
-    fun lock() = command(CommandProgress.Action.LOCK) { api.lock(it.id) }
-    fun unlock() = command(CommandProgress.Action.UNLOCK) { api.unlock(it.id) }
-    fun stopClimate() = command(CommandProgress.Action.CLIMATE_STOP) { api.stopClimate(it.id) }
+    fun lock() = command(CommandProgress.Action.LOCK, { it.copy(locked = true) }) { api.lock(it.id) }
+    fun unlock() = command(CommandProgress.Action.UNLOCK, { it.copy(locked = false) }) { api.unlock(it.id) }
+    fun stopClimate() = command(CommandProgress.Action.CLIMATE_STOP, {
+        it.copy(climateOn = false, defrost = false, wheelHeat = false, seats = listOf(2, 2, 2, 2))
+    }) { api.stopClimate(it.id) }
 
     fun startClimate(settings: ClimateSettings = editor) {
         val fixed = settings.copy(heating = normalizeHeating(settings.heating))
-        command(CommandProgress.Action.CLIMATE_START) { api.startClimate(it, fixed) }
+        command(CommandProgress.Action.CLIMATE_START, {
+            it.copy(
+                climateOn = fixed.climateOn, tempC = fixed.tempC, defrost = fixed.defrost,
+                wheelHeat = fixed.heating != 0, seats = fixed.seats.map { s -> if (s == 0) 2 else s },
+            )
+        }) { api.startClimate(it, fixed) }
+    }
+
+    // ------------------------------------------------------------ developer mode
+
+    /** Plays a command's progress locally and applies its effect to the simulated car. */
+    private fun dryRun(action: CommandProgress.Action, effect: (DebugState) -> DebugState) {
+        showProgress(CommandProgress(action, CommandProgress.Stage.SENDING, "Dry run: the car isn't contacted."))
+        viewModelScope.launch {
+            delay(900)
+            showProgress(CommandProgress(action, CommandProgress.Stage.WAITING, "Dry run: the car isn't contacted."))
+            delay(1_800)
+            debug = effect(debug)
+            finish(action, true, "Dry run")
+        }
+    }
+
+    fun changeDeveloperMode(on: Boolean) {
+        store.developerMode = on
+        developerMode = on
+        if (!on) debug = DebugState()
+    }
+
+    fun updateDebug(block: (DebugState) -> DebugState) {
+        debug = block(debug)
+    }
+
+    /** Shows the progress strip in a given state, to check how it looks. */
+    fun previewProgress(stage: CommandProgress.Stage) {
+        val action = CommandProgress.Action.CLIMATE_START
+        when (stage) {
+            CommandProgress.Stage.DONE -> finish(action, true)
+            CommandProgress.Stage.FAILED -> finish(action, false, "Preview of a failure message.")
+            else -> showProgress(CommandProgress(action, stage))
+        }
+    }
+
+    fun clearProgressPreview() {
+        clearProgressJob?.cancel()
+        progress = null
     }
 
     /** Map heating1 onto what this car accepts: split cars use 2/3/4, others a single on (1)/off (0). */
@@ -424,6 +492,10 @@ class MainViewModel(
     fun captureSurroundView() {
         val v = vehicle ?: return
         if (!canAct) return
+        if (developerMode && debug.dryRun) {
+            dryRun(CommandProgress.Action.CAMERA) { it }
+            return
+        }
         val action = CommandProgress.Action.CAMERA
         showProgress(CommandProgress(action, CommandProgress.Stage.SENDING))
         launchSafely(onError = { finish(action, false, describe(it)) }) {

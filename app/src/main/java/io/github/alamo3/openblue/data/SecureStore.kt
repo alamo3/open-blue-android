@@ -72,6 +72,11 @@ class SecureStore(private val prefs: SharedPreferences) {
         get() = read("climateFormat")?.let { runCatching { ClimateFormat.valueOf(it) }.getOrNull() } ?: ClimateFormat.AUTO
         set(v) = write("climateFormat", v.name)
 
+    /** Shows the floating developer panel. */
+    var developerMode: Boolean
+        get() = prefs.getBoolean("developerMode", false)
+        set(v) = prefs.edit().putBoolean("developerMode", v).apply()
+
     /** Ask for fingerprint/screen lock before unlocking the car. */
     var confirmUnlock: Boolean
         get() = prefs.getBoolean("confirmUnlock", true)

@@ -110,6 +110,19 @@ class ScreenshotTest(private val night: Boolean) {
     @Test fun camera() = demoVm().let { vm -> shot { CameraScreen(vm, onBack = {}) } }
     @Test fun login() = demoVm(signedIn = false).let { vm -> shot { LoginScreen(vm) } }
 
+    /** Home screen driven by the developer panel's simulated car, with the panel open. */
+    @Test fun debugPanel() {
+        val vm = demoVm()
+        vm.changeDeveloperMode(true)
+        vm.updateDebug { it.copy(simulate = true, frunk = true, climateOn = true, tempC = 18.5, seats = listOf(8, 3, 6, 2)).withDoor(0, true) }
+        shot {
+            androidx.compose.foundation.layout.Box(Modifier.fillMaxSize()) {
+                HomeScreen(vm, open = {}, onUnlock = {})
+                io.github.alamo3.openblue.ui.DebugOverlay(vm, initiallyOpen = true)
+            }
+        }
+    }
+
     @Test fun commandStrip() = shot {
         Box(Modifier.fillMaxSize().padding(16.dp), contentAlignment = Alignment.BottomCenter) {
             CommandStrip(

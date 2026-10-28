@@ -95,6 +95,14 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
             )
 
             HorizontalDivider(color = app.hairline, modifier = Modifier.padding(top = 16.dp))
+            SectionTitle("Developer")
+            SettingSwitch(
+                "Developer mode",
+                "Shows a floating panel on every screen for simulating the car's state and testing commands without the car",
+                vm.developerMode,
+            ) { vm.changeDeveloperMode(it) }
+
+            HorizontalDivider(color = app.hairline, modifier = Modifier.padding(top = 8.dp))
             SectionTitle("Help")
             ClickRow("Show raw vehicle data", "What Bluelink reports for your car, for troubleshooting", enabled = vm.busy == null) { vm.loadDiagnostics() }
             Spacer(Modifier.height(8.dp))
