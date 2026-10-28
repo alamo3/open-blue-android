@@ -21,6 +21,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Air
 import androidx.compose.material.icons.rounded.Place
+import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.BatteryChargingFull
 import androidx.compose.material.icons.rounded.Campaign
 import androidx.compose.material.icons.rounded.EvStation
@@ -183,6 +184,12 @@ fun HomeScreen(vm: MainViewModel, open: (Route) -> Unit, onUnlock: () -> Unit) {
                 Icons.Rounded.Place, "Location",
                 vm.location?.let { "Located ${relativeTime(java.util.Date(it.fetchedAt))}" } ?: "Find your car on a map",
                 onClick = { open(Route.Location) },
+            )
+            NavRow(
+                Icons.Rounded.GraphicEq, "Engine sound",
+                if (vm.soundOn) "On · ${vm.engineSound.label}" else "A virtual engine that follows the car",
+                onClick = { open(Route.Sound) },
+                iconTint = if (vm.soundOn) AppTheme.colors.heat else MaterialTheme.colorScheme.onSurface,
             )
             NavRow(Icons.Rounded.DirectionsCar, "Vehicle", st?.let { vehicleLine(it) }, onClick = { open(Route.Vehicle) },
                 iconTint = if (st != null && needsAttention(st)) app.alert else MaterialTheme.colorScheme.onSurface)

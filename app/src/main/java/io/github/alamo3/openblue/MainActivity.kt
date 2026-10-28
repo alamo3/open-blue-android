@@ -161,6 +161,7 @@ private fun App(vm: MainViewModel = viewModel()) {
                         Route.Vehicle -> VehicleScreen(vm, onBack = ::back)
                         Route.Settings -> SettingsScreen(vm, onBack = ::back, open = ::open)
                         Route.Probe -> ProbeScreen(vm, onBack = ::back)
+                        Route.Sound -> io.github.alamo3.openblue.ui.SoundScreen(vm, onBack = ::back)
                     }
                 }
             }

@@ -124,6 +124,21 @@ class SecureStore(private val prefs: SharedPreferences) {
         get() = prefs.getBoolean("notifyCommands", true)
         set(v) = prefs.edit().putBoolean("notifyCommands", v).apply()
 
+    /** Engine sound: which engine, how loud, and whether revs hold while cruising. */
+    var engineSound: String?
+        get() = read("engineSound")
+        set(v) = write("engineSound", v)
+    var soundVolume: Float
+        get() = prefs.getFloat("soundVolume", 0.8f)
+        set(v) = prefs.edit().putFloat("soundVolume", v).apply()
+    /** How far ahead the engine sound predicts, to hide speaker delay (ms). */
+    var soundLookaheadMs: Int
+        get() = prefs.getInt("soundLookaheadMs", 0)
+        set(v) = prefs.edit().putInt("soundLookaheadMs", v).apply()
+    var holdRevs: Boolean
+        get() = prefs.getBoolean("holdRevs", false)
+        set(v) = prefs.edit().putBoolean("holdRevs", v).apply()
+
     var askedNotifications: Boolean
         get() = prefs.getBoolean("askedNotifications", false)
         set(v) = prefs.edit().putBoolean("askedNotifications", v).apply()

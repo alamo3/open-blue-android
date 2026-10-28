@@ -4,6 +4,14 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- Command results after leaving the app, and alerts from background checks. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Engine sound: GPS speed, a foreground service so it keeps going under Android Auto,
+         and the microphone for measuring the speakers' delay. -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
 
     <!-- allowBackup is off: credentials are encrypted with a device-bound
          Keystore key, so a restored copy could not be decrypted anyway. -->
@@ -25,5 +33,9 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <service
+            android:name=".sound.EngineSoundService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback|location" />
     </application>
 </manifest>

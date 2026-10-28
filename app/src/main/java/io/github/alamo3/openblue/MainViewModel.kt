@@ -35,6 +35,10 @@ import io.github.alamo3.openblue.api.VehicleCaps
 import io.github.alamo3.openblue.api.VehicleInfo
 import io.github.alamo3.openblue.data.SecureStore
 import io.github.alamo3.openblue.debug.DebugState
+import io.github.alamo3.openblue.sound.EngineSound
+import io.github.alamo3.openblue.sound.EngineSoundService
+import io.github.alamo3.openblue.sound.SoundController
+import io.github.alamo3.openblue.sound.SoundReadout
 import io.github.alamo3.openblue.work.AlertKind
 import io.github.alamo3.openblue.work.CommandWorker
 import io.github.alamo3.openblue.work.StatusWatchWorker
@@ -1244,6 +1248,131 @@ class MainViewModel(
     fun changeConfirmUnlock(on: Boolean) {
         store.confirmUnlock = on
         confirmUnlock = on
+    }
+
+    // ----------------------------------------------------------- engine sound
+
+    private val soundCtl: SoundController? get() = EngineSoundService.current
+    var engineSound by mutableStateOf(store.engineSound?.let { n -> EngineSound.entries.firstOrNull { it.name == n } } ?: EngineSound.INLINE_4)
+        private set
+    var soundVolume by mutableStateOf(store.soundVolume)
+        private set
+    var holdRevs by mutableStateOf(store.holdRevs)
+        private set
+    var soundLookaheadMs by mutableStateOf(store.soundLookaheadMs)
+        private set
+    var soundOn by mutableStateOf(online && EngineSoundService.current != null)
+        private set
+    /** Live gauge values while the sound runs. */
+    var soundReadout by mutableStateOf<SoundReadout?>(null)
+        private set
+    /** Result of the last delay measurement, for the screen. */
+    var soundDelayNote by mutableStateOf<String?>(null)
+        private set
+    var measuringDelay by mutableStateOf(false)
+        private set
+    private var soundPoll: Job? = null
+
+    init {
+        if (soundOn) pollSound()
+    }
+
+    /** Starts the engine sound (as a foreground service, so it keeps going under Android Auto). */
+    fun startSound() {
+        if (soundOn || !online) return
+        EngineSoundService.start(getApplication())
+        soundOn = true
+        pollSound()
+    }
+
+    private fun pollSound() {
+        soundPoll?.cancel()
+        soundPoll = viewModelScope.launch {
+            var missing = 0
+            while (true) {
+                val c = soundCtl
+                soundReadout = c?.readout
+                // Stopped from the notification: reflect it here.
+                missing = if (c == null) missing + 1 else 0
+                if (missing > 40) {
+                    soundOn = false
+                    soundReadout = null
+                    break
+                }
+                delay(50)
+            }
+        }
+    }
+
+    fun stopSound() {
+        soundPoll?.cancel()
+        soundPoll = null
+        if (online && soundOn) EngineSoundService.stop(getApplication())
+        soundOn = false
+        soundReadout = null
+    }
+
+    /** Revving in place: 0..1 while the slider is held, null when let go. */
+    fun revEngine(throttle: Float?) {
+        soundCtl?.revThrottle = throttle
+    }
+
+    fun changeEngineSound(s: EngineSound) {
+        engineSound = s
+        store.engineSound = s.name
+        soundCtl?.sound = s
+    }
+
+    fun changeSoundVolume(v: Float) {
+        soundVolume = v
+        store.soundVolume = v
+        soundCtl?.volume = v
+    }
+
+    fun changeHoldRevs(on: Boolean) {
+        holdRevs = on
+        store.holdRevs = on
+        soundCtl?.holdRevs = on
+    }
+
+    fun changeSoundLookahead(ms: Int) {
+        soundLookaheadMs = ms
+        store.soundLookaheadMs = ms
+        soundCtl?.lookaheadMs = ms.toFloat()
+    }
+
+    /** Plays clicks through the current speakers and times them with the microphone. */
+    fun measureSoundDelay() {
+        val c = soundCtl ?: return
+        if (measuringDelay) return
+        measuringDelay = true
+        soundDelayNote = null
+        viewModelScope.launch {
+            val ms = withContext(Dispatchers.IO) { runCatching { c.measureDelayMs() }.getOrNull() }
+            measuringDelay = false
+            soundDelayNote = if (ms == null) {
+                "Couldn't hear the clicks. Turn the volume up and try again, with the phone near a speaker."
+            } else {
+                // Predicting much past ~250 ms does more harm than good.
+                val use = (ms - 15).coerceIn(0, 250)
+                changeSoundLookahead((use / 10) * 10)
+                "Measured ${ms} ms from the phone to your ears. Look-ahead set to ${soundLookaheadMs} ms."
+            }
+        }
+    }
+
+    /** Fills the sound screen with a mid-pull reading, for screenshots. */
+    fun showDemoSound() {
+        soundOn = true
+        soundReadout = SoundReadout(4650f, 3, 92f, 2.6f, 0.68f, 1f, gpsFix = true, hasSensors = true)
+        soundDelayNote = "Measured 182 ms from the phone to your ears. Look-ahead set to 160 ms."
+        soundLookaheadMs = 160
+    }
+
+    override fun onCleared() {
+        // The sound keeps running in its service; only stop watching it.
+        soundPoll?.cancel()
+        super.onCleared()
     }
 
     // ---------------------------------------------------------- notifications

@@ -152,6 +152,14 @@ class ScreenshotTest(private val night: Boolean) {
             }
         }
     }
+    @Test fun sound() = demoVm().let { vm ->
+        vm.showDemoSound()
+        shot {
+            CompositionLocalProvider(LocalActivityResultRegistryOwner provides NoopRegistryOwner) {
+                io.github.alamo3.openblue.ui.SoundScreen(vm, onBack = {})
+            }
+        }
+    }
     @Test fun camera() = demoVm().let { vm -> shot { CameraScreen(vm, onBack = {}) } }
     @Test fun login() = demoVm(signedIn = false).let { vm -> shot { LoginScreen(vm) } }
 
