@@ -100,8 +100,14 @@ fun HomeScreen(vm: MainViewModel, open: (Route) -> Unit, onUnlock: () -> Unit) {
                 )
             }
 
-            // The car
-            CarPicture(caps.photoUrl, Modifier.fillMaxWidth().height(210.dp).padding(vertical = 8.dp))
+            // The car, in 3D: doors/frunk/tailgate follow the status, glow shows climate and charging.
+            Car3D(
+                pose = st.toPose(),
+                climateTint = if (st?.climateOn == true) (if ((st.setTempC ?: vm.editor.tempC) >= 20) app.heat else app.cool) else null,
+                charging = st?.charging == true,
+                modifier = Modifier.fillMaxWidth().height(260.dp),
+                fallback = { CarPicture(caps.photoUrl, Modifier.fillMaxSize().padding(vertical = 8.dp)) },
+            )
 
             // One-tap controls
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {

@@ -20,6 +20,8 @@ android {
         targetSdk = 34
         versionCode = (System.getenv("GITHUB_RUN_NUMBER") ?: "1").toInt()
         versionName = "0.1.${System.getenv("GITHUB_RUN_NUMBER") ?: "0"}"
+        // Filament ships native libraries; modern phones only need arm64.
+        ndk { abiFilters += listOf("arm64-v8a") }
     }
 
     signingConfigs {
@@ -80,6 +82,10 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.5")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.5")
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
+
+    implementation("com.google.android.filament:filament-android:1.54.5")
+    implementation("com.google.android.filament:gltfio-android:1.54.5")
+    implementation("com.google.android.filament:filament-utils-android:1.54.5")
 
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.2")

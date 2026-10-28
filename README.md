@@ -6,7 +6,7 @@ It exists because the official app hides heated/ventilated seat controls for som
 
 ## Features
 
-- **Home:** car photo, battery and range, charging time, and one-tap controls for lock/unlock, climate, camera and waking the car. Pull down to refresh.
+- **Home:** a 3D model of the car whose doors, frunk and tailgate open to match the real car, with a glow while climate runs or the car charges (drag to look around); battery and range, charging time, and one-tap controls for lock/unlock, climate, camera and waking the car. Pull down to refresh.
 - **Climate:** temperature, a top-down cabin map where you tap each seat to cycle heat/cool levels, front defrost, heated wheel and rear defrost, run time, start/stop. Matches what your car supports (combined or split heating, heat-only rear seats).
 - **Presets:** your presets from mybluelink.ca plus presets saved on the phone; start in one tap or load into the controls.
 - **Surroundings:** asks the car for surround-view photos and shows the top, front, rear, left and right views.
@@ -60,6 +60,11 @@ Endpoints, headers and payloads mirror the official Android app (v2.0.47), cross
 | Surround view | `rfc/fndmcrsvm` (request), `rfc/lastmcrsvm` (base64 JPEG strip + `imageSize`) |
 
 Seat codes: `0` off, `6/7/8` heat low/medium/high, `3/4/5` cool low/medium/high.
+
+## Credits
+
+- 3D car: based on ["Hyundai Ioniq 5 - Lowpoly"](https://skfb.ly/ozqDZ) by [andikapratamaw](https://sketchfab.com/andikapratamaw), licensed under [CC BY 4.0](http://creativecommons.org/licenses/by/4.0/). Modified: doors, frunk and tailgate split into hinged parts and a dark cabin added (`tools/model/rig.py`).
+- Typeface: [Barlow](https://github.com/jpt/barlow), SIL Open Font License 1.1 (`licenses/Barlow-OFL.txt`).
 
 ## Disclaimer
 
