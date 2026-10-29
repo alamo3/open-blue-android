@@ -49,48 +49,55 @@ class Backdrop(val width: Int, val height: Int, val rgb: IntArray) {
         fun stitch(frames: List<Fisheye>, seen: BooleanArray, blocked: ByteArray? = null): IntArray {
             val w = WIDTH; val h = HEIGHT
             val out = IntArray(w * h)
-            val uv = DoubleArray(2)
-            val boxes = frames.map { SurroundBuilder.ownCarBox(it.camera) }
-            val d = DoubleArray(3)
+            val look = Looker(frames)
             for (y in 0 until h) {
                 val e = Math.toRadians(elevationOfRow(y.toDouble()))
                 for (x in 0 until w) {
                     val az = Math.toRadians((x + 0.5) / w * 360.0)
-                    val dx = sin(az) * cos(e); val dy = cos(az) * cos(e); val dz = sin(e)
-                    // The point each camera looks at for this direction: far off (see [LOOKUP]), or
-                    // on the ground if the direction reaches it first.
-                    val t = lookupDistance(dz)
-                    val px = dx * t; val py = dy * t; val pz = EYE_Z + dz * t
-                    var sw = 0.0; var r = 0.0; var g = 0.0; var b = 0.0
-                    val k0 = y * w + x
-                    for ((fi, fe) in frames.withIndex()) {
-                        val cam = fe.camera
-                        if (blocked != null && (blocked[k0].toInt() shr fi) and 1 != 0) continue
-                        if (!cam.project(px, py, pz, uv)) continue
-                        if (uv[0] < 0 || uv[0] >= fe.width - 1 || uv[1] < 0 || uv[1] >= fe.height - 1) continue
-                        if (!fe.mask[uv[1].toInt() * fe.width + uv[0].toInt()]) continue
-                        d[0] = px - cam.x; d[1] = py - cam.y; d[2] = pz - cam.z
-                        val (lo, hi) = boxes[fi]
-                        if (SurroundBuilder.hitsBox(cam.position, d, lo, hi)) continue
-                        // Favour the camera looking most straight at it (sharpest, least parallax);
-                        // the high power keeps it close to one camera per spot, without hard seams.
-                        val len = sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2])
-                        val cosTh = (cam.r[2] * d[0] + cam.r[5] * d[1] + cam.r[8] * d[2]) / len
-                        // The lens's outer rim shows the camera housing, not the world: stop short of it.
-                        if (cosTh < COS_LIMIT) continue
-                        val wgt = ((cosTh - COS_LIMIT) / (1 - COS_LIMIT)).pow(6)
-                        if (wgt <= 1e-9) continue
-                        val p = fe.sample(uv[0], uv[1])
-                        r += wgt * ((p shr 16) and 0xFF); g += wgt * ((p shr 8) and 0xFF); b += wgt * (p and 0xFF); sw += wgt
-                    }
                     val k = y * w + x
-                    if (sw > 0) {
-                        out[k] = ((r / sw).toInt() shl 16) or ((g / sw).toInt() shl 8) or (b / sw).toInt()
-                        seen[k] = true
-                    }
+                    val p = look.at(sin(az) * cos(e), cos(az) * cos(e), sin(e), blocked?.get(k)?.toInt() ?: 0)
+                    if (p >= 0) { out[k] = p; seen[k] = true }
                 }
             }
             return out
+        }
+
+        /** What the cameras show in one direction from the eye, blended from those that see it. */
+        class Looker(private val frames: List<Fisheye>) {
+            private val uv = DoubleArray(2)
+            private val boxes = frames.map { SurroundBuilder.ownCarBox(it.camera) }
+            private val d = DoubleArray(3)
+
+            /** The colour (RGB) in direction ([dx], [dy], [dz]), unit length; -1 if no camera sees it. Bit i of [skip] leaves out frame i. */
+            fun at(dx: Double, dy: Double, dz: Double, skip: Int = 0): Int {
+                // The point each camera looks at for this direction: far off (see [LOOKUP]), or
+                // on the ground if the direction reaches it first.
+                val t = lookupDistance(dz)
+                val px = dx * t; val py = dy * t; val pz = EYE_Z + dz * t
+                var sw = 0.0; var r = 0.0; var g = 0.0; var b = 0.0
+                for ((fi, fe) in frames.withIndex()) {
+                    val cam = fe.camera
+                    if ((skip shr fi) and 1 != 0) continue
+                    if (!cam.project(px, py, pz, uv)) continue
+                    if (uv[0] < 0 || uv[0] >= fe.width - 1 || uv[1] < 0 || uv[1] >= fe.height - 1) continue
+                    if (!fe.mask[uv[1].toInt() * fe.width + uv[0].toInt()]) continue
+                    d[0] = px - cam.x; d[1] = py - cam.y; d[2] = pz - cam.z
+                    val (lo, hi) = boxes[fi]
+                    if (SurroundBuilder.hitsBox(cam.position, d, lo, hi)) continue
+                    // Favour the camera looking most straight at it (sharpest, least parallax);
+                    // the high power keeps it close to one camera per spot, without hard seams.
+                    val len = sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2])
+                    val cosTh = (cam.r[2] * d[0] + cam.r[5] * d[1] + cam.r[8] * d[2]) / len
+                    // The lens's outer rim shows the camera housing, not the world: stop short of it.
+                    if (cosTh < COS_LIMIT) continue
+                    val wgt = ((cosTh - COS_LIMIT) / (1 - COS_LIMIT)).pow(6)
+                    if (wgt <= 1e-9) continue
+                    val p = fe.sample(uv[0], uv[1])
+                    r += wgt * ((p shr 16) and 0xFF); g += wgt * ((p shr 8) and 0xFF); b += wgt * (p and 0xFF); sw += wgt
+                }
+                if (sw <= 0) return -1
+                return ((r / sw).toInt() shl 16) or ((g / sw).toInt() shl 8) or (b / sw).toInt()
+            }
         }
 
         /**

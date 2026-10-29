@@ -1420,8 +1420,8 @@ class MainViewModel(
     private var surroundShot: SvmShot? = null
     private var surroundJob: Job? = null
     private val modelStore by lazy { io.github.alamo3.openblue.svm3d.ModelStore(java.io.File(getApplication<Application>().filesDir, "models")) }
-    // v5: painted surface, painted-in floor, bowl backdrop without nearby ghosts.
-    private fun surroundCache(shot: SvmShot) = java.io.File(getApplication<Application>().filesDir, "svm3d/v6_${shot.utcTime ?: "latest"}")
+    // v7: + a full panorama (pano.jpg) for generating a 3D world.
+    private fun surroundCache(shot: SvmShot) = java.io.File(getApplication<Application>().filesDir, "svm3d/v7_${shot.utcTime ?: "latest"}")
 
     /** Picks which set of photos the 3D view is for. */
     fun openSurround3d(shot: SvmShot) {
@@ -1537,6 +1537,14 @@ class MainViewModel(
                 val glb = io.github.alamo3.openblue.svm3d.SceneGlb.write(scene, jpeg, backdropImage = backdropJpeg)
                 val res = SurroundResult(glb, scene.vehicles)
                 runCatching { saveSurround(surroundCache(shot), res) }
+                // The whole surroundings as one 360° picture, for World Labs (only sent if asked).
+                backdrop?.let { bd ->
+                    runCatching {
+                        val pano = io.github.alamo3.openblue.svm3d.Panorama.compose(frames, bd, ground, scene.groundSize, scene.groundExtent)
+                        val pb = Bitmap.createBitmap(IntArray(pano.size) { pano[it] or (0xFF shl 24) }, io.github.alamo3.openblue.svm3d.Panorama.WIDTH, io.github.alamo3.openblue.svm3d.Panorama.HEIGHT, Bitmap.Config.ARGB_8888)
+                        java.io.FileOutputStream(panoFile(shot)).use { pb.compress(Bitmap.CompressFormat.JPEG, 90, it) }
+                    }.onFailure { android.util.Log.w("OpenBlue", "Panorama failed", it) }
+                }
                 res
             }
             surround = SurroundState(scene = result)
@@ -1551,7 +1559,7 @@ class MainViewModel(
 
     private fun saveSurround(base: java.io.File, r: SurroundResult) {
         base.parentFile?.mkdirs()
-        base.parentFile?.listFiles { f -> !f.name.startsWith("v6_") }?.forEach { it.delete() }  // older formats
+        base.parentFile?.listFiles { f -> !f.name.startsWith("v7_") }?.forEach { it.delete() }  // older formats
         java.io.File(base.path + ".glb").writeBytes(r.glb)
         java.io.File(base.path + ".txt").writeText(r.vehicles.joinToString("\n") { "${it.x} ${it.y} ${it.heading} ${it.length} ${it.height} ${it.kind}" })
     }
@@ -1564,6 +1572,52 @@ class MainViewModel(
             io.github.alamo3.openblue.svm3d.Vehicle(p[0].toDouble(), p[1].toDouble(), p[2].toDouble(), p[3].toDouble(), p[4].toDouble(), p[5])
         }
         return SurroundResult(g.readBytes(), vs)
+    }
+
+    // ------------------------------------------------------- 3D world from World Labs (experiment)
+
+    private fun panoFile(shot: SvmShot) = java.io.File(surroundCache(shot).path + ".pano.jpg")
+    private fun worldKey(shot: SvmShot) = surroundCache(shot).name
+
+    var worldLabsKeySet by mutableStateOf(online && store.worldLabsKey != null)
+        private set
+
+    fun changeWorldLabsKey(key: String?) {
+        if (!online) return
+        store.worldLabsKey = key
+        worldLabsKeySet = store.worldLabsKey != null
+    }
+
+    /** The generation for the photos in the 3D view, if one was asked for. */
+    var worldJob by mutableStateOf<io.github.alamo3.openblue.work.WorldJob?>(null)
+        private set
+
+    /** True when the 3D view's photos have a panorama to send. */
+    val canMakeWorld: Boolean get() = surroundShot?.let { online && panoFile(it).exists() } == true
+
+    fun refreshWorldJob() {
+        val shot = surroundShot ?: return
+        if (!online) return
+        worldJob = io.github.alamo3.openblue.work.WorldJobs.get(getApplication(), worldKey(shot))
+    }
+
+    /** Sends the panorama to World Labs (billed to the user's key) and follows it in the background. */
+    fun makeWorld() {
+        val shot = surroundShot ?: return
+        if (!online || store.worldLabsKey == null) return
+        val f = panoFile(shot)
+        if (!f.exists()) { message = "Open the 3D view once more so it can make the panorama."; return }
+        val key = worldKey(shot)
+        val job = io.github.alamo3.openblue.work.WorldJob("sending")
+        io.github.alamo3.openblue.work.WorldJobs.put(getApplication(), key, job)
+        worldJob = job
+        io.github.alamo3.openblue.work.WorldWorker.enqueue(getApplication(), key, f.path)
+    }
+
+    /** Screenshots: a world being generated, or ready. */
+    fun showDemoWorld(job: io.github.alamo3.openblue.work.WorldJob?, keySet: Boolean = true) {
+        worldJob = job
+        worldLabsKeySet = keySet
     }
 
     /** Fills the 3D screen's states for screenshots: [stage] null = the download offer. */

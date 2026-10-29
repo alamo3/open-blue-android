@@ -23,6 +23,7 @@ object Notifier {
     const val CHANNEL_COMMANDS = "commands"
     const val CHANNEL_ALERTS = "alerts"
     const val CHANNEL_UPDATES = "updates"
+    const val CHANNEL_WORLDS = "worlds"
     private const val CHANNEL_WORKING = "working"
 
     fun createChannels(context: Context) {
@@ -41,6 +42,11 @@ object Notifier {
         nm.createNotificationChannel(
             NotificationChannel(CHANNEL_UPDATES, "App updates", NotificationManager.IMPORTANCE_DEFAULT).apply {
                 description = "A new Open Blue build is ready or was installed"
+            },
+        )
+        nm.createNotificationChannel(
+            NotificationChannel(CHANNEL_WORLDS, "3D worlds", NotificationManager.IMPORTANCE_DEFAULT).apply {
+                description = "A 3D world you asked World Labs to generate is ready"
             },
         )
         nm.createNotificationChannel(

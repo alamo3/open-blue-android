@@ -405,6 +405,13 @@ fun Surround3DScreen(vm: MainViewModel, onBack: () -> Unit) {
     val scheme = MaterialTheme.colorScheme
     val state = vm.surround
     LaunchedEffect(Unit) { vm.prepareSurround3d() }
+    // Follow a World Labs generation while this screen is open (it runs in the background).
+    LaunchedEffect(Unit) {
+        while (true) {
+            vm.refreshWorldJob()
+            kotlinx.coroutines.delay(3_000)
+        }
+    }
     Column(Modifier.fillMaxSize()) {
         ScreenHeader("3D view", onBack)
         val scene = state.scene
@@ -413,6 +420,23 @@ fun Surround3DScreen(vm: MainViewModel, onBack: () -> Unit) {
                 var painted by remember { mutableStateOf(true) }
                 var canPaint by remember { mutableStateOf(false) }
                 Surround3DView(scene.glb, scene.vehicles, painted, Modifier.fillMaxSize(), body = vm.carBody, paint = vm.carPaint) { canPaint = it }
+                var worldDialog by remember { mutableStateOf(false) }
+                if (vm.canMakeWorld) {
+                    val job = vm.worldJob
+                    Text(
+                        when {
+                            job?.status == "done" -> "AI world ✓"
+                            job?.running == true -> "AI world…"
+                            else -> "AI world"
+                        },
+                        style = MaterialTheme.typography.labelLarge,
+                        color = Color.White,
+                        modifier = Modifier.align(Alignment.TopEnd).padding(16.dp).clip(CircleShape)
+                            .background(Color.Black.copy(alpha = 0.55f)).pressable { worldDialog = true }
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                    )
+                }
+                if (worldDialog) WorldDialog(vm) { worldDialog = false }
                 Column(Modifier.align(Alignment.BottomStart).padding(16.dp)) {
                     if (canPaint) {
                         Row(
@@ -471,4 +495,67 @@ fun Surround3DScreen(vm: MainViewModel, onBack: () -> Unit) {
             }
         }
     }
+}
+
+/**
+ * Experimental: send this place's 360° panorama to World Labs, whose model generates a whole 3D
+ * world from it (inventing what the cameras never saw), and open it in their viewer.
+ */
+@Composable
+private fun WorldDialog(vm: MainViewModel, onDismiss: () -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val job = vm.worldJob
+    fun open(url: String) {
+        runCatching { context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url))) }
+    }
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("AI-generated 3D world") },
+        text = {
+            Column {
+                when {
+                    !vm.worldLabsKeySet -> Text(
+                        "This sends the surroundings as one 360° picture to World Labs, whose model builds a full 3D world " +
+                            "from it. It needs your own World Labs API key: add it in Settings > Experiments.",
+                    )
+                    job?.status == "done" -> Text("Ready. It opens in World Labs' viewer, where you can look and move around.")
+                    job?.running == true -> {
+                        Text(
+                            if (job.status == "sending") "Sending the panorama…"
+                            else "Generating. This usually takes about 5 minutes; you'll get a notification when it's ready, " +
+                                "so you can leave this screen." + (job.progress?.let { "\n\n$it" } ?: ""),
+                        )
+                        androidx.compose.material3.LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = 16.dp))
+                    }
+                    else -> {
+                        Text(
+                            "Sends the surroundings from these photos, as one 360° picture, to World Labs. Their model builds " +
+                                "a full 3D world from it, making up what the cameras never saw, so it's a plausible version of " +
+                                "the place rather than an exact one.\n\nUses the draft model: about 150 credits (about US\$0.12) " +
+                                "from your World Labs account. The picture is stored in your World Labs account.",
+                        )
+                        job?.error?.let {
+                            Text("Last try: $it", color = AppTheme.colors.alert, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 12.dp))
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            when {
+                !vm.worldLabsKeySet -> androidx.compose.material3.TextButton(onClick = onDismiss) { Text("OK") }
+                job?.status == "done" && job.viewerUrl != null ->
+                    androidx.compose.material3.TextButton(onClick = { open(job.viewerUrl); onDismiss() }) { Text("Open world") }
+                job?.running == true -> androidx.compose.material3.TextButton(onClick = onDismiss) { Text("Hide") }
+                else -> androidx.compose.material3.TextButton(onClick = { vm.makeWorld() }) { Text(if (job == null) "Generate" else "Try again") }
+            }
+        },
+        dismissButton = {
+            if (vm.worldLabsKeySet && job?.status == "done") {
+                androidx.compose.material3.TextButton(onClick = { vm.makeWorld() }) { Text("Generate again") }
+            } else if (job?.running != true && vm.worldLabsKeySet) {
+                androidx.compose.material3.TextButton(onClick = onDismiss) { Text("Cancel") }
+            }
+        },
+    )
 }

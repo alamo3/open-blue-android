@@ -59,6 +59,7 @@ import androidx.compose.ui.platform.LocalInspectionMode
 fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, open: (Route) -> Unit = {}) {
     val app = AppTheme.colors
     var editingPin by remember { mutableStateOf(false) }
+    var editingWorldKey by remember { mutableStateOf(false) }
     var confirmSignOut by remember { mutableStateOf(false) }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) vm.changeCarPhoto(uri)
@@ -150,6 +151,14 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, open: (Route) -> Unit 
             )
 
             HorizontalDivider(color = app.hairline, modifier = Modifier.padding(top = 16.dp))
+            SectionTitle("Experiments")
+            ClickRow(
+                "World Labs API key",
+                if (vm.worldLabsKeySet) "Saved. The 3D view can have World Labs generate a full 3D world from your photos (billed to your key)."
+                else "Add your own key to have World Labs generate full 3D worlds from the 3D view's photos",
+            ) { editingWorldKey = true }
+
+            HorizontalDivider(color = app.hairline, modifier = Modifier.padding(top = 16.dp))
             SectionTitle("Developer")
             SettingSwitch(
                 "Developer mode",
@@ -239,6 +248,33 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, open: (Route) -> Unit 
             },
             confirmButton = { TextButton(onClick = { vm.updatePin(pin); editingPin = false }, enabled = pin.length == 4) { Text("Save PIN") } },
             dismissButton = { TextButton(onClick = { editingPin = false }) { Text("Cancel") } },
+        )
+    }
+
+    if (editingWorldKey) {
+        var key by remember { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { editingWorldKey = false },
+            title = { Text("World Labs API key") },
+            text = {
+                Column {
+                    Text(
+                        "From platform.worldlabs.ai. Kept encrypted on this phone and sent only to World Labs, when you ask for a world.",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    OutlinedTextField(
+                        value = key, onValueChange = { key = it.trim() },
+                        label = { Text("API key") }, singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                        modifier = Modifier.padding(top = 12.dp),
+                    )
+                }
+            },
+            confirmButton = { TextButton(onClick = { vm.changeWorldLabsKey(key); editingWorldKey = false }, enabled = key.isNotBlank()) { Text("Save") } },
+            dismissButton = {
+                if (vm.worldLabsKeySet) TextButton(onClick = { vm.changeWorldLabsKey(null); editingWorldKey = false }) { Text("Remove key", color = app.alert) }
+                else TextButton(onClick = { editingWorldKey = false }) { Text("Cancel") }
+            },
         )
     }
 

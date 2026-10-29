@@ -120,6 +120,11 @@ class SecureStore(private val prefs: SharedPreferences) {
         set(v) = write("cachedStatus", v)
 
     /** The last weather the app fetched (for the home-screen widget and the seat check). */
+    /** The user's own World Labs API key, for generating 3D worlds (experimental). */
+    var worldLabsKey: String?
+        get() = read("worldLabsKey")
+        set(v) = write("worldLabsKey", v?.trim()?.takeIf { it.isNotEmpty() })
+
     var lastWeather: io.github.alamo3.openblue.api.Weather?
         get() = read("lastWeather")?.let { runCatching { json.decodeFromString<io.github.alamo3.openblue.api.Weather>(it) }.getOrNull() }
         set(v) = write("lastWeather", v?.let { json.encodeToString(it) })
@@ -195,7 +200,7 @@ class SecureStore(private val prefs: SharedPreferences) {
 
     /** Signs out but keeps the device ID (so the next login won't need a code) and local presets. */
     fun signOut() {
-        val keep = mapOf(KEY_DEVICE to read(KEY_DEVICE), "localPresets" to read("localPresets"))
+        val keep = mapOf(KEY_DEVICE to read(KEY_DEVICE), "localPresets" to read("localPresets"), "worldLabsKey" to read("worldLabsKey"))
         prefs.edit().clear().apply()
         keep.forEach { (k, v) -> write(k, v) }
     }
