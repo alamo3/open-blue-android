@@ -82,9 +82,12 @@ data class CarStatus(
             )
         }
 
-        /** "yyyyMMddHHmmss" in the car's clock zone, which in practice matches the phone's. */
+        /**
+         * "yyyyMMddHHmmss" in UTC. (Read as local time, a status from 7:42 PM in Toronto showed
+         * as 11:42 PM, later than the phone's clock.)
+         */
         fun parseDate(raw: String): Date? = runCatching {
-            SimpleDateFormat("yyyyMMddHHmmss", Locale.US).parse(raw)
+            SimpleDateFormat("yyyyMMddHHmmss", Locale.US).apply { timeZone = java.util.TimeZone.getTimeZone("UTC") }.parse(raw)
         }.getOrNull()
     }
 }

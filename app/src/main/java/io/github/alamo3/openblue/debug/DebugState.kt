@@ -46,7 +46,7 @@ data class DebugState(
 
     fun toStatusJson(table: List<TempTables.Entry>): JsonObject = buildJsonObject {
         fun flag(b: Boolean) = if (b) 1 else 0
-        put("lastStatusDate", SimpleDateFormat("yyyyMMddHHmmss", Locale.US).format(Date()))
+        put("lastStatusDate", SimpleDateFormat("yyyyMMddHHmmss", Locale.US).apply { timeZone = java.util.TimeZone.getTimeZone("UTC") }.format(Date()))
         put("airCtrlOn", climateOn)
         put("doorLock", locked)
         putJsonObject("doorOpen") {
