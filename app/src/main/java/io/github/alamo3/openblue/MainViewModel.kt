@@ -1527,7 +1527,8 @@ class MainViewModel(
 
     var update by mutableStateOf(UpdateUi())
         private set
-    var autoUpdate by mutableStateOf(io.github.alamo3.openblue.update.UpdateState.autoUpdate(app))
+    // (Screenshot tests run without a real Context, hence the online check.)
+    var autoUpdate by mutableStateOf(!online || io.github.alamo3.openblue.update.UpdateState.autoUpdate(app))
         private set
 
     init {
