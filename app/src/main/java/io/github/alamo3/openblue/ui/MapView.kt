@@ -137,6 +137,7 @@ private fun LiveCarMap(
         lifecycle.addObserver(observer)
         onDispose {
             lifecycle.removeObserver(observer)
+            holder.stop()
             holder.view.onPause()
             holder.view.onStop()
             holder.view.onDestroy()
@@ -170,7 +171,8 @@ private class MapHolder(
     private var style: Style? = null
     private var shown: MapState? = null
     private var userMoved = false
-    private val carIcon: Bitmap = carIcon(context)
+    private val carIcon: Bitmap = carIcon(context, palette[4])
+    private var pulse: android.animation.ValueAnimator? = null
 
     init {
         MapLibre.getInstance(context)
@@ -244,15 +246,24 @@ private class MapHolder(
                         ),
                     )
                     s.addSource(GeoJsonSource("car"))
+                    // A ring that keeps rippling out from the car, so it's easy to spot.
+                    s.addLayer(
+                        CircleLayer("car-pulse", "car").withProperties(
+                            PropertyFactory.circleColor(palette[4]),
+                            PropertyFactory.circleRadius(PULSE_FROM),
+                            PropertyFactory.circleOpacity(0.5f),
+                            PropertyFactory.circlePitchAlignment("map"),
+                        ),
+                    )
                     s.addLayer(
                         SymbolLayer("car", "car").withProperties(
                             PropertyFactory.iconImage("car"),
                             PropertyFactory.iconAllowOverlap(true),
                             PropertyFactory.iconIgnorePlacement(true),
                             PropertyFactory.iconRotationAlignment("map"),
-                            PropertyFactory.iconSize(0.5f),
                         ),
                     )
+                    startPulse(s)
                     shown = null
                     onReady()
                 }
@@ -339,22 +350,64 @@ private class MapHolder(
         }
     }
 
-    companion object {
-        /** The cabin render from above, with a soft shadow, as the car marker (nose up). */
-        fun carIcon(context: Context): Bitmap {
-            val src = BitmapFactory.decodeResource(context.resources, R.drawable.cabin_top)
-            val h = 220
-            val w = (src.width * h / src.height.toFloat()).toInt()
-            val scaled = Bitmap.createScaledBitmap(src, w, h, true)
-            val pad = 16
-            val out = Bitmap.createBitmap(w + pad * 2, h + pad * 2, Bitmap.Config.ARGB_8888)
-            val c = Canvas(out)
-            val shadow = Paint().apply {
-                color = 0x66000000
-                maskFilter = android.graphics.BlurMaskFilter(10f, android.graphics.BlurMaskFilter.Blur.NORMAL)
+    private fun startPulse(s: Style) {
+        pulse?.cancel()
+        val layer = s.getLayer("car-pulse") as? CircleLayer ?: return
+        pulse = android.animation.ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = 1800
+            repeatCount = android.animation.ValueAnimator.INFINITE
+            interpolator = android.view.animation.DecelerateInterpolator()
+            addUpdateListener { a ->
+                val t = a.animatedValue as Float
+                runCatching {
+                    layer.setProperties(
+                        PropertyFactory.circleRadius(PULSE_FROM + (PULSE_TO - PULSE_FROM) * t),
+                        PropertyFactory.circleOpacity(0.45f * (1 - t)),
+                    )
+                }
             }
-            c.drawRoundRect(pad.toFloat() + 4, pad.toFloat() + 6, (pad + w).toFloat() - 4, (pad + h).toFloat() + 2, 40f, 40f, shadow)
-            c.drawBitmap(scaled, pad.toFloat(), pad.toFloat(), null)
+            start()
+        }
+    }
+
+    /** Stops the marker's ripple (the map is going away). */
+    fun stop() {
+        pulse?.cancel()
+        pulse = null
+    }
+
+    companion object {
+        private const val PULSE_FROM = 22f
+        private const val PULSE_TO = 52f
+
+        /**
+         * The car seen from above (nose up, so it can be turned to its heading) on a tinted disc
+         * with a white rim: easy to pick out on a light or dark map.
+         */
+        fun carIcon(context: Context, accent: Int): Bitmap {
+            val density = context.resources.displayMetrics.density
+            val size = (64 * density).toInt()
+            val out = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+            out.density = context.resources.displayMetrics.densityDpi
+            val c = Canvas(out)
+            val mid = size / 2f
+            val disc = 22 * density
+            val shadow = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = 0x55000000
+                maskFilter = android.graphics.BlurMaskFilter(4 * density, android.graphics.BlurMaskFilter.Blur.NORMAL)
+            }
+            c.drawCircle(mid, mid + 1.5f * density, disc, shadow)
+            c.drawCircle(mid, mid, disc, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = accent })
+            c.drawCircle(mid, mid, disc, Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                style = Paint.Style.STROKE; strokeWidth = 2.5f * density; color = android.graphics.Color.WHITE
+            })
+            // The car, a little longer than the disc so its nose and tail show which way it faces.
+            val src = BitmapFactory.decodeResource(context.resources, R.drawable.car_top)
+            val h = 52 * density
+            val w = src.width * h / src.height
+            val dst = android.graphics.RectF(mid - w / 2, mid - h / 2, mid + w / 2, mid + h / 2)
+            c.drawRoundRect(android.graphics.RectF(dst.left + density, dst.top + 2 * density, dst.right - density, dst.bottom + 2 * density), w / 3, w / 3, shadow)
+            c.drawBitmap(src, null, dst, Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG))
             return out
         }
     }
