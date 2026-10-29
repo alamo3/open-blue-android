@@ -126,8 +126,26 @@ private fun NoAddress(vm: MainViewModel) {
         )
         Spacer(Modifier.height(12.dp))
         Button(onClick = { vm.openStoreAt(url) }, enabled = url.isNotBlank()) { Text("Open") }
+        Spacer(Modifier.height(20.dp))
+        Text("Or try", style = MaterialTheme.typography.titleSmall)
+        GUESSES.forEach { (label, address) ->
+            Spacer(Modifier.height(8.dp))
+            OutlinedButton(onClick = { vm.openStoreAt(address) }, modifier = Modifier.fillMaxWidth()) {
+                Text(label)
+            }
+        }
     }
 }
+
+/**
+ * Hyundai's store lives at commerce.hyundai.com/<country>/<language>/commerce/fod (the US one is
+ * public). Canada's follows the same pattern if it exists; the US one shows what's sold there.
+ */
+private val GUESSES = listOf(
+    "Canada, English (guessed address)" to "https://commerce.hyundai.com/ca/en/commerce/fod",
+    "Canada, French (guessed address)" to "https://commerce.hyundai.com/ca/fr/commerce/fod",
+    "US store" to "https://commerce.hyundai.com/us/en/commerce/fod",
+)
 
 /** Cookie name the store reads the token from (production; staging uses t-stg). */
 private const val COOKIE = "t"
