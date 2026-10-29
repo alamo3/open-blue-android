@@ -125,9 +125,34 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, open: (Route) -> Unit 
             ) { vm.changeAutoUpdate(it) }
             val u = vm.update
             val r = u.release
+            // Android's "install unknown apps" permission for Open Blue: ask before downloading,
+            // then carry on with the install the user was after.
+            val ctx = LocalContext.current
+            fun canInstall() = runCatching { io.github.alamo3.openblue.update.Updater.allowedToInstall(ctx) }.getOrDefault(true)
+            var allowed by remember { mutableStateOf(canInstall()) }
+            var installAfterAllow by remember { mutableStateOf(false) }
+            val askInstall = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+                allowed = canInstall()
+                if (allowed && installAfterAllow) vm.installUpdate()
+                installAfterAllow = false
+            }
+            fun requestInstallPermission(thenInstall: Boolean) {
+                installAfterAllow = thenInstall
+                runCatching {
+                    askInstall.launch(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, android.net.Uri.parse("package:${ctx.packageName}")))
+                }
+            }
+            if (!allowed) {
+                ClickRow(
+                    "Allow Open Blue to install updates",
+                    "Android needs this once (\"Install unknown apps\"). Turn it on, then come back.",
+                ) { requestInstallPermission(thenInstall = false) }
+            }
             when {
                 u.downloading != null -> ClickRow("Downloading ${(u.downloading * 100).toInt()}%", "The app closes for a moment while Android installs it", enabled = false) {}
-                r != null -> ClickRow("Install ${r.versionName} now", r.message.ifBlank { null }) { vm.installUpdate() }
+                r != null -> ClickRow("Install ${r.versionName} now", r.message.ifBlank { null }) {
+                    if (canInstall()) vm.installUpdate() else requestInstallPermission(thenInstall = true)
+                }
                 u.checking -> ClickRow("Checking…", null, enabled = false) {}
                 else -> ClickRow("Check for updates", if (u.upToDate) "You have the newest build (${BuildConfig.VERSION_NAME})" else "This is ${BuildConfig.VERSION_NAME}") { vm.checkForUpdate() }
             }
