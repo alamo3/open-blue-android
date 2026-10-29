@@ -43,6 +43,9 @@ class CommandWorker(context: Context, params: WorkerParameters) : CoroutineWorke
             }
             Notifier.post(applicationContext, Notifier.CHANNEL_COMMANDS, tx.hashCode(), title, text)
         }
+        // A widget that sent this (or shows the car) catches up.
+        if (store.widgetPending?.startsWith("${action?.name}|") == true) store.widgetPending = null
+        runCatching { io.github.alamo3.openblue.widget.CarWidget.updateAll(applicationContext) }
         return Result.success(workDataOf(KEY_RESULT to result.name))
     }
 

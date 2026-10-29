@@ -50,6 +50,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import io.github.alamo3.openblue.api.forCar
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
@@ -382,6 +383,13 @@ class MainViewModel(
     private fun applyStatus(s: JsonObject) {
         realStatus = s
         store.cachedStatus = s.toString()
+        updateWidgets()
+    }
+
+    private fun updateWidgets() {
+        if (!online) return
+        val ctx = getApplication<Application>()
+        viewModelScope.launch { runCatching { io.github.alamo3.openblue.widget.CarWidget.updateAll(ctx) } }
     }
 
     /** Pull-to-refresh: reloads what Bluelink has stored. Doesn't wake the car. */
@@ -503,7 +511,7 @@ class MainViewModel(
             return
         }
         pendingClimate = null
-        val fixed = settings.copy(heating = normalizeHeating(settings.heating))
+        val fixed = settings.forCar(caps)
         command(CommandProgress.Action.CLIMATE_START, {
             it.copy(
                 climateOn = fixed.climateOn, tempC = fixed.tempC, defrost = fixed.defrost,
@@ -1023,7 +1031,7 @@ class MainViewModel(
     // ------------------------------------------------------------- weather and place
 
     /** The weather where the car was last seen (or, failing that, where the phone is). */
-    var weather by mutableStateOf<io.github.alamo3.openblue.api.Weather?>(null)
+    var weather by mutableStateOf(store.lastWeather)
         private set
     /** Street and town of the car's last known location, when the phone can look it up. */
     var place by mutableStateOf<String?>(null)
@@ -1054,7 +1062,7 @@ class MainViewModel(
                 else -> (withContext(Dispatchers.IO) { phoneLocation() } ?: return@launch) to true
             }
             runCatching { withContext(Dispatchers.IO) { weatherClient.current(at.first, at.second) } }
-                .onSuccess { weather = it; weatherNearPhone = nearPhone }
+                .onSuccess { weather = it; weatherNearPhone = nearPhone; store.lastWeather = it; updateWidgets() }
                 .onFailure { android.util.Log.w("OpenBlue", "Weather unavailable", it) }
         }
     }
@@ -1196,12 +1204,6 @@ class MainViewModel(
     }
 
     /** Map heating1 onto what this car accepts: split cars use 2/3/4, others a single on (1)/off (0). */
-    private fun normalizeHeating(code: Int): Int = when {
-        code == 0 -> 0
-        caps.splitHeating -> if (code == 1) 4 else code
-        else -> 1
-    }
-
     fun updateEditor(block: (ClimateSettings) -> ClimateSettings) {
         editor = block(editor)
         store.lastClimate = editor

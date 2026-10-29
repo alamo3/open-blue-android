@@ -39,6 +39,7 @@ class StatusWatchWorker(context: Context, params: WorkerParameters) : CoroutineW
             return Result.retry()
         }
         store.cachedStatus = raw.toString()
+        runCatching { io.github.alamo3.openblue.widget.CarWidget.updateAll(applicationContext) }
         val st = CarStatus.from(raw, emptyList())
         val (memory, alerts) = Alerts.evaluate(
             store.watchMemory,

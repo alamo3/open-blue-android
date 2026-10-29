@@ -64,19 +64,44 @@ import io.github.alamo3.openblue.ui.VehiclePickerScreen
 import io.github.alamo3.openblue.ui.confirmIdentity
 
 class MainActivity : FragmentActivity() {
+    /** Bumped when the widget asks to start climate (the app then checks the seats first). */
+    private val climateRequests = androidx.compose.runtime.mutableIntStateOf(0)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        takeClimateRequest(intent)
         setContent {
             OpenBlueTheme {
-                App()
+                App(climateRequest = climateRequests.intValue)
             }
         }
+    }
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        takeClimateRequest(intent)
+    }
+
+    private fun takeClimateRequest(intent: android.content.Intent?) {
+        if (intent?.getBooleanExtra(EXTRA_START_CLIMATE, false) == true) {
+            intent.removeExtra(EXTRA_START_CLIMATE)
+            climateRequests.intValue++
+        }
+    }
+
+    companion object {
+        const val EXTRA_START_CLIMATE = "io.github.alamo3.openblue.START_CLIMATE"
     }
 }
 
 @Composable
-private fun App(vm: MainViewModel = viewModel()) {
+private fun App(vm: MainViewModel = viewModel(), climateRequest: Int = 0) {
+    // From the widget: start climate with the last settings; seats that don't suit the weather
+    // bring up the question below.
+    LaunchedEffect(climateRequest) {
+        if (climateRequest > 0 && vm.screen is Screen.Main) vm.startClimate()
+    }
     val snackbar = remember { SnackbarHostState() }
     val activity = LocalContext.current as? FragmentActivity
     val stack = remember { mutableStateListOf(Route.Home) }

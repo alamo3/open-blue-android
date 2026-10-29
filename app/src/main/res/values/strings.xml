@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Open Blue</string>
+    <string name="widget_name">Your car</string>
+    <string name="widget_description">Battery and range, lock, climate and refresh</string>
 </resources>

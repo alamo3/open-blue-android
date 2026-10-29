@@ -119,6 +119,16 @@ class SecureStore(private val prefs: SharedPreferences) {
         get() = read("cachedStatus")
         set(v) = write("cachedStatus", v)
 
+    /** The last weather the app fetched (for the home-screen widget and the seat check). */
+    var lastWeather: io.github.alamo3.openblue.api.Weather?
+        get() = read("lastWeather")?.let { runCatching { json.decodeFromString<io.github.alamo3.openblue.api.Weather>(it) }.getOrNull() }
+        set(v) = write("lastWeather", v?.let { json.encodeToString(it) })
+
+    /** A command sent from the home-screen widget and not answered yet: "ACTION|millis". */
+    var widgetPending: String?
+        get() = read("widgetPending")
+        set(v) = write("widgetPending", v)
+
     /** Notify when a command finishes after you've left the app. */
     var notifyCommands: Boolean
         get() = prefs.getBoolean("notifyCommands", true)

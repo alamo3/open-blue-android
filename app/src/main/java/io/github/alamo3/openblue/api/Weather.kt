@@ -11,6 +11,7 @@ import java.util.concurrent.TimeUnit
 import kotlin.math.round
 
 /** The weather right now at one place. */
+@kotlinx.serialization.Serializable
 data class Weather(
     val tempC: Double,
     /** What it feels like (wind and humidity included). */
@@ -120,3 +121,12 @@ fun ClimateSettings.withoutMismatchedSeats(weather: Weather?): ClimateSettings {
     }
     return out
 }
+
+/** The heating code this car takes: split wheel/rear controls, or one switch for everything. */
+fun ClimateSettings.forCar(caps: VehicleCaps): ClimateSettings = copy(
+    heating = when {
+        heating == 0 -> 0
+        caps.splitHeating -> if (heating == 1) 4 else heating
+        else -> 1
+    },
+)
