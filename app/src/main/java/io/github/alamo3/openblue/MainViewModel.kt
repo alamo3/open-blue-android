@@ -981,7 +981,8 @@ class MainViewModel(
 
     /**
      * Gets a store token for the car and works out the store's address: the one in the car's
-     * details (English or French to match the phone), else the token's reroute address. The
+     * details (English or French to match the phone), else the token's reroute address, else
+     * Hyundai Canada's store (commerce.hyundai.com/ca/…, where Bluelink tokens sign in). The
      * official app hides the store unless the car lists "Fod"; this asks anyway.
      */
     fun openStore() {
@@ -998,7 +999,9 @@ class MainViewModel(
             fun pick(en: String?, fr: String?) = if (french) fr ?: en else en ?: fr
             val listed = pick(caps.storeUrlEn, caps.storeUrlFr)
                 ?: runCatching { api.storeUrls(v.id) }.getOrNull()?.let { (en, fr) -> pick(en, fr) }
-            val url = listed ?: access.rerouteUrl
+            // Hyundai Canada's store, which answers for cars it doesn't list it for too.
+            val canada = "https://commerce.hyundai.com/ca/${if (french) "fr" else "en"}/commerce/fod"
+            val url = listed ?: access.rerouteUrl ?: canada
             storePage = StorePage(url, access.token, access.expiresIn, listOfNotNull(access.rerouteUrl).filter { it != url })
         }
     }
