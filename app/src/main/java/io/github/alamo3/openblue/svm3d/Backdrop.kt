@@ -30,6 +30,18 @@ class Backdrop(val width: Int, val height: Int, val rgb: IntArray) {
 
         private val COS_LIMIT = cos(Math.toRadians(82.0))
 
+        /**
+         * How far off the cameras look for the backdrop, metres. The dome is drawn at [RADIUS], but
+         * each camera sits a metre or two from the middle, so if they all looked at the dome itself
+         * anything well beyond it (a sign across the lot, a building) would land in a different
+         * place in each camera's part of the panorama: twice, where two cameras meet. Looking out
+         * this far lines up what's typically in the background to within a degree or two.
+         */
+        const val LOOKUP = 35.0
+
+        /** Distance from the eye to the point a direction (vertical part [dz]) shows. */
+        fun lookupDistance(dz: Double): Double = if (dz < -1e-6) min(LOOKUP, EYE_Z / -dz) else LOOKUP
+
         fun elevationOfRow(y: Double) = TOP_DEG - (y + 0.5) / HEIGHT * (TOP_DEG - BOTTOM_DEG)
         fun rowOfElevation(e: Double) = (TOP_DEG - e) / (TOP_DEG - BOTTOM_DEG) * HEIGHT - 0.5
 
@@ -45,9 +57,9 @@ class Backdrop(val width: Int, val height: Int, val rgb: IntArray) {
                 for (x in 0 until w) {
                     val az = Math.toRadians((x + 0.5) / w * 360.0)
                     val dx = sin(az) * cos(e); val dy = cos(az) * cos(e); val dz = sin(e)
-                    // The point this direction shows: on the dome, or on the floor if that comes first.
-                    var t = RADIUS
-                    if (dz < -1e-6) t = min(t, EYE_Z / -dz)
+                    // The point each camera looks at for this direction: far off (see [LOOKUP]), or
+                    // on the ground if the direction reaches it first.
+                    val t = lookupDistance(dz)
                     val px = dx * t; val py = dy * t; val pz = EYE_Z + dz * t
                     var sw = 0.0; var r = 0.0; var g = 0.0; var b = 0.0
                     val k0 = y * w + x
@@ -97,8 +109,7 @@ class Backdrop(val width: Int, val height: Int, val rgb: IntArray) {
                 for (x in 0 until w) {
                     val az = Math.toRadians((x + 0.5) / w * 360.0)
                     val dx = sin(az) * cos(e); val dy = cos(az) * cos(e); val dz = sin(e)
-                    var t = RADIUS
-                    if (dz < -1e-6) t = min(t, EYE_Z / -dz)
+                    val t = lookupDistance(dz)
                     val px = dx * t; val py = dy * t; val pz = EYE_Z + dz * t
                     var bits = 0
                     for ((fi, fe) in frames.withIndex()) {
@@ -118,7 +129,7 @@ class Backdrop(val width: Int, val height: Int, val rgb: IntArray) {
                             val k = i * c.n + j
                             best = off; depth = if (c.valid[k]) c.t[k] else Float.NaN
                         }
-                        if (!depth.isNaN() && depth < NEAR && depth < 0.6 * len) bits = bits or (1 shl fi)
+                        if (!depth.isNaN() && depth < NEAR && depth < 0.6 * min(len, RADIUS)) bits = bits or (1 shl fi)
                     }
                     out[y * w + x] = bits.toByte()
                 }

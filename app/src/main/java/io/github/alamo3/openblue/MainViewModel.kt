@@ -1421,7 +1421,7 @@ class MainViewModel(
     private var surroundJob: Job? = null
     private val modelStore by lazy { io.github.alamo3.openblue.svm3d.ModelStore(java.io.File(getApplication<Application>().filesDir, "models")) }
     // v5: painted surface, painted-in floor, bowl backdrop without nearby ghosts.
-    private fun surroundCache(shot: SvmShot) = java.io.File(getApplication<Application>().filesDir, "svm3d/v5_${shot.utcTime ?: "latest"}")
+    private fun surroundCache(shot: SvmShot) = java.io.File(getApplication<Application>().filesDir, "svm3d/v6_${shot.utcTime ?: "latest"}")
 
     /** Picks which set of photos the 3D view is for. */
     fun openSurround3d(shot: SvmShot) {
@@ -1551,7 +1551,7 @@ class MainViewModel(
 
     private fun saveSurround(base: java.io.File, r: SurroundResult) {
         base.parentFile?.mkdirs()
-        base.parentFile?.listFiles { f -> !f.name.startsWith("v5_") }?.forEach { it.delete() }  // older formats
+        base.parentFile?.listFiles { f -> !f.name.startsWith("v6_") }?.forEach { it.delete() }  // older formats
         java.io.File(base.path + ".glb").writeBytes(r.glb)
         java.io.File(base.path + ".txt").writeText(r.vehicles.joinToString("\n") { "${it.x} ${it.y} ${it.heading} ${it.length} ${it.height} ${it.kind}" })
     }

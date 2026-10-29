@@ -20,7 +20,7 @@ interface Inpainter {
  * inpainting models are good at holes they can see around, and poor at inventing most of a picture.
  */
 object FloorFill {
-    private val REACH = Backdrop.FLOOR_REACH + 0.1  // paint out to this radius, metres
+    private val REACH = Backdrop.FLOOR_REACH + 0.4  // paint out to this radius, metres
     private const val RING = 2.5        // metres per pass
     private const val MAX_PASSES = 5
 

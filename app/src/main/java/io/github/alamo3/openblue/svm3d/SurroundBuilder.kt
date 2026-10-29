@@ -650,8 +650,8 @@ object SurroundBuilder {
         return out
     }
 
-    /** The floor fades out just before the backdrop dome (radius [Backdrop.RADIUS]) meets it. */
-    fun edgeFade(r: Double) = ((Backdrop.FLOOR_REACH - r) / 0.3).coerceIn(0.0, 1.0)
+    /** The floor runs just past where the backdrop dome meets it (so no dark seam shows), then stops. */
+    fun edgeFade(r: Double) = ((Backdrop.FLOOR_REACH + 0.3 - r) / 0.15).coerceIn(0.0, 1.0)
 
     /** Fills the holes in an image by averaging down a pyramid and back up. */
     private fun pushPullFill(r: FloatArray, g: FloatArray, b: FloatArray, have: BooleanArray, n: Int): Array<FloatArray> {

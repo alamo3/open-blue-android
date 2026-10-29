@@ -124,7 +124,11 @@ private class SurroundRenderer(
         scene.indirectLight = indirectLight
         val (r, g, b) = Colors.cct(6_500f)
         LightManager.Builder(LightManager.Type.DIRECTIONAL).color(r, g, b).intensity(55_000f)
-            .direction(0.45f, -1f, -0.55f).castShadows(true).build(engine, sun)
+            .direction(0.45f, -1f, -0.55f).castShadows(true)
+            // A finer map and a little more bias: the scene is far bigger than on the home screen,
+            // and a coarse shadow map draws the car's own shadow as rings over its roof and bonnet.
+            .shadowOptions(LightManager.ShadowOptions().apply { mapSize = 2048; normalBias = 1.5f; constantBias = 0.002f })
+            .build(engine, sun)
         scene.addEntity(sun)
 
         val carBytes = context.assets.open(body.glb).use { it.readBytes() }
@@ -139,7 +143,9 @@ private class SurroundRenderer(
         resourceLoader.loadResources(env)
         env.releaseSourceData()
         scene.addEntities(env.entities)
-        for (e in env.getEntitiesByName("painted") + env.getEntitiesByName("backdrop")) {
+        // The surroundings are photos with their own light and shade: they neither cast nor take
+        // shadows (the car brings its own soft shadow), which also keeps the shadow map on the car.
+        for (e in env.entities) {
             val ri = engine.renderableManager.getInstance(e)
             if (ri != 0) { engine.renderableManager.setCastShadows(ri, false); engine.renderableManager.setReceiveShadows(ri, false) }
         }
