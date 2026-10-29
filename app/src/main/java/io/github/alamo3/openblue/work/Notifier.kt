@@ -22,6 +22,7 @@ import kotlinx.coroutines.withContext
 object Notifier {
     const val CHANNEL_COMMANDS = "commands"
     const val CHANNEL_ALERTS = "alerts"
+    const val CHANNEL_UPDATES = "updates"
     private const val CHANNEL_WORKING = "working"
 
     fun createChannels(context: Context) {
@@ -35,6 +36,11 @@ object Notifier {
         nm.createNotificationChannel(
             NotificationChannel(CHANNEL_ALERTS, "Car alerts", NotificationManager.IMPORTANCE_HIGH).apply {
                 description = "Charging finished, car left unlocked or open, low 12V battery, tire pressure"
+            },
+        )
+        nm.createNotificationChannel(
+            NotificationChannel(CHANNEL_UPDATES, "App updates", NotificationManager.IMPORTANCE_DEFAULT).apply {
+                description = "A new Open Blue build is ready or was installed"
             },
         )
         nm.createNotificationChannel(
@@ -54,10 +60,10 @@ object Notifier {
         ProcessLifecycleOwner.get().lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
     }
 
-    fun post(context: Context, channel: String, id: Int, title: String, text: String) {
+    fun post(context: Context, channel: String, id: Int, title: String, text: String, tap: PendingIntent? = null) {
         if (!allowed(context)) return
         createChannels(context)
-        val open = PendingIntent.getActivity(
+        val open = tap ?: PendingIntent.getActivity(
             context, 0,
             Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,

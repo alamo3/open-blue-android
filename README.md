@@ -10,6 +10,7 @@ It exists because the official app hides heated/ventilated seat controls for som
 - **Climate:** temperature, the car's real cabin seen from above (roof cut away) where you tap each seat to cycle heat/cool levels and watch it warm up or breathe cool air, front defrost, heated wheel and rear defrost, run time, start/stop. Matches what your car supports (combined or split heating, heat-only rear seats).
 - **Where and what's it like:** the street the car was last located on and the weather there (or near you, until the car has been located), on the home screen. Starting climate with heated seats on a warm day (20 °C or more) or cooled seats on a cold one (12 °C or less) asks first, with an option to start without them.
 - **Home-screen widget:** battery, range and charging; stretched taller it shows the car. One tap to lock, start or stop climate with your last settings (heated seats on a warm day, or cooled on a cold one, open the app to ask first), or refresh. Unlocking opens the app, so the fingerprint check still applies.
+- **Updates itself:** every few hours on Wi-Fi it installs the newest build from this repo's "latest" release while you're not using it (Settings > App updates, or install one by hand there). Android asks you to confirm the first update; after that it updates without asking.
 - **Presets:** your presets from mybluelink.ca plus presets saved on the phone; start in one tap or load into the controls.
 - **Charging:** open or close the charge port, set AC and DC charge limits, and turn battery preconditioning on or off before DC fast charging.
 - **Public charging:** Hyundai's in-app charging: your plan and cards, chargers nearby on a map with live availability and prices, starting and stopping a paid charge, charging history with receipts, and trip planning with charging stops (handed to Google Maps).
@@ -52,7 +53,7 @@ Add two repository secrets (Settings → Secrets and variables → Actions):
 
 Your email, password and Bluelink PIN are stored only on the phone, in EncryptedSharedPreferences (key in the Android Keystore), and are sent only to `mybluelink.ca`. App backup is disabled. There is no analytics.
 
-Besides Bluelink, the app only talks to: Open-Meteo for the weather (it sends the car's or phone's position rounded to about a kilometre, nothing else), OpenFreeMap for map tiles, and GitHub to download the 3D view's models once, when you ask for them.
+Besides Bluelink, the app only talks to: Open-Meteo for the weather (it sends the car's or phone's position rounded to about a kilometre, nothing else), OpenFreeMap for map tiles, and GitHub to download the 3D view's models (once, when you ask) and to check for app updates.
 
 ## How it talks to Bluelink
 

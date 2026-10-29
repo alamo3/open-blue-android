@@ -117,6 +117,25 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, open: (Route) -> Unit 
             }
 
             HorizontalDivider(color = app.hairline, modifier = Modifier.padding(top = 8.dp))
+            SectionTitle("App updates")
+            SettingSwitch(
+                "Update automatically",
+                "Every few hours on Wi-Fi, installs the newest build from GitHub while you're not using the app (never during the engine sound). Android asks you to confirm the first one.",
+                vm.autoUpdate,
+            ) { vm.changeAutoUpdate(it) }
+            val u = vm.update
+            val r = u.release
+            when {
+                u.downloading != null -> ClickRow("Downloading ${(u.downloading * 100).toInt()}%", "The app closes for a moment while Android installs it", enabled = false) {}
+                r != null -> ClickRow("Install ${r.versionName} now", r.message.ifBlank { null }) { vm.installUpdate() }
+                u.checking -> ClickRow("Checking…", null, enabled = false) {}
+                else -> ClickRow("Check for updates", if (u.upToDate) "You have the newest build (${BuildConfig.VERSION_NAME})" else "This is ${BuildConfig.VERSION_NAME}") { vm.checkForUpdate() }
+            }
+            (u.error ?: io.github.alamo3.openblue.update.UpdateState.lastError)?.let {
+                Text(it, style = MaterialTheme.typography.bodySmall, color = app.alert)
+            }
+
+            HorizontalDivider(color = app.hairline, modifier = Modifier.padding(top = 8.dp))
             SectionTitle("Help")
             ClickRow("Show raw vehicle data", "What Bluelink reports for your car, for troubleshooting", enabled = vm.busy == null) { vm.loadDiagnostics() }
             Spacer(Modifier.height(8.dp))

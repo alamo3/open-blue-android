@@ -152,6 +152,7 @@ class ScreenshotTest(private val night: Boolean) {
             deviceConfig = DeviceConfig.PIXEL_5.copy(screenHeight = 3600, nightMode = if (night) NightMode.NIGHT else NightMode.NOTNIGHT),
         )
         val vm = demoVm().apply { changeWatch(true) }
+        vm.showDemoUpdate()
         shot {
             CompositionLocalProvider(LocalActivityResultRegistryOwner provides NoopRegistryOwner) {
                 SettingsScreen(vm, onBack = {})

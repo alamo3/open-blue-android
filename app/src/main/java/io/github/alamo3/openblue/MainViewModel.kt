@@ -1514,6 +1514,72 @@ class MainViewModel(
         surround = if (stage == null) SurroundState(needsDownload = true, downloadBytes = io.github.alamo3.openblue.svm3d.ModelStore.TOTAL_BYTES) else SurroundState(stage = stage, progress = 0.42f)
     }
 
+    // ------------------------------------------------------------- app updates
+
+    data class UpdateUi(
+        val checking: Boolean = false,
+        val release: io.github.alamo3.openblue.update.Release? = null,
+        val upToDate: Boolean = false,
+        /** 0..1 while downloading. */
+        val downloading: Float? = null,
+        val error: String? = null,
+    )
+
+    var update by mutableStateOf(UpdateUi())
+        private set
+    var autoUpdate by mutableStateOf(io.github.alamo3.openblue.update.UpdateState.autoUpdate(app))
+        private set
+
+    init {
+        if (online) {
+            if (autoUpdate) io.github.alamo3.openblue.update.UpdateWorker.schedule(app)
+            checkForUpdate(quiet = true)
+        }
+    }
+
+    fun changeAutoUpdate(on: Boolean) {
+        val ctx = getApplication<Application>()
+        autoUpdate = on
+        io.github.alamo3.openblue.update.UpdateState.setAutoUpdate(ctx, on)
+        if (on) io.github.alamo3.openblue.update.UpdateWorker.schedule(ctx) else io.github.alamo3.openblue.update.UpdateWorker.cancel(ctx)
+    }
+
+    /** Looks for a newer build; [quiet] only mentions it if there is one. */
+    fun checkForUpdate(quiet: Boolean = false) {
+        if (!online || update.checking || update.downloading != null) return
+        update = update.copy(checking = true, error = null)
+        viewModelScope.launch {
+            runCatching { withContext(Dispatchers.IO) { io.github.alamo3.openblue.update.Updater.check() } }
+                .onSuccess { r ->
+                    update = UpdateUi(release = r.takeIf { it.isNewer }, upToDate = !r.isNewer)
+                    if (quiet && r.isNewer) message = "Open Blue ${r.versionName} is available. Settings has it."
+                }
+                .onFailure { update = UpdateUi(error = if (quiet) null else "Couldn't check: ${it.message}") }
+        }
+    }
+
+    /** Downloads and installs the newer build now; the app closes while Android replaces it. */
+    fun installUpdate() {
+        val r = update.release ?: return
+        if (update.downloading != null) return
+        val ctx = getApplication<Application>()
+        update = update.copy(downloading = 0f, error = null)
+        viewModelScope.launch {
+            runCatching {
+                val apk = withContext(Dispatchers.IO) {
+                    io.github.alamo3.openblue.update.Updater.download(ctx, r) { f -> viewModelScope.launch { update = update.copy(downloading = f) } }
+                }
+                io.github.alamo3.openblue.update.Updater.install(ctx, apk, r)
+            }.onFailure { update = update.copy(downloading = null, error = "Couldn't update: ${it.message}") }
+                .onSuccess { update = update.copy(downloading = null) }
+        }
+    }
+
+    /** Screenshots: an update waiting. */
+    fun showDemoUpdate() {
+        update = UpdateUi(release = io.github.alamo3.openblue.update.Release(999, "0.1.999", message = "Home-screen widget: battery, lock, climate, refresh"))
+    }
+
     // ----------------------------------------------------------- engine sound
 
     private val soundCtl: SoundController? get() = EngineSoundService.current

@@ -48,7 +48,14 @@ jobs:
         run: .github/scripts/gradle.sh assembleRelease
 
       - name: Collect APK
-        run: cp app/build/outputs/apk/release/app-release.apk OpenBlue.apk
+        run: |
+          cp app/build/outputs/apk/release/app-release.apk OpenBlue.apk
+          # What the app's updater reads to decide whether there's something newer.
+          jq -n --argjson code "$GITHUB_RUN_NUMBER" --arg name "0.1.$GITHUB_RUN_NUMBER" --arg commit "$GITHUB_SHA" \
+            --arg message "$(git log -1 --format=%s)" --arg sha "$(sha256sum OpenBlue.apk | cut -d' ' -f1)" \
+            --argjson size "$(stat -c %s OpenBlue.apk)" \
+            '{versionCode: $code, versionName: $name, commit: $commit, message: $message, sha256: $sha, size: $size}' > version.json
+          cat version.json
 
       - uses: actions/upload-artifact@v4
         with:
@@ -61,7 +68,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release delete latest --cleanup-tag -y || true
-          gh release create latest OpenBlue.apk \
+          gh release create latest OpenBlue.apk version.json \
             --prerelease \
             --target "$GITHUB_SHA" \
             --title "Latest build (${GITHUB_SHA::7})" \
