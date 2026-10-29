@@ -76,6 +76,7 @@ fun ClimateScreen(vm: MainViewModel, onBack: () -> Unit) {
     val running = st?.climateOn == true
     val temps = vm.tempTable.filterNot { it.isLimit }.mapNotNull { it.celsiusValue }.distinct().sorted()
     var saving by remember { mutableStateOf(false) }
+    androidx.compose.runtime.LaunchedEffect(Unit) { vm.refreshWeather() }
 
     Column(Modifier.fillMaxSize()) {
         ScreenHeader("Climate", onBack)
@@ -146,12 +147,21 @@ fun ClimateScreen(vm: MainViewModel, onBack: () -> Unit) {
                 onSeat = { vm.cycleSeat(it) },
                 modifier = Modifier.width(250.dp),
             )
+            val seatWarning = vm.seatWarning()
             Text(
-                "Tap a seat to change it",
+                seatWarning?.substringBefore(". ")?.let { "$it, check the seats" } ?: "Tap a seat to change it",
                 style = MaterialTheme.typography.bodySmall,
-                color = scheme.onSurfaceVariant,
+                color = if (seatWarning != null) app.alert else scheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 8.dp),
             )
+            vm.weather?.let { w ->
+                if (seatWarning == null) Text(
+                    "${ClimateSettings.fmt(Math.round(w.tempC).toDouble())}° outside" + (if (vm.weatherNearPhone) " near you" else "") +
+                        w.summary.takeIf { it.isNotBlank() }?.let { ", ${it.lowercase()}" }.orEmpty(),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = scheme.onSurfaceVariant,
+                )
+            }
 
             // Extras
             Spacer(Modifier.height(20.dp))

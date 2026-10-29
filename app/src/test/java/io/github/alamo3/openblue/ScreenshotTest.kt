@@ -99,8 +99,14 @@ class ScreenshotTest(private val night: Boolean) {
         }
     }
 
-    @Test fun home() = demoVm().let { vm -> shot { HomeScreen(vm, open = {}, onUnlock = {}) } }
-    @Test fun climate() = demoVm().let { vm -> shot { ClimateScreen(vm, onBack = {}) } }
+    @Test fun home() = demoVm().let { vm -> vm.showDemoWeather(8.0); shot { HomeScreen(vm, open = {}, onUnlock = {}) } }
+    @Test fun climate() = demoVm().let { vm -> vm.showDemoWeather(8.0); shot { ClimateScreen(vm, onBack = {}) } }
+    /** Heated seats on a warm day: the climate screen points it out. */
+    @Test fun climateSeatWarning() = demoVm().let { vm ->
+        vm.showDemoWeather(27.0, code = 0)
+        vm.updateEditor { it.withSeat(0, io.github.alamo3.openblue.api.SeatLevel.HEAT_HIGH.code) }
+        shot { ClimateScreen(vm, onBack = {}) }
+    }
 
     /** Whole climate screen, including the presets below the fold. */
     @Test fun climateTall() {

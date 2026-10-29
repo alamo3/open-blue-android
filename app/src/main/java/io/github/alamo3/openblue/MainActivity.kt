@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
@@ -50,6 +51,7 @@ import io.github.alamo3.openblue.ui.DebugOverlay
 import io.github.alamo3.openblue.ui.CommandStrip
 import io.github.alamo3.openblue.ui.HomeScreen
 import io.github.alamo3.openblue.ui.LocationScreen
+import io.github.alamo3.openblue.api.withoutMismatchedSeats
 import io.github.alamo3.openblue.ui.LoginScreen
 import io.github.alamo3.openblue.ui.OpenBlueTheme
 import io.github.alamo3.openblue.ui.OtpScreen
@@ -179,6 +181,23 @@ private fun App(vm: MainViewModel = viewModel()) {
             ) {
                 // While animating out, progress is already null, so keep showing the last value.
                 (vm.progress ?: lastProgress)?.let { CommandStrip(it, onDismiss = { vm.dismissProgress() }) }
+            }
+
+            // Heated seats on a warm day, or cooled on a cold one: ask before starting.
+            vm.pendingClimate?.let { p ->
+                androidx.compose.material3.AlertDialog(
+                    onDismissRequest = { vm.dismissPendingClimate() },
+                    title = { Text("Check the seats") },
+                    text = { Text(vm.seatWarning(p) ?: "") },
+                    confirmButton = {
+                        androidx.compose.material3.TextButton(onClick = { vm.startClimate(p, confirmed = true) }) { Text("Start anyway") }
+                    },
+                    dismissButton = {
+                        androidx.compose.material3.TextButton(onClick = {
+                            vm.startClimate(p.withoutMismatchedSeats(vm.weather), confirmed = true)
+                        }) { Text("Start without them") }
+                    },
+                )
             }
 
             // Developer mode: floating panel over every screen.

@@ -392,6 +392,7 @@ class MainViewModel(
         launchSafely(onDone = { refreshing = false }) {
             applyStatus(api.cachedStatus(v.id))
         }
+        refreshWeather()
     }
 
     /** Asks the car itself for fresh status. Slower and wakes the car's modem. */
@@ -484,7 +485,24 @@ class MainViewModel(
         it.copy(climateOn = false, defrost = false, wheelHeat = false, seats = listOf(2, 2, 2, 2))
     }) { api.stopClimate(it.id) }
 
-    fun startClimate(settings: ClimateSettings = editor) {
+    /** Climate settings waiting for the user to confirm seats that don't suit the weather. */
+    var pendingClimate by mutableStateOf<ClimateSettings?>(null)
+        private set
+
+    /** Why [settings]' seats don't suit the weather right now, or null. */
+    fun seatWarning(settings: ClimateSettings = editor): String? =
+        io.github.alamo3.openblue.api.SeatWeather.warning(settings.seats, weather?.takeIf { fresh(it.fetchedAt, 3 * 60) })
+
+    /**
+     * Starts climate, unless the seats don't suit the weather (heated on a warm day, cooled on a
+     * cold one): then it asks first ([pendingClimate]); [confirmed] skips that.
+     */
+    fun startClimate(settings: ClimateSettings = editor, confirmed: Boolean = false) {
+        if (!confirmed && seatWarning(settings) != null) {
+            pendingClimate = settings
+            return
+        }
+        pendingClimate = null
         val fixed = settings.copy(heating = normalizeHeating(settings.heating))
         command(CommandProgress.Action.CLIMATE_START, {
             it.copy(
@@ -1000,6 +1018,81 @@ class MainViewModel(
     var location by mutableStateOf(store.lastLocation)
         private set
 
+    fun dismissPendingClimate() { pendingClimate = null }
+
+    // ------------------------------------------------------------- weather and place
+
+    /** The weather where the car was last seen (or, failing that, where the phone is). */
+    var weather by mutableStateOf<io.github.alamo3.openblue.api.Weather?>(null)
+        private set
+    /** Street and town of the car's last known location, when the phone can look it up. */
+    var place by mutableStateOf<String?>(null)
+        private set
+    /** True when [weather] is for the phone's location, not the car's. */
+    var weatherNearPhone by mutableStateOf(false)
+        private set
+    private val weatherClient by lazy { io.github.alamo3.openblue.api.WeatherClient() }
+    private var weatherJob: Job? = null
+
+    init {
+        // (Here, after the properties it uses: initialisers run in order.)
+        if (online && screen == Screen.Main) refreshWeather()
+    }
+
+    private fun fresh(at: Long, minutes: Int) = System.currentTimeMillis() - at < minutes * 60_000L
+
+    /** Refreshes the weather (at most every 15 minutes unless [force]) and the place name. */
+    fun refreshWeather(force: Boolean = false) {
+        if (!online || weatherJob?.isActive == true) return
+        val w = weather
+        val car = location
+        weatherJob = viewModelScope.launch {
+            if (car != null) place = withContext(Dispatchers.IO) { placeName(car.lat, car.lon) }
+            if (!force && w != null && fresh(w.fetchedAt, 15)) return@launch
+            val (at, nearPhone) = when {
+                car != null -> (car.lat to car.lon) to false
+                else -> (withContext(Dispatchers.IO) { phoneLocation() } ?: return@launch) to true
+            }
+            runCatching { withContext(Dispatchers.IO) { weatherClient.current(at.first, at.second) } }
+                .onSuccess { weather = it; weatherNearPhone = nearPhone }
+                .onFailure { android.util.Log.w("OpenBlue", "Weather unavailable", it) }
+        }
+    }
+
+    private fun placeName(lat: Double, lon: Double): String? {
+        val ctx = getApplication<Application>()
+        if (!android.location.Geocoder.isPresent()) return null
+        return runCatching {
+            @Suppress("DEPRECATION")
+            android.location.Geocoder(ctx, java.util.Locale.getDefault()).getFromLocation(lat, lon, 1)?.firstOrNull()?.let { a ->
+                listOfNotNull(
+                    listOfNotNull(a.subThoroughfare, a.thoroughfare).joinToString(" ").takeIf { it.isNotBlank() },
+                    a.locality,
+                ).joinToString(", ").takeIf { it.isNotBlank() }
+            }
+        }.getOrNull()
+    }
+
+    /** The phone's last known position, only if location is already allowed (never asks). */
+    @android.annotation.SuppressLint("MissingPermission")
+    private fun phoneLocation(): Pair<Double, Double>? {
+        val ctx = getApplication<Application>()
+        val ok = listOf(android.Manifest.permission.ACCESS_COARSE_LOCATION, android.Manifest.permission.ACCESS_FINE_LOCATION).any {
+            androidx.core.content.ContextCompat.checkSelfPermission(ctx, it) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        }
+        if (!ok) return null
+        val lm = ctx.getSystemService(android.location.LocationManager::class.java) ?: return null
+        return runCatching {
+            lm.getProviders(true).mapNotNull { lm.getLastKnownLocation(it) }.maxByOrNull { it.time }?.let { it.latitude to it.longitude }
+        }.getOrNull()
+    }
+
+    /** Screenshots: a made-up weather reading. */
+    fun showDemoWeather(tempC: Double, code: Int = 2) {
+        weather = io.github.alamo3.openblue.api.Weather(tempC, tempC - 2, code, true, System.currentTimeMillis())
+        place = "100 Queen St W, Toronto"
+    }
+
     fun locate() {
         val v = vehicle ?: return
         if (!canAct || !online) return
@@ -1015,6 +1108,7 @@ class MainViewModel(
             store.lastLocation = loc
             location = loc
             finish(action, true)
+            refreshWeather(force = true)
         }
     }
 
