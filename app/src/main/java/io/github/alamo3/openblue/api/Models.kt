@@ -36,6 +36,11 @@ data class VehicleCaps(
     val hasSvm: Boolean = false,
     /** Model code the charging services identify the car by (vehicleKindCode, else modelCode). */
     val modelCode: String? = null,
+    /** "Fod" in the feature list: Hyundai offers the Bluelink Store (features on demand) for this car. */
+    val listsStore: Boolean = false,
+    /** The store's web address for this car (fodWebManualUrlEn / Fr), when Bluelink gives one. */
+    val storeUrlEn: String? = null,
+    val storeUrlFr: String? = null,
 ) {
     val isGen3: Boolean get() = genType?.contains("3") == true
 

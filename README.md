@@ -22,6 +22,7 @@ It exists because the official app hides heated/ventilated seat controls for som
 - **Engine sound:** a virtual engine (inline-4 turbo, inline-5, V6 or V8, all synthesized, no recordings) that follows the car: the phone's motion sensors and GPS drive a 6-speed virtual gearbox with shifts, kickdowns, pops on lift-off and a rev limiter. Revs fall back to idle when you're not accelerating (or hold in gear, if you prefer). Plays through the phone, or the car's speakers via Android Auto; runs as a foreground service so it keeps going with the phone locked. A delay meter times the speakers with the microphone and a look-ahead setting predicts that far ahead to make up for it.
 - **Engine sound:** a synthesized sound that follows the car, played through the phone or the car's speakers via Android Auto. Three sounds made for an EV (Starship, a sci-fi drone; Turbine, a jet-style spool; Electric+, the motor's own whine exaggerated) whose pitch follows speed like the real direct-drive motor, plus four classic engines with optional virtual gearshifts. The phone's motion sensors and GPS drive it; it gets louder and brighter the harder you accelerate and settles back when you're not. Runs as a foreground service so it keeps going with the phone locked under Android Auto. It can start and stop by itself when your car's Bluetooth connects and disconnects, and it remembers how the phone sits in its mount between drives. A delay meter times the speakers with the microphone, and a look-ahead setting predicts that far ahead to make up for Android Auto's delay.
 - **Notifications:** commands keep waiting for the car after you leave or close the app, and tell you how they went. Optional background checks (every 15, 30 or 60 minutes, reading what Bluelink already has so the car isn't woken) alert you when charging finishes or stops early, the car is left unlocked or open for 10 minutes, the 12V battery runs low, or the tire pressure warning comes on. Each alert can be switched off.
+- **Bluelink Store:** Hyundai's features-on-demand store, the same web page the official app opens, offered for every car. The official app only shows it when Hyundai lists the store for the car; Open Blue asks Bluelink for a store token regardless, so if the store exists for your car but isn't advertised, it opens. What you can buy is still decided by Hyundai. If Bluelink hands out a token but no store address, you can type one in.
 - **Security:** optional fingerprint/screen-lock confirmation before unlocking.
 - Handles Bluelink's one-time email/SMS device verification, and re-logs in automatically when the token expires or your phone changes networks.
 
@@ -54,7 +55,7 @@ Add two repository secrets (Settings → Secrets and variables → Actions):
 
 Your email, password and Bluelink PIN are stored only on the phone, in EncryptedSharedPreferences (key in the Android Keystore), and are sent only to `mybluelink.ca`. App backup is disabled. There is no analytics.
 
-Besides Bluelink, the app only talks to: Open-Meteo for the weather (it sends the car's or phone's position rounded to about a kilometre, nothing else), OpenFreeMap for map tiles, and GitHub to download the 3D view's models (once, when you ask) and to check for app updates.
+Besides Bluelink, the app only talks to: Open-Meteo for the weather (it sends the car's or phone's position rounded to about a kilometre, nothing else), OpenFreeMap for map tiles, and GitHub to download the 3D view's models (once, when you ask) and to check for app updates. The Bluelink Store is Hyundai's own web page, shown inside the app when you open it.
 
 ## How it talks to Bluelink
 
@@ -70,6 +71,7 @@ Endpoints, headers and payloads mirror the official Android app (v2.0.47), cross
 | Lock / unlock | `drlck`, `drulck` |
 | Command result | `rmtsts` (with `transactionId`) |
 | Server presets | `gtfvsttng` |
+| Bluelink Store token | `fod/gtfodacctkn` (cookie `t` on the store page, user agent + `_CCS_APP_AOS`) |
 | Surround view | `rfc/fndmcrsvm` (request), `rfc/lastmcrsvm` (base64 JPEG strip + `imageSize`) |
 
 Seat codes: `0` off, `6/7/8` heat low/medium/high, `3/4/5` cool low/medium/high.

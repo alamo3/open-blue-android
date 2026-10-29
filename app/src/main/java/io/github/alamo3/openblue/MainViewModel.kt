@@ -967,6 +967,60 @@ class MainViewModel(
         }
     }
 
+    // ------------------------------------------------------- Bluelink Store
+
+    /** The store page to open: where, and the token it takes as its cookie. */
+    data class StorePage(val url: String?, val token: String, val expiresIn: String?, val otherHosts: List<String>)
+
+    var storePage by mutableStateOf<StorePage?>(null)
+        private set
+    var storeLoading by mutableStateOf(false)
+        private set
+    var storeError by mutableStateOf<String?>(null)
+        private set
+
+    /**
+     * Gets a store token for the car and works out the store's address: the one in the car's
+     * details (English or French to match the phone), else the token's reroute address. The
+     * official app hides the store unless the car lists "Fod"; this asks anyway.
+     */
+    fun openStore() {
+        val v = vehicle ?: return
+        storeError = null
+        if (!online) {
+            if (storePage == null) storeError = "The demo has no Bluelink account, so there's no store to open."
+            return
+        }
+        storeLoading = true
+        launchSafely(onDone = { storeLoading = false }, onError = { storePage = null; storeError = describe(it) }) {
+            val access = api.storeAccess(v.id)
+            val french = java.util.Locale.getDefault().language == "fr"
+            fun pick(en: String?, fr: String?) = if (french) fr ?: en else en ?: fr
+            val listed = pick(caps.storeUrlEn, caps.storeUrlFr)
+                ?: runCatching { api.storeUrls(v.id) }.getOrNull()?.let { (en, fr) -> pick(en, fr) }
+            val url = listed ?: access.rerouteUrl
+            storePage = StorePage(url, access.token, access.expiresIn, listOfNotNull(access.rerouteUrl).filter { it != url })
+        }
+    }
+
+    /** Opens the store at an address typed in by hand, with the token already fetched. */
+    fun openStoreAt(url: String) {
+        val p = storePage ?: return
+        val u = url.trim().let { if (it.startsWith("http")) it else "https://$it" }
+        storePage = p.copy(url = u)
+    }
+
+    /** Demo and screenshots: the store token came back without an address. */
+    fun showDemoStoreWithoutAddress() {
+        storeError = null
+        storePage = StorePage(null, "demo", null, emptyList())
+    }
+
+    fun closeStore() {
+        storePage = null
+        storeError = null
+    }
+
     // ------------------------------------------------------- developer: endpoint probe
 
     var probeResults by mutableStateOf<List<BluelinkClient.ProbeResult>>(emptyList())

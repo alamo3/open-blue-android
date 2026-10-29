@@ -37,6 +37,7 @@ import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.LockOpen
 import androidx.compose.material.icons.rounded.PhotoCamera
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Storefront
 import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material.icons.rounded.Thermostat
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -198,6 +199,7 @@ fun HomeScreen(vm: MainViewModel, open: (Route) -> Unit, onUnlock: () -> Unit) {
             )
             NavRow(Icons.Rounded.DirectionsCar, "Vehicle", st?.let { vehicleLine(it) }, onClick = { open(Route.Vehicle) },
                 iconTint = if (st != null && needsAttention(st)) app.alert else MaterialTheme.colorScheme.onSurface)
+            NavRow(Icons.Rounded.Storefront, "Bluelink Store", "Features on demand from Hyundai", onClick = { open(Route.Store) })
         }
     }
 

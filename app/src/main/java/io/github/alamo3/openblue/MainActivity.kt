@@ -190,6 +190,7 @@ private fun App(vm: MainViewModel = viewModel(), climateRequest: Int = 0) {
                         Route.Probe -> ProbeScreen(vm, onBack = ::back)
                         Route.Sound -> io.github.alamo3.openblue.ui.SoundScreen(vm, onBack = ::back)
                         Route.Surround3D -> io.github.alamo3.openblue.ui.Surround3DScreen(vm, onBack = ::back)
+                        Route.Store -> io.github.alamo3.openblue.ui.StoreScreen(vm, onBack = ::back)
                     }
                 }
             }

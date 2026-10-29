@@ -257,6 +257,11 @@ class BluelinkClient(private val store: SecureStore) {
             cat.arr("features").any { it.str("featureName") == "ParkingSvm" }
         },
         modelCode = selected.str("vehicle.vehicleKindCode") ?: selected.str("vehicle.modelCode"),
+        listsStore = selected.arr("featuresModel.features").any { cat ->
+            cat.arr("features").any { it.str("featureName") == "Fod" }
+        },
+        storeUrlEn = selected.str("vehicle.fodWebManualUrlEn")?.takeIf { it.isNotBlank() },
+        storeUrlFr = selected.str("vehicle.fodWebManualUrlFr")?.takeIf { it.isNotBlank() },
     )
 
     /**
@@ -272,6 +277,30 @@ class BluelinkClient(private val store: SecureStore) {
             )
         )
         body.str("result.photoUrl")
+    }
+
+    // ------------------------------------------------------------ Bluelink Store
+
+    /** What the store's web page needs: a short-lived token (its "t" cookie) and where it lives. */
+    data class StoreAccess(val token: String, val expiresIn: String?, val rerouteUrl: String?)
+
+    /**
+     * fod/gtfodacctkn: a token for the Bluelink Store (features on demand). The official app
+     * sends an empty body with the access token and the vehicle's ID, and only asks when the
+     * car's feature list includes "Fod"; this asks regardless.
+     */
+    suspend fun storeAccess(vehicleId: String): StoreAccess = authed { t ->
+        val body = check(post("fod/gtfodacctkn", buildJsonObject { }, mapOf("accessToken" to t, "vehicleId" to vehicleId)))
+        val token = body.str("result.accessToken")?.takeIf { it.isNotBlank() }
+            ?: throw ApiException(null, "Bluelink didn't hand out a store token for this car")
+        StoreAccess(token, body.str("result.expiresIn"), body.str("result.rerouteUrl")?.takeIf { it.isNotBlank() })
+    }
+
+    /** The store's address for this car from the vehicle list (fodWebManualUrlEn / Fr), if Bluelink gives one. */
+    suspend fun storeUrls(vehicleId: String): Pair<String?, String?> = authed { t ->
+        val body = check(post("vhcllst", headers = mapOf("accessToken" to t)))
+        val v = body.arr("result.vehicles").firstOrNull { it.str("vehicleId") == vehicleId }
+        v.str("fodWebManualUrlEn")?.takeIf { it.isNotBlank() } to v.str("fodWebManualUrlFr")?.takeIf { it.isNotBlank() }
     }
 
     // ------------------------------------------------------------ surround view

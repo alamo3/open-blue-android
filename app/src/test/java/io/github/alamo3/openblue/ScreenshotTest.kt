@@ -143,6 +143,8 @@ class ScreenshotTest(private val night: Boolean) {
         shot { TripScreen(vm, onBack = {}) }
     }
     @Test fun chargeHistory() = demoVm().let { vm -> vm.showDemoCharging(); shot { ChargeHistoryScreen(vm, onBack = {}) } }
+    /** Bluelink Store when the token comes back without an address (the case Hyundai hides the store for). */
+    @Test fun storeWithoutAddress() = demoVm().let { vm -> vm.showDemoStoreWithoutAddress(); shot { io.github.alamo3.openblue.ui.StoreScreen(vm, onBack = {}) } }
     @Test fun vehicle() = demoVm().let { vm -> shot { VehicleScreen(vm, onBack = {}) } }
     @Test fun settings() = demoVm().let { vm ->
         shot {
