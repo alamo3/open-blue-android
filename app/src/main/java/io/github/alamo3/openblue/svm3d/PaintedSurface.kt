@@ -130,11 +130,15 @@ object PaintedSurface {
                 if (gj + 1 < m) join(g, g + 1)
                 if (gi + 1 < m) join(g, g + m)
             }
-            val size = IntArray(m * m); val low = FloatArray(m * m) { Float.MAX_VALUE }
-            for (g in 0 until m * m) if (gd.keep[g]) { val r = find(g); size[r]++; low[r] = minOf(low[r], gd.z[g]) }
+            val size = IntArray(m * m); val low = FloatArray(m * m) { Float.MAX_VALUE }; val onVehicle = BooleanArray(m * m)
+            for (g in 0 until m * m) if (gd.keep[g]) {
+                val r = find(g); size[r]++; low[r] = minOf(low[r], gd.z[g])
+                // A detected vehicle's body counts as standing on the ground, wheel arches and all.
+                if (!onVehicle[r] && SurroundBuilder.inAnyVehicle(vehicles, gd.x[g].toDouble(), gd.y[g].toDouble())) onVehicle[r] = true
+            }
             for (g in 0 until m * m) if (gd.keep[g]) {
                 val r = find(g)
-                if (size[r] < MIN_PIECE || low[r] > GROUNDED) gd.keep[g] = false
+                if (size[r] < MIN_PIECE || (low[r] > GROUNDED && !onVehicle[r])) gd.keep[g] = false
             }
         }
 

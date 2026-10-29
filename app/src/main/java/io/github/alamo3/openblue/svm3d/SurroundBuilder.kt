@@ -117,6 +117,8 @@ class SurroundScene(
     val groundPhoto: IntArray = IntArray(0),
     /** Everything that stands up, painted from the photos (null if there was nothing usable). */
     val painted: PaintedMesh? = null,
+    /** Per backdrop pixel, which cameras see something nearby there (see [Backdrop.occlusion]). */
+    val backdropBlocked: ByteArray? = null,
 )
 
 interface DepthModel {
@@ -391,7 +393,7 @@ object SurroundBuilder {
         val photo = IntArray(GROUND_N * GROUND_N)
         val ground = stitchFloor(frames, crops, seen, photo)
         val painted = PaintedSurface.build(crops, vehicles).takeIf { it.triangleCount > 0 }
-        return SurroundScene(GROUND_N, GROUND_EXT, ground, walls, vehicles, seen, photo, painted)
+        return SurroundScene(GROUND_N, GROUND_EXT, ground, walls, vehicles, seen, photo, painted, Backdrop.occlusion(frames, crops))
     }
 
     private fun standing(c: Crop, k: Int, ray: DoubleArray, minZ: Double, maxT: Double, maxZ: Double = 9.0): Boolean {

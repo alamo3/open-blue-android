@@ -1267,8 +1267,8 @@ class MainViewModel(
     private var surroundShot: SvmShot? = null
     private var surroundJob: Job? = null
     private val modelStore by lazy { io.github.alamo3.openblue.svm3d.ModelStore(java.io.File(getApplication<Application>().filesDir, "models")) }
-    // v4: painted surface, painted-in floor, bowl backdrop.
-    private fun surroundCache(shot: SvmShot) = java.io.File(getApplication<Application>().filesDir, "svm3d/v4_${shot.utcTime ?: "latest"}")
+    // v5: painted surface, painted-in floor, bowl backdrop without nearby ghosts.
+    private fun surroundCache(shot: SvmShot) = java.io.File(getApplication<Application>().filesDir, "svm3d/v5_${shot.utcTime ?: "latest"}")
 
     /** Picks which set of photos the 3D view is for. */
     fun openSurround3d(shot: SvmShot) {
@@ -1360,16 +1360,19 @@ class MainViewModel(
                         viewModelScope.launch { surround = surround.copy(stage = "Painting in the floor the cameras couldn't see", progress = 0.8f) }
                         runCatching {
                             io.github.alamo3.openblue.svm3d.FloorFill.fill(scene, lama) { f ->
-                                viewModelScope.launch { surround = surround.copy(progress = 0.8f + 0.15f * f) }
+                                viewModelScope.launch { surround = surround.copy(progress = 0.8f + 0.1f * f) }
                             }
                         }.onSuccess { ground = it }.onFailure { android.util.Log.w("OpenBlue", "Floor fill failed; keeping the plain fill", it) }
                     }
+                    viewModelScope.launch { surround = surround.copy(stage = "Stitching the far surroundings", progress = 0.9f) }
+                    backdrop = runCatching {
+                        io.github.alamo3.openblue.svm3d.Backdrop.build(frames, scene.backdropBlocked, lama) { f ->
+                            viewModelScope.launch { surround = surround.copy(progress = 0.9f + 0.08f * f) }
+                        }
+                    }.onFailure { android.util.Log.w("OpenBlue", "Backdrop failed", it) }.getOrNull()
                 } finally {
                     lama?.close()
                 }
-                viewModelScope.launch { surround = surround.copy(stage = "Stitching the far surroundings", progress = 0.95f) }
-                backdrop = runCatching { io.github.alamo3.openblue.svm3d.Backdrop.build(frames) }
-                    .onFailure { android.util.Log.w("OpenBlue", "Backdrop failed", it) }.getOrNull()
                 val n = scene.groundSize
                 val argb = IntArray(n * n) { ground[it] or (0xFF shl 24) }
                 val bmp = Bitmap.createBitmap(argb, n, n, Bitmap.Config.ARGB_8888)
@@ -1395,7 +1398,7 @@ class MainViewModel(
 
     private fun saveSurround(base: java.io.File, r: SurroundResult) {
         base.parentFile?.mkdirs()
-        base.parentFile?.listFiles { f -> !f.name.startsWith("v4_") }?.forEach { it.delete() }  // older formats
+        base.parentFile?.listFiles { f -> !f.name.startsWith("v5_") }?.forEach { it.delete() }  // older formats
         java.io.File(base.path + ".glb").writeBytes(r.glb)
         java.io.File(base.path + ".txt").writeText(r.vehicles.joinToString("\n") { "${it.x} ${it.y} ${it.heading} ${it.length} ${it.height} ${it.kind}" })
     }

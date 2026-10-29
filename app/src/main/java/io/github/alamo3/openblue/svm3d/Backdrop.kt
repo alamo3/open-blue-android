@@ -34,7 +34,7 @@ class Backdrop(val width: Int, val height: Int, val rgb: IntArray) {
         fun rowOfElevation(e: Double) = (TOP_DEG - e) / (TOP_DEG - BOTTOM_DEG) * HEIGHT - 0.5
 
         /** Stitches the panorama from the four cameras; [seen] (WIDTH*HEIGHT) gets what a camera saw. */
-        fun stitch(frames: List<Fisheye>, seen: BooleanArray): IntArray {
+        fun stitch(frames: List<Fisheye>, seen: BooleanArray, blocked: ByteArray? = null): IntArray {
             val w = WIDTH; val h = HEIGHT
             val out = IntArray(w * h)
             val uv = DoubleArray(2)
@@ -50,8 +50,10 @@ class Backdrop(val width: Int, val height: Int, val rgb: IntArray) {
                     if (dz < -1e-6) t = min(t, EYE_Z / -dz)
                     val px = dx * t; val py = dy * t; val pz = EYE_Z + dz * t
                     var sw = 0.0; var r = 0.0; var g = 0.0; var b = 0.0
+                    val k0 = y * w + x
                     for ((fi, fe) in frames.withIndex()) {
                         val cam = fe.camera
+                        if (blocked != null && (blocked[k0].toInt() shr fi) and 1 != 0) continue
                         if (!cam.project(px, py, pz, uv)) continue
                         if (uv[0] < 0 || uv[0] >= fe.width - 1 || uv[1] < 0 || uv[1] >= fe.height - 1) continue
                         if (!fe.mask[uv[1].toInt() * fe.width + uv[0].toInt()]) continue
@@ -80,15 +82,64 @@ class Backdrop(val width: Int, val height: Int, val rgb: IntArray) {
         }
 
         /**
-         * Stitches the panorama and fills what no camera saw. That's almost all sky above the
-         * picture (the cameras look down), which the inpainting model paints as murky texture, so
-         * the sky is continued straight up from its colour along the top of what was seen, smoothed
-         * sideways. Small gaps lower down (behind a mirror, say) get the same treatment.
+         * Which cameras see something nearby, rather than the bowl, in each panorama direction (bit
+         * per frame): a parked car beside us would otherwise be projected huge across the bowl, a
+         * ghost of what the painted surface already shows where it really is. Judged by the depth
+         * along each camera's ray; only clearly near things count, since far depth is rough.
          */
-        fun build(frames: List<Fisheye>): Backdrop {
+        fun occlusion(frames: List<Fisheye>, crops: List<Crop>): ByteArray {
+            val w = WIDTH; val h = HEIGHT
+            val out = ByteArray(w * h)
+            val pix = DoubleArray(2)
+            val mine = frames.map { fe -> crops.filter { it.camera === fe.camera && it.depthOk } }
+            for (y in 0 until h) {
+                val e = Math.toRadians(elevationOfRow(y.toDouble()))
+                for (x in 0 until w) {
+                    val az = Math.toRadians((x + 0.5) / w * 360.0)
+                    val dx = sin(az) * cos(e); val dy = cos(az) * cos(e); val dz = sin(e)
+                    var t = RADIUS
+                    if (dz < -1e-6) t = min(t, EYE_Z / -dz)
+                    val px = dx * t; val py = dy * t; val pz = EYE_Z + dz * t
+                    var bits = 0
+                    for ((fi, fe) in frames.withIndex()) {
+                        val cam = fe.camera
+                        val vx = px - cam.x; val vy = py - cam.y; val vz = pz - cam.z
+                        val len = sqrt(vx * vx + vy * vy + vz * vz)
+                        val ux = vx / len; val uy = vy / len; val uz = vz / len
+                        // The crop that looks most straight that way decides.
+                        val azc = Math.toDegrees(Math.atan2(ux, uy))
+                        var best = 1e9; var depth = Float.NaN
+                        for (c in mine[fi]) {
+                            if (!c.view.pixelOf(ux, uy, uz, pix)) continue
+                            val off = kotlin.math.abs(((azc - c.view.centerAzimuthDeg + 540) % 360) - 180)
+                            if (off >= best) continue
+                            val i = pix[0].toInt(); val j = pix[1].toInt()
+                            if (i !in 0 until c.n || j !in 0 until c.n) continue
+                            val k = i * c.n + j
+                            best = off; depth = if (c.valid[k]) c.t[k] else Float.NaN
+                        }
+                        if (!depth.isNaN() && depth < NEAR && depth < 0.6 * len) bits = bits or (1 shl fi)
+                    }
+                    out[y * w + x] = bits.toByte()
+                }
+            }
+            return out
+        }
+
+        /** Depth (metres along the ray) under which something counts as nearby, see [occlusion]. */
+        private const val NEAR = 6f
+
+        /**
+         * Stitches the panorama and fills what no camera saw. Above the picture that's sky (the
+         * cameras look down), where the inpainting model only paints murk, so the sky is continued
+         * straight up from its colour along the top of what was seen, smoothed sideways. Holes lower
+         * down, behind nearby things ([blocked]), have the scene all round them: the inpainting
+         * model ([model]) paints those.
+         */
+        fun build(frames: List<Fisheye>, blocked: ByteArray? = null, model: Inpainter? = null, progress: (Float) -> Unit = {}): Backdrop {
             val w = WIDTH; val h = HEIGHT
             val seen = BooleanArray(w * h)
-            val pano = stitch(frames, seen)
+            val pano = stitch(frames, seen, blocked)
             val have = Fisheye.erode(seen, w, h, 1)
             // Each column's sky colour: the median of the first few seen pixels from the top.
             val top = Array(3) { DoubleArray(w) }; val found = BooleanArray(w)
@@ -121,9 +172,12 @@ class Backdrop(val width: Int, val height: Int, val rgb: IntArray) {
             }
             val edgeSky = smooth(12.0); val openSky = smooth(220.0)
             val dist = FloorFill.distanceTo(have, w, h)
+            // The sky: everything above each column's first seen pixel.
+            val firstSeen = IntArray(w) { x -> (0 until h).firstOrNull { have[it * w + x] } ?: h }
+            val sky = BooleanArray(w * h) { k -> k / w < firstSeen[k % w] }
             for (y in 0 until h) for (x in 0 until w) {
                 val k = y * w + x
-                if (have[k]) continue
+                if (have[k] || !sky[k]) continue
                 val d = dist[k].toDouble()
                 val up = (d / 80.0).coerceIn(0.0, 1.0)   // edge colour -> open sky over ~14 degrees
                 val a = (d / 6.0).coerceIn(0.0, 1.0)     // feather into what was seen
@@ -135,7 +189,61 @@ class Backdrop(val width: Int, val height: Int, val rgb: IntArray) {
                 }
                 pano[k] = p
             }
+            for (k in sky.indices) if (sky[k]) have[k] = true
+            if (model != null) paintHoles(pano, have, model, progress)
+            else {
+                // No model: carry the colour down from above.
+                for (y in 1 until h) for (x in 0 until w) { val k = y * w + x; if (!have[k]) pano[k] = pano[k - w] }
+            }
             return Backdrop(w, h, pano)
+        }
+
+        /**
+         * Paints the holes with [model] in three overlapping passes, each over half the panorama,
+         * keeping the middle third, so each part is painted with what's on both sides of it in view.
+         */
+        private fun paintHoles(pano: IntArray, have: BooleanArray, model: Inpainter, progress: (Float) -> Unit) {
+            val w = WIDTH; val h = HEIGHT
+            val s = Inpainter.SIZE
+            val sx = (w / 2).toDouble() / s; val sy = h.toDouble() / s
+            for (pass in 0 until 3) {
+                progress(pass / 3f)
+                val keep = Math.floorDiv((2 * pass - 1) * w, 6) until Math.floorDiv((2 * pass + 1) * w, 6)
+                if (keep.none { col -> (0 until h).any { !have[it * w + Math.floorMod(col, w)] } }) continue
+                val x0 = pass * w / 3 - w / 4
+                val rgb = ByteArray(s * s * 3); val hole = BooleanArray(s * s)
+                for (ty in 0 until s) for (tx in 0 until s) {
+                    var cr = 0; var cg = 0; var cb = 0; var cnt = 0; var miss = false
+                    val ya = (ty * sy).toInt(); val yb = max(ya + 1, ((ty + 1) * sy).toInt())
+                    val xa = (tx * sx).toInt(); val xb = max(xa + 1, ((tx + 1) * sx).toInt())
+                    for (yy in ya until min(h, yb)) for (xx in xa until xb) {
+                        val k = yy * w + Math.floorMod(x0 + xx, w)
+                        if (!have[k]) { miss = true; continue }
+                        val p = pano[k]; cr += (p shr 16) and 0xFF; cg += (p shr 8) and 0xFF; cb += p and 0xFF; cnt++
+                    }
+                    val o = ty * s + tx
+                    hole[o] = miss || cnt == 0
+                    if (cnt > 0) { rgb[3 * o] = (cr / cnt).toByte(); rgb[3 * o + 1] = (cg / cnt).toByte(); rgb[3 * o + 2] = (cb / cnt).toByte() }
+                }
+                val painted = model.inpaint(rgb, hole)
+                for (y in 0 until h) for (col in keep) {
+                    val k = y * w + Math.floorMod(col, w)
+                    if (have[k]) continue
+                    val xx = col - x0
+                    val fx = ((xx + 0.5) / sx - 0.5).coerceIn(0.0, s - 1.0); val fy = ((y + 0.5) / sy - 0.5).coerceIn(0.0, s - 1.0)
+                    val ia = fx.toInt(); val ja = fy.toInt(); val ib = min(s - 1, ia + 1); val jb = min(s - 1, ja + 1)
+                    val wx = fx - ia; val wy = fy - ja
+                    var p = 0
+                    for (ch in 0..2) {
+                        fun at(j: Int, i: Int) = (painted[3 * (j * s + i) + ch].toInt() and 0xFF).toDouble()
+                        val v = (at(ja, ia) * (1 - wx) + at(ja, ib) * wx) * (1 - wy) + (at(jb, ia) * (1 - wx) + at(jb, ib) * wx) * wy
+                        p = p or ((v + 0.5).toInt().coerceIn(0, 255) shl (16 - 8 * ch))
+                    }
+                    pano[k] = p
+                }
+                for (y in 0 until h) for (col in keep) have[y * w + Math.floorMod(col, w)] = true
+            }
+            progress(1f)
         }
     }
 }
