@@ -202,7 +202,7 @@ private class MapHolder(
             fun apply(u: String) {
                 m.setStyle(Style.Builder().fromUri(u)) { s ->
                     style = s
-                    s.addImage("car", carIcon)
+                    s.addImage(CAR_IMAGE, carIcon)
                     // Route line: blue, amber or red by traffic, under everything else.
                     s.addSource(GeoJsonSource("route"))
                     s.addLayer(
@@ -245,10 +245,10 @@ private class MapHolder(
                             PropertyFactory.circleStrokeWidth(Expression.switchCase(Expression.get("selected"), Expression.literal(3.5f), Expression.literal(2f))),
                         ),
                     )
-                    s.addSource(GeoJsonSource("car"))
+                    s.addSource(GeoJsonSource("ob-car"))
                     // A ring that keeps rippling out from the car, so it's easy to spot.
                     s.addLayer(
-                        CircleLayer("car-pulse", "car").withProperties(
+                        CircleLayer("ob-car-pulse", "ob-car").withProperties(
                             PropertyFactory.circleColor(palette[4]),
                             PropertyFactory.circleRadius(PULSE_FROM),
                             PropertyFactory.circleOpacity(0.5f),
@@ -256,8 +256,8 @@ private class MapHolder(
                         ),
                     )
                     s.addLayer(
-                        SymbolLayer("car", "car").withProperties(
-                            PropertyFactory.iconImage("car"),
+                        SymbolLayer("ob-car", "ob-car").withProperties(
+                            PropertyFactory.iconImage(CAR_IMAGE),
                             PropertyFactory.iconAllowOverlap(true),
                             PropertyFactory.iconIgnorePlacement(true),
                             PropertyFactory.iconRotationAlignment("map"),
@@ -289,10 +289,10 @@ private class MapHolder(
 
         val car = next.car
         if (car != prev?.car) {
-            s.getSourceAs<GeoJsonSource>("car")?.setGeoJson(
+            s.getSourceAs<GeoJsonSource>("ob-car")?.setGeoJson(
                 if (car == null) FeatureCollection.fromFeatures(emptyList()) else FeatureCollection.fromFeature(Feature.fromGeometry(Point.fromLngLat(car.lon, car.lat))),
             )
-            (s.getLayer("car") as? SymbolLayer)?.setProperties(PropertyFactory.iconRotate((car?.heading ?: 0.0).toFloat()))
+            (s.getLayer("ob-car") as? SymbolLayer)?.setProperties(PropertyFactory.iconRotate((car?.heading ?: 0.0).toFloat()))
         }
         if (next.pins != prev?.pins || next.selected != prev?.selected) {
             s.getSourceAs<GeoJsonSource>("pins")?.setGeoJson(
@@ -352,7 +352,7 @@ private class MapHolder(
 
     private fun startPulse(s: Style) {
         pulse?.cancel()
-        val layer = s.getLayer("car-pulse") as? CircleLayer ?: return
+        val layer = s.getLayer("ob-car-pulse") as? CircleLayer ?: return
         pulse = android.animation.ValueAnimator.ofFloat(0f, 1f).apply {
             duration = 1800
             repeatCount = android.animation.ValueAnimator.INFINITE
@@ -377,6 +377,8 @@ private class MapHolder(
     }
 
     companion object {
+        /** Not just "car": the map style's own icon set has one by that name, and it wins. */
+        private const val CAR_IMAGE = "openblue-car-marker"
         private const val PULSE_FROM = 22f
         private const val PULSE_TO = 52f
 
