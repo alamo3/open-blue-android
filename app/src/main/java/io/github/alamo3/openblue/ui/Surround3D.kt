@@ -71,6 +71,8 @@ private class SurroundRenderer(
     private val textureView: TextureView,
     envGlb: ByteArray,
     private val vehicles: List<Vehicle>,
+    body: CarBody,
+    private val paint: CarPaint,
 ) : Choreographer.FrameCallback {
     private val engine = Engine.create()
     private val renderer = engine.createRenderer()
@@ -125,7 +127,7 @@ private class SurroundRenderer(
             .direction(0.45f, -1f, -0.55f).castShadows(true).build(engine, sun)
         scene.addEntity(sun)
 
-        val carBytes = context.assets.open("models/car.glb").use { it.readBytes() }
+        val carBytes = context.assets.open(body.glb).use { it.readBytes() }
         instances = arrayOfNulls(1 + vehicles.size)
         cars = assetLoader.createInstancedAsset(ByteBuffer.allocateDirect(carBytes.size).put(carBytes).also { it.rewind() }, instances)
             ?: error("Couldn't read the car model")
@@ -189,6 +191,10 @@ private class SurroundRenderer(
         for (e in cars.getEntitiesByName("ground_shadow")) {
             val ri = rm.getInstance(e)
             if (ri != 0) { rm.setCastShadows(ri, false); rm.setReceiveShadows(ri, false) }
+        }
+        // Our car in its colour; the copies stay grey.
+        instances[0]?.materialInstances?.forEach { mi ->
+            if (mi.name == "paint") runCatching { mi.setParameter("baseColorFactor", Colors.RgbaType.LINEAR, paint.rgb[0], paint.rgb[1], paint.rgb[2], 1f) }
         }
         val m = FloatArray(16)
         vehicles.forEachIndexed { k, v ->
@@ -355,7 +361,15 @@ private class SurroundRenderer(
 
 /** The orbitable 3D surroundings, or a note if 3D can't run here. */
 @Composable
-fun Surround3DView(envGlb: ByteArray, vehicles: List<Vehicle>, painted: Boolean, modifier: Modifier = Modifier, onHasPainted: (Boolean) -> Unit = {}) {
+fun Surround3DView(
+    envGlb: ByteArray,
+    vehicles: List<Vehicle>,
+    painted: Boolean,
+    modifier: Modifier = Modifier,
+    body: CarBody = CarBody.IONIQ5,
+    paint: CarPaint = CarPaint.WHITE,
+    onHasPainted: (Boolean) -> Unit = {},
+) {
     var failed by remember { mutableStateOf(false) }
     if (failed) {
         Box(modifier.background(Color(0xFF0A0B0D)), contentAlignment = Alignment.Center) {
@@ -366,7 +380,7 @@ fun Surround3DView(envGlb: ByteArray, vehicles: List<Vehicle>, painted: Boolean,
     AndroidView(
         factory = { ctx ->
             TextureView(ctx).also { tv ->
-                val r = runCatching { SurroundRenderer(ctx, tv, envGlb, vehicles) }
+                val r = runCatching { SurroundRenderer(ctx, tv, envGlb, vehicles, body, paint) }
                     .onFailure { android.util.Log.e("OpenBlue", "3D surroundings unavailable", it) }
                     .getOrNull()
                 if (r == null) failed = true
@@ -392,7 +406,7 @@ fun Surround3DScreen(vm: MainViewModel, onBack: () -> Unit) {
             scene != null -> Box(Modifier.fillMaxSize()) {
                 var painted by remember { mutableStateOf(true) }
                 var canPaint by remember { mutableStateOf(false) }
-                Surround3DView(scene.glb, scene.vehicles, painted, Modifier.fillMaxSize()) { canPaint = it }
+                Surround3DView(scene.glb, scene.vehicles, painted, Modifier.fillMaxSize(), body = vm.carBody, paint = vm.carPaint) { canPaint = it }
                 Column(Modifier.align(Alignment.BottomStart).padding(16.dp)) {
                     if (canPaint) {
                         Row(

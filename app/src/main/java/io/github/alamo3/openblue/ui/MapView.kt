@@ -404,7 +404,7 @@ private class MapHolder(
                 style = Paint.Style.STROKE; strokeWidth = 2.5f * density; color = android.graphics.Color.WHITE
             })
             // The car, a little longer than the disc so its nose and tail show which way it faces.
-            val src = BitmapFactory.decodeResource(context.resources, R.drawable.car_top)
+            val src = BitmapFactory.decodeResource(context.resources, CarBody.current(context).top)
             val h = 52 * density
             val w = src.width * h / src.height
             val dst = android.graphics.RectF(mid - w / 2, mid - h / 2, mid + w / 2, mid + h / 2)

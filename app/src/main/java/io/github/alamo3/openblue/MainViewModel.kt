@@ -1514,6 +1514,33 @@ class MainViewModel(
         surround = if (stage == null) SurroundState(needsDownload = true, downloadBytes = io.github.alamo3.openblue.svm3d.ModelStore.TOTAL_BYTES) else SurroundState(stage = stage, progress = 0.42f)
     }
 
+    // ------------------------------------------------------------- the car's look
+
+    /** Settings' choice of 3D model (null = from the car's model name). */
+    var carBodyOverride by mutableStateOf(if (online) io.github.alamo3.openblue.ui.CarBody.override(app) else null)
+        private set
+    val carBody: io.github.alamo3.openblue.ui.CarBody
+        get() = carBodyOverride ?: io.github.alamo3.openblue.ui.CarBody.forModel(vehicle?.model)
+    var carPaint by mutableStateOf(if (online) io.github.alamo3.openblue.ui.CarPaint.current(app) else io.github.alamo3.openblue.ui.CarPaint.WHITE)
+        private set
+
+    fun changeCarBody(body: io.github.alamo3.openblue.ui.CarBody?) {
+        carBodyOverride = body
+        if (online) io.github.alamo3.openblue.ui.CarBody.setOverride(getApplication(), body)
+        updateWidgets()
+    }
+
+    fun changeCarPaint(paint: io.github.alamo3.openblue.ui.CarPaint) {
+        carPaint = paint
+        if (online) io.github.alamo3.openblue.ui.CarPaint.set(getApplication(), paint)
+    }
+
+    /** Screenshots: show another body and colour. */
+    fun showDemoLook(body: io.github.alamo3.openblue.ui.CarBody?, paint: io.github.alamo3.openblue.ui.CarPaint) {
+        carBodyOverride = body
+        carPaint = paint
+    }
+
     // ------------------------------------------------------------- app updates
 
     data class UpdateUi(

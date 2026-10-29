@@ -43,7 +43,9 @@ fun CarEffects(
     cablePlugged: () -> Float,
     modifier: Modifier = Modifier,
     ownsCamera: Boolean = false,
+    shape: CarShape = CarShape.IONIQ5,
 ) {
+    val flows = Flows.of(shape)
     val colors = AppTheme.colors
     // Fade each effect in and out rather than popping.
     val air = remember { Animatable(if (climate != null) 1f else 0f) }
@@ -73,9 +75,9 @@ fun CarEffects(
         if (air.value > 0f) {
             val tint = lerp(colors.heat, colors.cool, airColor)
             val heat = airColor < 0.5f
-            drawAirflow(camera, t, tint, air.value, heat, defrost)
+            drawAirflow(flows, camera, t, tint, air.value, heat, defrost)
         }
-        if (power.value > 0f) drawCharging(camera, t, colors.charge, power.value * cablePlugged().coerceIn(0f, 1f))
+        if (power.value > 0f) drawCharging(flows, camera, t, colors.charge, power.value * cablePlugged().coerceIn(0f, 1f))
     }
 }
 
@@ -137,71 +139,58 @@ private class Path3(points: List<DoubleArray>, spacing: Double = 0.03) {
 private fun v(x: Double, y: Double, z: Double) = doubleArrayOf(x, y, z)
 
 /**
- * Points on the model (tools/model/rig.py prints them to car-anchors.json). glTF axes:
- * +X driver's side, +Y up, +Z front.
+ * The particle paths for one car shape (see [CarShape]): air drawn over the bonnet into the cowl
+ * intake, through the cabin, and up the windshield, and the charging cable.
  */
-private object Anchors {
-    val chargePort = v(-0.851, 0.96, -1.67)
-    val chargePortNormal = v(-0.991, 0.0, -0.133)
-
-    /** The charging cable, relative to the port (it's rigged in the model as `charge_cable`). */
-    val cable = listOf(
-        v(-0.188, 0.0, -0.025), v(-0.241, -0.002, -0.027), v(-0.307, -0.06, -0.041), v(-0.357, -0.257, -0.077),
-        v(-0.416, -0.5, -0.136), v(-0.496, -0.736, -0.214), v(-0.614, -0.92, -0.333), v(-0.787, -0.958, -0.507),
-        v(-1.041, -0.944, -0.75), v(-1.488, -0.945, -1.151), v(-1.883, -0.944, -1.5),
-    )
-
-    /** Height of the bonnet's top surface along the car (z), at the centre line. */
-    private val hood = listOf(
-        2.25 to 0.757, 2.2 to 0.794, 2.1 to 0.85, 2.0 to 0.894, 1.9 to 0.928, 1.8 to 0.953,
-        1.7 to 0.973, 1.6 to 0.99, 1.5 to 1.003, 1.4 to 1.013,
-    )
-
-    fun hoodAt(z: Double): Double {
-        if (z >= hood.first().first) return hood.first().second
-        for (i in 0 until hood.size - 1) {
-            val (z0, y0) = hood[i]
-            val (z1, y1) = hood[i + 1]
-            if (z <= z0 && z >= z1) return y0 + (y1 - y0) * (z0 - z) / (z0 - z1)
-        }
-        return hood.last().second
-    }
-}
-
-private object Flows {
-    private val lanes = doubleArrayOf(-0.62, -0.37, -0.12, 0.12, 0.37, 0.62)
+private class Flows(val shape: CarShape) {
+    private val sc = shape.cowl.first
+    private val yc = shape.cowl.second
+    private val nose = shape.nose
+    private val k = shape.halfWidth / 0.98 // lanes spread with the car's width
+    private val lanes = doubleArrayOf(-0.62, -0.37, -0.12, 0.12, 0.37, 0.62).map { it * k }
+    private fun hoodPoint(f: Double) = nose - f * (nose - sc)
 
     /** Outside air drawn over the bonnet into the intake at the base of the windshield. */
     val intake = lanes.map { x ->
         Path3(
             listOf(
-                v(x * 1.3, 0.98, 3.05),
-                v(x * 1.2, 0.93, 2.6),
-                v(x * 1.05, Anchors.hoodAt(2.15) + 0.1, 2.15),
-                v(x * 0.9, Anchors.hoodAt(1.85) + 0.085, 1.85),
-                v(x * 0.76, Anchors.hoodAt(1.55) + 0.06, 1.55),
-                v(x * 0.64, 1.035, 1.4),
-                v(x * 0.58, 0.975, 1.31),
+                v(x * 1.3, yc + 0.005, nose + 0.7),
+                v(x * 1.2, yc - 0.045, nose + 0.25),
+                v(x * 1.05, shape.hoodAt(hoodPoint(0.19)) + 0.1, hoodPoint(0.19)),
+                v(x * 0.9, shape.hoodAt(hoodPoint(0.48)) + 0.085, hoodPoint(0.48)),
+                v(x * 0.76, shape.hoodAt(hoodPoint(0.77)) + 0.06, hoodPoint(0.77)),
+                v(x * 0.64, yc + 0.06, sc + 0.09),
+                v(x * 0.58, yc, sc),
             ),
         )
     }
 
     /** Conditioned air from the dash vents back through the cabin (seen through the glass). */
-    val cabin = doubleArrayOf(-0.6, -0.14, 0.14, 0.6).map { x ->
-        Path3(listOf(v(x, 1.06, 0.78), v(x, 1.17, 0.4), v(x * 0.95, 1.22, -0.05), v(x * 0.9, 1.17, -0.5), v(x * 0.85, 1.12, -0.95)))
+    val cabin = doubleArrayOf(-0.6, -0.14, 0.14, 0.6).map { it * k }.map { x ->
+        val y = yc + 0.085
+        val z = sc - 0.53
+        Path3(listOf(v(x, y, z), v(x, y + 0.11, z - 0.38), v(x * 0.95, y + 0.16, z - 0.83), v(x * 0.9, y + 0.11, z - 1.28), v(x * 0.85, y + 0.06, z - 1.73)))
     }
 
     /** Defrost: air from the vents at the base of the windshield, up its inside. */
-    val defrost = doubleArrayOf(-0.58, -0.36, -0.13, 0.13, 0.36, 0.58).map { x ->
-        Path3(listOf(v(x, 1.0, 1.2), v(x, 1.12, 1.0), v(x * 1.04, 1.225, 0.8), v(x * 1.08, 1.32, 0.6), v(x * 1.1, 1.39, 0.45)))
+    val defrost = doubleArrayOf(-0.58, -0.36, -0.13, 0.13, 0.36, 0.58).map { it * k }.map { x ->
+        val (ze, ye) = shape.defrostEnd
+        fun at(f: Double) = (sc - 0.11 + (ze - sc + 0.11) * f) to (yc + 0.025 + (ye - yc - 0.025) * f)
+        val p = listOf(0.0, 0.27, 0.53, 0.8, 1.0).map { at(it) }
+        Path3(listOf(v(x, p[0].second, p[0].first), v(x, p[1].second, p[1].first), v(x * 1.04, p[2].second, p[2].first), v(x * 1.08, p[3].second, p[3].first), v(x * 1.1, p[4].second, p[4].first)))
     }
 
-    val cable = Path3(Anchors.cable.reversed(), spacing = 0.02)
+    val cable = Path3(shape.cable.reversed(), spacing = 0.02)
 
     val frontNormal = v(0.0, 0.45, 0.89)
-    val frontPoint = v(0.0, 1.0, 1.8)
+    val frontPoint = v(0.0, yc + 0.025, sc + 0.49)
     val glassNormal = v(0.0, 0.85, 0.53)
-    val glassPoint = v(0.0, 1.25, 0.8)
+    val glassPoint = v(0.0, yc + 0.275, sc - 0.51)
+
+    companion object {
+        private val cache = HashMap<CarShape, Flows>()
+        fun of(shape: CarShape) = synchronized(cache) { cache.getOrPut(shape) { Flows(shape) } }
+    }
 }
 
 private fun smoothstep(e0: Double, e1: Double, x: Double): Float {
@@ -270,7 +259,7 @@ private fun DrawScope.drawStreams(
     }
 }
 
-private fun DrawScope.drawAirflow(cam: CarCamera, t: Float, tint: Color, strength: Float, heat: Boolean, defrost: Boolean) {
+private fun DrawScope.drawAirflow(Flows: Flows, cam: CarCamera, t: Float, tint: Color, strength: Float, heat: Boolean, defrost: Boolean) {
     val front = smoothstep(-0.15, 0.35, cam.facing(Flows.frontPoint, Flows.frontNormal))
     val glass = smoothstep(-0.25, 0.3, cam.facing(Flows.glassPoint, Flows.glassNormal))
     val wobble = if (heat) 0.014 else 0.004
@@ -280,10 +269,10 @@ private fun DrawScope.drawAirflow(cam: CarCamera, t: Float, tint: Color, strengt
     drawStreams(cam, Flows.intake, t, tint, strength * 0.8f * front, 0.8, 4, 0.6, 0.017, wobble, 0.3)
 }
 
-private fun DrawScope.drawCharging(cam: CarCamera, t: Float, green: Color, strength: Float) {
+private fun DrawScope.drawCharging(Flows: Flows, cam: CarCamera, t: Float, green: Color, strength: Float) {
     if (strength <= 0.01f) return
-    val port = Anchors.chargePort
-    val visible = smoothstep(0.0, 0.35, cam.facing(port, Anchors.chargePortNormal))
+    val port = Flows.shape.chargePort
+    val visible = smoothstep(0.0, 0.35, cam.facing(port, Flows.shape.chargePortNormal))
     val a = strength * visible
     if (a <= 0.01f) return
     val bright = lerp(green, Color.White, 0.55f)

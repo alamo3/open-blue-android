@@ -111,8 +111,13 @@ private enum class Part(val node: String, val axis: FloatArray, val openDegrees:
  * cable sliding into the port. Based on Filament's ModelViewer, with our own camera so the
  * effects overlay can project points exactly as the renderer does.
  */
-private class CarRenderer(context: Context, private val textureView: TextureView) : Choreographer.FrameCallback {
-    val camera = CarCamera()
+private class CarRenderer(
+    context: Context,
+    private val textureView: TextureView,
+    body: CarBody,
+    private val shape: CarShape,
+) : Choreographer.FrameCallback {
+    val camera = CarCamera(shape)
 
     /** How far the charging cable is pushed in, 0 (away) to 1 (seated). Read by the overlay. */
     var cablePlugged = 0f
@@ -209,7 +214,7 @@ private class CarRenderer(context: Context, private val textureView: TextureView
             .build(engine, sun)
         scene.addEntity(sun)
 
-        val bytes = context.assets.open("models/car.glb").use { it.readBytes() }
+        val bytes = context.assets.open(body.glb).use { it.readBytes() }
         val buffer = ByteBuffer.allocateDirect(bytes.size).put(bytes).also { it.rewind() }
         asset = assetLoader.createAsset(buffer) ?: error("Couldn't read the car model")
         resourceLoader.asyncBeginLoad(asset)
@@ -240,6 +245,15 @@ private class CarRenderer(context: Context, private val textureView: TextureView
         })
         if (textureView.isAttachedToWindow) start()
     }
+
+    /** The body colour (the models' "paint" material). */
+    var paint: CarPaint = CarPaint.WHITE
+        set(p) {
+            field = p
+            for (mi in asset.instance.materialInstances) {
+                if (mi.name == "paint") runCatching { mi.setParameter("baseColorFactor", Colors.RgbaType.LINEAR, p.rgb[0], p.rgb[1], p.rgb[2], 1f) }
+            }
+        }
 
     private fun focus(azimuth: Double, elevation: Double = CarCamera.HOME_ELEVATION) {
         if (touching) return
@@ -416,9 +430,10 @@ private class CarRenderer(context: Context, private val textureView: TextureView
         val t = cablePlugged
         val away = (1 - t * t * (3 - 2 * t)) * 0.35f
         rest.copyInto(out)
-        out[12] += PORT_NORMAL[0] * away
-        out[13] += PORT_NORMAL[1] * away
-        out[14] += PORT_NORMAL[2] * away
+        val n = shape.chargePortNormal
+        out[12] += (n[0] * away).toFloat()
+        out[13] += (n[1] * away).toFloat()
+        out[14] += (n[2] * away).toFloat()
         engine.transformManager.setTransform(inst, out)
     }
 
@@ -493,9 +508,6 @@ private class CarRenderer(context: Context, private val textureView: TextureView
     }.onFailure { android.util.Log.w("OpenBlue", "Studio lighting unavailable", it) }.getOrNull()
 
     companion object {
-        /** Outward normal of the charge port (see CarEffects' anchors). */
-        private val PORT_NORMAL = floatArrayOf(-0.991f, 0f, -0.133f)
-
         init {
             Utils.init()
         }
@@ -511,45 +523,55 @@ private class CarRenderer(context: Context, private val textureView: TextureView
  * of the same model from the default angle, with the same effects over it.
  */
 @Composable
-fun Car3D(pose: CarPose, modifier: Modifier = Modifier) {
+fun Car3D(pose: CarPose, modifier: Modifier = Modifier, body: CarBody = CarBody.IONIQ5, paint: CarPaint = CarPaint.WHITE) {
     var failed by remember { mutableStateOf(false) }
-    var renderer by remember { mutableStateOf<CarRenderer?>(null) }
+    var renderer by remember(body) { mutableStateOf<CarRenderer?>(null) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val shape = remember(body) { runCatching { CarBody.shape(context, body) }.getOrDefault(CarShape.IONIQ5) }
     if (LocalInspectionMode.current || failed) {
         Box(modifier, contentAlignment = Alignment.Center) {
             Box(Modifier.aspectRatio(STILL_ASPECT)) {
                 Image(
-                    painterResource(R.drawable.car_still),
+                    painterResource(body.still),
                     contentDescription = "Your car",
                     contentScale = ContentScale.FillBounds,
                     modifier = Modifier.fillMaxSize(),
                 )
-                val still = remember { CarCamera() }
-                CarEffects(still, pose.climate, pose.defrost, pose.charging, { 1f }, Modifier.fillMaxSize(), ownsCamera = true)
+                val still = remember(shape) { CarCamera(shape) }
+                CarEffects(still, pose.climate, pose.defrost, pose.charging, { 1f }, Modifier.fillMaxSize(), ownsCamera = true, shape = shape)
             }
         }
         return
     }
     val currentPose by rememberUpdatedState(pose)
-    Box(modifier) {
+    val currentPaint by rememberUpdatedState(paint)
+    // A different car model needs a new renderer: key the view on it.
+    androidx.compose.runtime.key(body) { Box(modifier) {
         AndroidView(
             factory = { ctx ->
                 TextureView(ctx).also { tv ->
-                    val r = runCatching { CarRenderer(ctx, tv) }
+                    val r = runCatching { CarRenderer(ctx, tv, body, shape) }
                         .onFailure { android.util.Log.e("OpenBlue", "3D car unavailable", it) }
                         .getOrNull()
                     if (r == null) failed = true
                     r?.pose = currentPose
+                    r?.paint = currentPaint
                     tv.tag = r
                     renderer = r
                 }
             },
-            update = { tv -> (tv.tag as? CarRenderer)?.pose = currentPose },
+            update = { tv ->
+                (tv.tag as? CarRenderer)?.let { r ->
+                    r.pose = currentPose
+                    if (r.paint != currentPaint) r.paint = currentPaint
+                }
+            },
             modifier = Modifier.fillMaxSize(),
         )
         renderer?.let { r ->
-            CarEffects(r.camera, pose.climate, pose.defrost, pose.charging, { r.cablePlugged }, Modifier.fillMaxSize())
+            CarEffects(r.camera, pose.climate, pose.defrost, pose.charging, { r.cablePlugged }, Modifier.fillMaxSize(), shape = shape)
         }
-    }
+    } }
 }
 
 /** Width / height of res/drawable-nodpi/car_still.webp, rendered by tools/model/appview.py. */

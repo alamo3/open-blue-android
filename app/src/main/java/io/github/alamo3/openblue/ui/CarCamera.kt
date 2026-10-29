@@ -14,7 +14,10 @@ import kotlin.math.tan
  * Plain math with no Filament types, so the 3D renderer, the effects drawn over it and the
  * screenshot tests all use the same projection. tools/model/appcam.py mirrors it for renders.
  */
-class CarCamera {
+class CarCamera(shape: CarShape = CarShape.IONIQ5) {
+    /** The car's box (mirrors left out), used to fit it on screen. */
+    private val box = boxOf(shape)
+
     /** Degrees around the car: 0 looks at the nose, positive moves toward the driver's side. */
     var azimuth = HOME_AZIMUTH
     /** Degrees above the horizon. */
@@ -50,7 +53,7 @@ class CarCamera {
     /** Recomputes the view from azimuth, elevation and zoom. Call once per frame. */
     fun update() {
         if (abs(aspect - fittedAspect) > 1e-3) {
-            fitted = fitDistance(aspect)
+            fitted = fitDistance(aspect, box)
             fittedAspect = aspect
         }
         eyeAt(azimuth, elevation, fitted * zoom, eye)
@@ -95,9 +98,8 @@ class CarCamera {
         const val PORT_AZIMUTH = -120.0
         val TARGET = doubleArrayOf(0.0, 0.58, -0.05)
 
-        /** The car's box (mirrors left out), used to fit it on screen. */
-        private val BOX = buildList {
-            for (x in doubleArrayOf(-0.98, 0.98)) for (y in doubleArrayOf(0.0, 1.55)) for (z in doubleArrayOf(-2.36, 2.35)) add(doubleArrayOf(x, y, z))
+        fun boxOf(s: CarShape) = buildList {
+            for (x in doubleArrayOf(-s.halfWidth, s.halfWidth)) for (y in doubleArrayOf(0.0, s.height)) for (z in doubleArrayOf(-s.halfLength, s.halfLength)) add(doubleArrayOf(x, y, z))
         }
 
         private fun eyeAt(az: Double, el: Double, d: Double, out: DoubleArray) {
@@ -109,7 +111,7 @@ class CarCamera {
         }
 
         /** Smallest distance at which the whole car fits all the way around, so orbiting never clips it. */
-        fun fitDistance(aspect: Double): Double {
+        fun fitDistance(aspect: Double, box: List<DoubleArray> = boxOf(CarShape.IONIQ5)): Double {
             val p = DoubleArray(16).also { perspective(it, FOV_Y, aspect, NEAR, FAR) }
             val v = DoubleArray(16)
             val vp = DoubleArray(16)
@@ -121,7 +123,7 @@ class CarCamera {
                         eyeAt(az, el, d, e)
                         lookAt(v, e, TARGET)
                         multiply(vp, p, v)
-                        for (c in BOX) {
+                        for (c in box) {
                             val cx = vp[0] * c[0] + vp[4] * c[1] + vp[8] * c[2] + vp[12]
                             val cy = vp[1] * c[0] + vp[5] * c[1] + vp[9] * c[2] + vp[13]
                             val cw = vp[3] * c[0] + vp[7] * c[1] + vp[11] * c[2] + vp[15]

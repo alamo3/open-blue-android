@@ -100,6 +100,12 @@ class ScreenshotTest(private val night: Boolean) {
     }
 
     @Test fun home() = demoVm().let { vm -> vm.showDemoWeather(8.0); shot { HomeScreen(vm, open = {}, onUnlock = {}) } }
+    /** Another car: the crossover stand-in, with climate on. */
+    @Test fun homeStandIn() = demoVm().let { vm ->
+        vm.showDemoWeather(8.0)
+        vm.showDemoLook(io.github.alamo3.openblue.ui.CarBody.CROSSOVER, io.github.alamo3.openblue.ui.CarPaint.WHITE)
+        shot { HomeScreen(vm, open = {}, onUnlock = {}) }
+    }
     @Test fun climate() = demoVm().let { vm -> vm.showDemoWeather(8.0); shot { ClimateScreen(vm, onBack = {}) } }
     /** Heated seats on a warm day: the climate screen points it out. */
     @Test fun climateSeatWarning() = demoVm().let { vm ->

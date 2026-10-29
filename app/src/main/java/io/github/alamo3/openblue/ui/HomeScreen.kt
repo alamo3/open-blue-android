@@ -116,7 +116,7 @@ fun HomeScreen(vm: MainViewModel, open: (Route) -> Unit, onUnlock: () -> Unit) {
 
             // The car, in 3D: doors, frunk and tailgate follow the status; airflow shows climate,
             // and the charging cable shows when it's plugged in.
-            Car3D(st.toPose(vm.editor.tempC), Modifier.fillMaxWidth().height(240.dp))
+            Car3D(st.toPose(vm.editor.tempC), Modifier.fillMaxWidth().height(240.dp), body = vm.carBody, paint = vm.carPaint)
 
             // One-tap controls, three to a row.
             val isEv = v?.fuelKindCode.equals("E", ignoreCase = true)

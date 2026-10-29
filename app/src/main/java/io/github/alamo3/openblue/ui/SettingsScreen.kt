@@ -31,6 +31,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.size
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
@@ -77,6 +83,44 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, open: (Route) -> Unit 
             ClickRow("Change vehicle", "Pick another car on this account", enabled = vm.busy == null) { vm.changeVehicle() }
 
             HorizontalDivider(color = app.hairline, modifier = Modifier.padding(top = 8.dp))
+            SectionTitle("Your car in 3D")
+            val auto = CarBody.forModel(vm.vehicle?.model)
+            Picker(
+                label = "Model",
+                options = listOf<CarBody?>(null) + CarBody.entries,
+                selected = vm.carBodyOverride,
+                optionLabel = { b ->
+                    when {
+                        b == null && auto == CarBody.IONIQ5 -> "Automatic (IONIQ 5)"
+                        b == null -> "Automatic (${auto.label.lowercase()} stand-in)"
+                        b == CarBody.IONIQ5 -> "IONIQ 5"
+                        else -> "${b.label} stand-in"
+                    }
+                },
+                onSelect = { vm.changeCarBody(it) },
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Text(
+                "The IONIQ 5 has its own model. Other cars get a stand-in of their body type, with doors, frunk, tailgate and the charging cable all working.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text("Paint", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 14.dp, bottom = 8.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = androidx.compose.foundation.layout.Arrangement.SpaceBetween) {
+                CarPaint.entries.forEach { p ->
+                    val sel = vm.carPaint == p
+                    androidx.compose.foundation.layout.Box(
+                        Modifier.size(34.dp)
+                            .clip(androidx.compose.foundation.shape.CircleShape)
+                            .background(androidx.compose.ui.graphics.Color(p.swatch))
+                            .border(if (sel) 3.dp else 1.dp, if (sel) MaterialTheme.colorScheme.primary else app.hairline, androidx.compose.foundation.shape.CircleShape)
+                            .clickable { vm.changeCarPaint(p) }
+                            .semantics { contentDescription = p.label },
+                    )
+                }
+            }
+
+            HorizontalDivider(color = app.hairline, modifier = Modifier.padding(top = 16.dp))
             SectionTitle("Security")
             SettingSwitch(
                 "Confirm before unlocking",

@@ -30,3 +30,16 @@ Source: "2024 Hyundai Ioniq 5 N" by Ddiaz Design (Sketchfab), CC BY-NC 4.0. Outp
 
 Run with Blender's Python module (`pip install bpy`). Part names and hinge axes are mirrored in
 `ui/CarModel.kt` (`Part`).
+
+## Stand-ins for other cars
+
+`generic.py <sedan|crossover|suv> out.glb` builds a stand-in from scratch (no third-party meshes):
+the body is lofted from a side profile, a plan-view outline and cross-sections, with rows laid out
+so the window line and roof edge fall on mesh edges. It's split into the same hinged parts as the
+IONIQ 5 rig (`door_fl/fr/rl/rr`, `hood`, `tailgate`, `charge_cable`, `ground_shadow`), and the paint
+is a material called `paint` so the app can recolour it. It writes `out-anchors.json` (size, charge
+port and cable, bonnet profile, cowl and windshield top) for the effects and camera framing.
+Outputs live in `app/src/main/assets/models/car_<kind>.glb` with their anchors; the stills are
+`appview.py` with `CAR_ANCHORS=<anchors>` (so the framing matches the app's) and the map markers a
+top-down orthographic render (`res/drawable-nodpi/car_still_<kind>.webp`, `car_top_<kind>.webp`).
+`ui/CarBody.kt` picks one from the Bluelink model name (or Settings > Your car in 3D).

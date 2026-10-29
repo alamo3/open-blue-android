@@ -72,6 +72,8 @@ data class WidgetData(
     val pending: String?,
     /** The last climate settings' seats don't suit the weather: ask in the app before starting. */
     val climateNeedsCheck: Boolean,
+    /** Picture of the car (its model, or the stand-in for its body type). */
+    val still: Int = R.drawable.car_still,
 ) {
     companion object {
         /** A command still waiting after this long is shown as done; the notification says how it went. */
@@ -109,6 +111,7 @@ data class WidgetData(
                 tempOutside = weather?.tempC?.roundToInt(),
                 pending = pending,
                 climateNeedsCheck = SeatWeather.warning(climate.seats, weather) != null,
+                still = io.github.alamo3.openblue.ui.CarBody.current(context).still,
             )
         }
     }
@@ -219,7 +222,7 @@ private fun Full(context: Context, d: WidgetData, tall: Boolean) {
         )
         if (tall) {
             Image(
-                ImageProvider(R.drawable.car_still), d.name,
+                ImageProvider(d.still), d.name,
                 GlanceModifier.fillMaxWidth().defaultWeight().padding(vertical = 4.dp),
                 contentScale = ContentScale.Fit,
             )

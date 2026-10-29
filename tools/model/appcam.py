@@ -4,7 +4,16 @@ import numpy as np
 
 FOV_Y = 30.0
 TARGET = (0.0, 0.58, -0.05)
-BOX = [(x, y, z) for x in (-0.98, 0.98) for y in (0.0, 1.55) for z in (-2.36, 2.35)]
+import json, os
+# The car's box, as ui/CarCamera.kt fits it: the IONIQ 5's, or a stand-in's from its anchors
+# file (CAR_ANCHORS=path/to/car_<kind>-anchors.json), as CarShape.parse reads it.
+_anchors = os.environ.get("CAR_ANCHORS")
+if _anchors:
+    _a = json.load(open(_anchors))
+    _hw, _h, _hl = _a["width"] / 2 + 0.03, _a["height"], _a["length"] / 2
+    BOX = [(x, y, z) for x in (-_hw, _hw) for y in (0.0, _h) for z in (-_hl, _hl)]
+else:
+    BOX = [(x, y, z) for x in (-0.98, 0.98) for y in (0.0, 1.55) for z in (-2.355, 2.355)]
 
 
 def look_at(eye, target, up=(0, 1, 0)):
