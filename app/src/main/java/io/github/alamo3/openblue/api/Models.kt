@@ -64,9 +64,27 @@ data class VehicleCaps(
         if (splitHeating) listOf(Heating.OFF, Heating.STEERING, Heating.REAR_MIRRORS, Heating.STEERING_REAR_MIRRORS)
         else listOf(Heating.OFF, Heating.ALL)
 
-    fun seatLevels(seat: Int): List<SeatLevel> =
-        if (seatOptions.getOrNull(seat) == 1) SeatLevel.entries.filter { it.code == 0 || it.code >= 6 }
-        else SeatLevel.entries.toList()
+    /**
+     * What a seat can be set to remotely, from its seatHeatVent option, as the official app reads
+     * it (0 = no remote control of that seat). Unknown (not loaded yet) allows everything.
+     */
+    fun seatLevels(seat: Int): List<SeatLevel> {
+        val codes = when (seatOptions.getOrNull(seat) ?: return SeatLevel.entries.toList()) {
+            1 -> listOf(6, 8)
+            2 -> listOf(6, 7, 8)
+            3 -> listOf(3, 5)
+            4 -> listOf(3, 4, 5)
+            5 -> listOf(3, 5, 6, 8)
+            6 -> listOf(3, 4, 5, 6, 7, 8)
+            8 -> listOf(8)
+            9 -> listOf(5, 8)
+            else -> emptyList()
+        }
+        return SeatLevel.entries.filter { it.code == 0 || it.code in codes }
+    }
+
+    /** True when at least one seat can be heated or cooled remotely (or it isn't known yet). */
+    val remoteSeats: Boolean get() = (0 until 4).any { seatLevels(it).size > 1 }
 }
 
 enum class ClimateFormat(val label: String) {

@@ -149,7 +149,8 @@ fun ClimateScreen(vm: MainViewModel, onBack: () -> Unit) {
             )
             val seatWarning = vm.seatWarning()
             Text(
-                seatWarning?.substringBefore(". ")?.let { "$it, check the seats" } ?: "Tap a seat to change it",
+                seatWarning?.substringBefore(". ")?.let { "$it, check the seats" }
+                    ?: if (vm.caps.remoteSeats) "Tap a seat to change it" else "Bluelink can't heat or cool the seats on this car remotely",
                 style = MaterialTheme.typography.bodySmall,
                 color = if (seatWarning != null) app.alert else scheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 8.dp),

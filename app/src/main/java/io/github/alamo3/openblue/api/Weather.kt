@@ -123,10 +123,16 @@ fun ClimateSettings.withoutMismatchedSeats(weather: Weather?): ClimateSettings {
 }
 
 /** The heating code this car takes: split wheel/rear controls, or one switch for everything. */
-fun ClimateSettings.forCar(caps: VehicleCaps): ClimateSettings = copy(
-    heating = when {
-        heating == 0 -> 0
-        caps.splitHeating -> if (heating == 1) 4 else heating
-        else -> 1
-    },
-)
+fun ClimateSettings.forCar(caps: VehicleCaps): ClimateSettings {
+    var out = copy(
+        heating = when {
+            heating == 0 -> 0
+            caps.splitHeating -> if (heating == 1) 4 else heating
+            else -> 1
+        },
+    )
+    // Seat settings the car can't take remotely (saved earlier, or from another car) are left
+    // out: Bluelink turns down the whole request otherwise.
+    seats.forEachIndexed { i, code -> if (caps.seatLevels(i).none { it.code == code }) out = out.withSeat(i, 0) }
+    return out
+}
