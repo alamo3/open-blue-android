@@ -294,13 +294,21 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, open: (Route) -> Unit 
             onDismissRequest = { vm.diagnostics = null },
             title = { Text("Raw vehicle data") },
             text = {
-                SelectionContainer {
+                Column {
                     Text(
-                        text,
-                        fontFamily = FontFamily.Monospace,
+                        "IDs, the VIN's serial number, names, contact details and the car's location are removed, so this is safe to share for help.",
                         style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(bottom = 8.dp),
                     )
+                    SelectionContainer {
+                        Text(
+                            text,
+                            fontFamily = FontFamily.Monospace,
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.heightIn(max = 400.dp).verticalScroll(rememberScrollState()),
+                        )
+                    }
                 }
             },
             confirmButton = { TextButton(onClick = { clipboard.setText(AnnotatedString(text)) }) { Text("Copy") } },

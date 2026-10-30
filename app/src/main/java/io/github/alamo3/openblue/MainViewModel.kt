@@ -52,6 +52,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import io.github.alamo3.openblue.api.forCar
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import java.io.IOException
@@ -1937,7 +1938,8 @@ class MainViewModel(
         val v = vehicle ?: return
         task("Fetching vehicle data") {
             val raw = api.selectVehicle(v.id)
-            diagnostics = prettyJson.encodeToString(JsonObject.serializer(), raw)
+            // Shown for copying and sharing, so nothing that identifies the car or its owner.
+            diagnostics = prettyJson.encodeToString(JsonElement.serializer(), io.github.alamo3.openblue.api.Redact.json(raw))
         }
     }
 }
