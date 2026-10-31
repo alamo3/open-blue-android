@@ -127,7 +127,9 @@ fun ClimateSettings.forCar(caps: VehicleCaps): ClimateSettings {
     var out = copy(
         heating = when {
             heating == 0 -> 0
-            caps.splitHeating -> if (heating == 1) 4 else heating
+            // Bluelink's known heating codes are 1 (steering + rear), 2 (rear) and 3 (steering);
+        // hyundai_kia_connect_api and kia_uvo never send 4, so steering + rear + mirrors goes as 1.
+        caps.splitHeating -> if (heating == 4) 1 else heating
             else -> 1
         },
     )
