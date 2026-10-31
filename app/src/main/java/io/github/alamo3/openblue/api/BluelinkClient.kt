@@ -248,6 +248,12 @@ class BluelinkClient(private val store: SecureStore) {
         genType = selected.str("vehicle.genType"),
         hvacTempType = selected.int("features.hvacTempType"),
         strgWhlHeatingOption = selected.int("features.strgWhlHeatingOption"),
+        rearWindowHeat = !selected.arr("featuresModel.features").any { cat ->
+            cat.arr("features").any { f ->
+                f.str("featureName") == "Climate" &&
+                    f.arr("features").any { it.str("subFeatureName") == "RearWinodwHeat" && it.str("subFeatureValue") == "0" }
+            }
+        },
         seatOptions = listOf("drv", "ast", "rl", "rr").map { selected.int("features.seatHeatVent.${it}SeatHeatOption") },
         photoUrl = selected.str("vehicle.photoUrl"),
         trim = selected.str("vehicle.trim")?.trim()?.trimEnd('-')?.trim()?.takeIf { it.isNotEmpty() },
