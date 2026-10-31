@@ -54,7 +54,9 @@ import io.github.alamo3.openblue.api.forCar
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.put
 import java.io.IOException
 
 sealed interface Screen {
@@ -1945,8 +1947,17 @@ class MainViewModel(
         val v = vehicle ?: return
         task("Fetching vehicle data") {
             val raw = api.selectVehicle(v.id)
+            // What the climate start depends on: the vehicle list entry (vehicleGeneration), the
+            // key chosen from it, and the last command sent with its answer.
+            val extra = buildJsonObject {
+                put("climateKey", api.climateKey())
+                put("climateFormatSetting", store.climateFormat.name)
+                runCatching { api.vehicleListEntry(v.id) }.getOrNull()?.let { put("vhcllst", it) }
+                api.lastCommand?.let { put("lastCommand", it) }
+            }
             // Shown for copying and sharing, so nothing that identifies the car or its owner.
-            diagnostics = prettyJson.encodeToString(JsonElement.serializer(), io.github.alamo3.openblue.api.Redact.json(raw))
+            val shared = JsonObject(raw + ("openBlueDebug" to extra))
+            diagnostics = prettyJson.encodeToString(JsonElement.serializer(), io.github.alamo3.openblue.api.Redact.json(shared))
         }
     }
 }
