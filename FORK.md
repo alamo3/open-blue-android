@@ -11,7 +11,7 @@ A copy of [alamo3/open-blue-android](https://github.com/alamo3/open-blue-android
 
 ## Keeping up with the author
 
-On GitHub, open this repository and tap **Sync fork**, then **Update branch**. The push builds a new APK, publishes it as the `latest` release, and the app installs it by itself within a few hours (or at once from Settings > App updates). If GitHub says it can't sync automatically, the author changed a file this fork also changes; ask Claude to merge it.
+On GitHub, open this repository and tap **Sync fork**, then **Update branch**. The push builds a new APK, publishes it as the `latest` release, and the app installs it by itself within a few hours (or at once from Settings > App updates). If no build starts, open **Actions > Build APK > Run workflow**. If GitHub says it can't sync automatically, the author changed a file this fork also changes; ask Claude to merge it.
 
 ## Signing
 
