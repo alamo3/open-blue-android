@@ -1889,7 +1889,7 @@ class MainViewModel(
         soundOn = true
         soundReadout = SoundReadout(4650f, -1, 92f, 2.6f, 0.68f, 1f, gpsFix = true, hasSensors = true)
         soundDelayNote = "Measured 182 ms from the phone to your ears. Look-ahead set to 160 ms."
-        setSoundCar("00:11:22:33:44:55", "IONIQ 5")
+        setSoundCar("00:11:22:33:44:55", "IONIQ 6")
         soundLookaheadMs = 160
     }
 

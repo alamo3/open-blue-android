@@ -78,7 +78,7 @@ class ScreenshotTest(private val night: Boolean) {
             store.username = "driver@example.com"
             store.password = "x"
             store.pin = "0000"
-            store.vehicle = VehicleInfo("demo", "My IONIQ 5", "IONIQ 5 EV", "2027", "KM8DEMO0000000000", "E")
+            store.vehicle = VehicleInfo("demo", "My IONIQ 6", "IONIQ 6", "2024", "KMHDEMO0000000000", "E")
             store.caps = VehicleCaps(
                 genType = "G3", hvacTempType = 1, strgWhlHeatingOption = 2,
                 seatOptions = listOf(6, 6, 1, 1), trim = "Ultimate", odometer = 1234.0, odometerUnit = 1, hasSvm = true,

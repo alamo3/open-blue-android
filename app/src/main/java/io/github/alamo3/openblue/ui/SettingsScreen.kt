@@ -92,9 +92,9 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, open: (Route) -> Unit 
                 selected = vm.carBodyOverride,
                 optionLabel = { b ->
                     when {
-                        b == null && auto == CarBody.IONIQ5 -> "Automatic (IONIQ 5)"
+                        b == null && auto.named -> "Automatic (${auto.label})"
                         b == null -> "Automatic (${auto.label.lowercase()} stand-in)"
-                        b == CarBody.IONIQ5 -> "IONIQ 5"
+                        b.named -> b.label
                         else -> "${b.label} stand-in"
                     }
                 },
@@ -102,7 +102,7 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, open: (Route) -> Unit 
                 modifier = Modifier.fillMaxWidth(),
             )
             Text(
-                "The IONIQ 5 has its own model. Other cars get a stand-in of their body type, with doors, frunk, tailgate and the charging cable all working.",
+                "The IONIQ 5 has its own model and the IONIQ 6 a stand-in shaped like it. Other cars get a stand-in of their body type, with doors, frunk, tailgate and the charging cable all working.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
