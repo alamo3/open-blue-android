@@ -147,10 +147,12 @@ fun ChargingScreen(vm: MainViewModel, onBack: () -> Unit, open: (Route) -> Unit 
                 pre == true,
             ) { on -> if (vm.canAct) vm.batteryPreconditioning(on) }
 
-            // Hyundai's charging service (read-only for now)
-            HorizontalDivider(color = app.hairline, modifier = Modifier.padding(top = 8.dp))
-            SectionTitle("Public charging")
-            PublicCharging(vm, open)
+            // Hyundai's charging service (read-only for now); Kia has no in-app charging.
+            if (vm.brand.hasInAppCharging) {
+                HorizontalDivider(color = app.hairline, modifier = Modifier.padding(top = 8.dp))
+                SectionTitle("Public charging")
+                PublicCharging(vm, open)
+            }
         }
     }
 }

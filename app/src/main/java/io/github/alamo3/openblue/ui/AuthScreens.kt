@@ -1,6 +1,7 @@
 package io.github.alamo3.openblue.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,6 +25,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -41,6 +43,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import io.github.alamo3.openblue.MainViewModel
 import io.github.alamo3.openblue.Screen
+import io.github.alamo3.openblue.api.Brand
 import io.github.alamo3.openblue.api.VehicleInfo
 
 /** Full-width primary action; shows a spinner while [loading]. */
@@ -67,6 +70,7 @@ fun LoginScreen(vm: MainViewModel) {
     var email by rememberSaveable { mutableStateOf("") }
     var password by rememberSaveable { mutableStateOf("") }
     var pin by rememberSaveable { mutableStateOf("") }
+    var brand by rememberSaveable { mutableStateOf(vm.brand) }
     val busy = vm.busy != null
     val ready = email.isNotBlank() && password.isNotEmpty() && pin.length == 4
 
@@ -77,11 +81,21 @@ fun LoginScreen(vm: MainViewModel) {
         Spacer(Modifier.height(56.dp))
         Text("Open Blue", style = MaterialTheme.typography.displayMedium)
         Text(
-            "Sign in with your Bluelink Canada account, the same one you use on mybluelink.ca.",
+            "Sign in with your ${brand.serviceName} Canada account, the same one you use on ${brand.host}.",
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        Spacer(Modifier.height(12.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Brand.entries.forEach { b ->
+                Row(
+                    Modifier.clickable(enabled = !busy) { brand = b },
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    RadioButton(selected = brand == b, onClick = { brand = b }, enabled = !busy)
+                    Text(b.label, style = MaterialTheme.typography.bodyLarge)
+                }
+            }
+        }
         OutlinedTextField(
             value = email, onValueChange = { email = it },
             label = { Text("Email") }, singleLine = true, shape = MaterialTheme.shapes.medium,
@@ -97,7 +111,7 @@ fun LoginScreen(vm: MainViewModel) {
         )
         OutlinedTextField(
             value = pin, onValueChange = { pin = it.filter(Char::isDigit).take(4) },
-            label = { Text("Bluelink PIN") },
+            label = { Text("${brand.serviceName} PIN") },
             supportingText = { Text("The 4-digit PIN for remote commands") },
             singleLine = true, shape = MaterialTheme.shapes.medium,
             visualTransformation = PasswordVisualTransformation(),
@@ -105,9 +119,9 @@ fun LoginScreen(vm: MainViewModel) {
             modifier = Modifier.fillMaxWidth(),
         )
         Spacer(Modifier.height(4.dp))
-        PrimaryButton("Sign in", enabled = ready && !busy, loading = busy) { vm.login(email, password, pin) }
+        PrimaryButton("Sign in", enabled = ready && !busy, loading = busy) { vm.login(email, password, pin, brand) }
         Text(
-            "Your details are stored encrypted on this phone and sent only to mybluelink.ca. Open Blue is unofficial and not affiliated with Hyundai.",
+            "Your details are stored encrypted on this phone and sent only to ${brand.host}. Open Blue is unofficial and not affiliated with ${brand.company}.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = 8.dp, bottom = 32.dp),
@@ -129,7 +143,7 @@ fun OtpScreen(vm: MainViewModel, state: Screen.Otp) {
         Spacer(Modifier.height(56.dp))
         Text("Verify this phone", style = MaterialTheme.typography.headlineMedium)
         Text(
-            if (sent) "Enter the code Bluelink sent you." else "Bluelink sends a one-time code the first time it sees a new phone. Where should it go?",
+            if (sent) "Enter the code ${vm.brand.serviceName} sent you." else "${vm.brand.serviceName} sends a one-time code the first time it sees a new phone. Where should it go?",
             style = MaterialTheme.typography.bodyLarge,
             color = scheme.onSurfaceVariant,
         )
