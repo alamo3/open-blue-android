@@ -71,9 +71,23 @@ for m in bpy.data.materials:
     elif n in ("aluminum", "matal") or "RimFace" in n: look(m, base, 0.9, 0.3)
     elif n == "Tires": look(m, (0.02, 0.02, 0.022), 0.0, 0.85)
     elif "13_-_Default" in n: look(m, base, 0.0, 0.3, emit=(0.9, 0.45, 0.0))   # mirror indicators
+    elif n in ("material_2", "material_3") or n.endswith(("lambert5", "lambert2", "lambert6")):
+        # a black interior (the model's is pale grey), as most of these cars have and as the
+        # climate screen's cabin view expects
+        look(m, (0.05, 0.051, 0.055) if n == "material_3" else (0.032, 0.033, 0.036), 0.0, 0.7)
     else: look(m, base, 0.0, 0.5)
 
 paint = bpy.data.materials["paint"]
+
+# The pale grey "blinn1" trim is also used inside (steering wheel, seat backs): darken it there.
+cabin_mat = bpy.data.materials["material_2"]
+for o in mesh_objects():
+    if not o.name.endswith("exterior04blinn1"): continue
+    if cabin_mat.name not in [ms.material.name for ms in o.material_slots if ms.material]: o.data.materials.append(cabin_mat)
+    ci = [ms.material.name for ms in o.material_slots].index(cabin_mat.name)
+    for p in o.data.polygons:
+        c = p.center
+        if abs(c.x) < 0.72 and 0.55 < c.z < 1.12 and -1.15 < c.y < 1.25: p.material_index = ci
 
 # Alberta cars carry no front plate: drop the model's front one (the rear "IONIQ 6" plate stays).
 for o in mesh_objects():

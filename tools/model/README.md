@@ -55,6 +55,7 @@ its anchors and `car_ioniq6-LICENSE.txt`.
    scales to the real 4,855 mm length and builds one object per material.
 2. `rig6.py stage1.blend car_ioniq6.glb`:
    - paint (the material `paint`) set to Nocturne Grey and the black roof panel painted to match;
+     the pale grey interior made black;
      glass, light lenses, lamps, rims and tyres given phone-friendly materials;
    - the front plate removed (Alberta);
    - islands sorted by region, as in `rig.py`: anything inside a wheel's space joins `wheels`;
@@ -65,3 +66,6 @@ its anchors and `car_ioniq6-LICENSE.txt`.
      `generic.py`'s format.
 3. The still and the map marker: `appview.py` with `CAR_ANCHORS=car_ioniq6-anchors.json` (`... 40 12 0
    none 1100 748`), and a top-down orthographic render cropped to the car and scaled to 240 px wide.
+4. The climate screen's cabin: `cabinview.py car_ioniq6.glb studio.hdr cabin.png 1.06 700 1500 -2.45 2.45`
+   (`res/drawable-nodpi/cabin_top_ioniq6.webp`); its seat, steering wheel and windshield areas are
+   `IONIQ6_CABIN` in `ui/CabinView.kt`.
