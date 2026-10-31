@@ -347,7 +347,8 @@ class BluelinkClient(private val store: SecureStore) {
     /** sltvhcl: vehicle + status + feature flags (hvacTempType etc). Returns the "result" object. */
     suspend fun selectVehicle(vehicleId: String): JsonObject = authed { t ->
         val reply = post("sltvhcl", headers = mapOf("accessToken" to t, "vehicleId" to vehicleId))
-        genHeader = reply.headers["genType"]
+        // "" = the car answered without the header, which the official app treats as not Gen3.
+        genHeader = reply.headers["genType"] ?: ""
         val body = check(reply)
         (body.at("result") as? JsonObject) ?: JsonObject(emptyMap())
     }
@@ -716,11 +717,13 @@ class BluelinkClient(private val store: SecureStore) {
     fun climateKey(): String = when (store.climateFormat) {
         ClimateFormat.HVAC_INFO -> "hvacInfo"
         ClimateFormat.REMOTE_CONTROL -> "remoteControl"
-        // The official app uses remoteControl only when the sltvhcl genType header says "Gen3";
-        // the body's genType says G3 for the 2023 IONIQ 5 too. Fall back to it if there's no header.
-        ClimateFormat.AUTO -> store.caps?.genHeader
-            ?.let { if (it.equals("Gen3", true)) "remoteControl" else "hvacInfo" }
-            ?: if (store.caps?.isGen3 == true) "remoteControl" else "hvacInfo"
+        // The official app uses remoteControl only when the sltvhcl genType header says "Gen3"; with no
+        // header (the 2023 IONIQ 5) it sends hvacInfo. The body's genType says G3 on both, so it's only
+        // used while the header hasn't been fetched yet. A key that worked after a 6452 is remembered.
+        ClimateFormat.AUTO -> store.learnedClimateKey ?: when (val h = store.caps?.genHeader) {
+            null -> if (store.caps?.isGen3 == true) "remoteControl" else "hvacInfo"
+            else -> if (h.equals("Gen3", true)) "remoteControl" else "hvacInfo"
+        }
     }
 
     suspend fun startClimate(vehicle: VehicleInfo, s: ClimateSettings): String {
@@ -737,18 +740,31 @@ class BluelinkClient(private val store: SecureStore) {
                 put("hvacTempType", hvacTempType)
             }
             put("igniOnDuration", s.durationMin)
-            // Cars that can't set seats remotely (e.g. a 2023 IONIQ 5) refuse the request (6452)
-            // if the seat block is there at all, even with every seat at 0, so leave it out.
-            if (store.caps?.remoteSeats != false) {
-                putJsonObject("seatHeaterVentCMD") {
-                    put("drvSeatOptCmd", s.driverSeat)
-                    put("astSeatOptCmd", s.passengerSeat)
-                    put("rlSeatOptCmd", s.rearLeftSeat)
-                    put("rrSeatOptCmd", s.rearRightSeat)
-                }
+            // Always sent, zeros when no seat is set: hyundai_kia_connect_api does the same.
+            putJsonObject("seatHeaterVentCMD") {
+                put("drvSeatOptCmd", s.driverSeat)
+                put("astSeatOptCmd", s.passengerSeat)
+                put("rlSeatOptCmd", s.rearLeftSeat)
+                put("rrSeatOptCmd", s.rearRightSeat)
             }
         }
-        return command("evc/rfon", vehicle.id, buildJsonObject { put(climateKey(), settings) })
+        val key = climateKey()
+        try {
+            return command("evc/rfon", vehicle.id, buildJsonObject { put(key, settings) })
+        } catch (e: ApiException) {
+            // 6452 is Bluelink's catch-all refusal. On Automatic, try the other payload key once and
+            // remember it if the car takes it, so a wrong guess about the car's generation heals itself.
+            if (e.code != "6452" || store.climateFormat != ClimateFormat.AUTO) throw e
+            val other = if (key == "remoteControl") "hvacInfo" else "remoteControl"
+            val first = lastCommand
+            try {
+                val tid = command("evc/rfon", vehicle.id, buildJsonObject { put(other, settings) })
+                store.learnedClimateKey = other
+                return tid
+            } finally {
+                lastCommand = listOfNotNull(first, "--- retried with $other ---", lastCommand).joinToString("\n\n")
+            }
+        }
     }
 
     /** Polls rmtsts until the car confirms (C), fails, or we give up. */

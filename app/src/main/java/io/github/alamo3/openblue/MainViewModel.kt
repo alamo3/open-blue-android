@@ -291,6 +291,7 @@ class MainViewModel(
 
     private suspend fun chooseVehicleNow(v: VehicleInfo) {
         if (store.vehicle?.id != v.id) {
+            store.learnedClimateKey = null
             store.lastLocation = null
             location = null
             chargeService = null
@@ -1949,7 +1950,8 @@ class MainViewModel(
             val extra = buildJsonObject {
                 put("climateKey", api.climateKey())
                 put("climateFormatSetting", store.climateFormat.name)
-                put("genTypeHeader", caps.genHeader ?: "(none)")
+                put("genTypeHeader", caps.genHeader?.ifEmpty { "(absent)" } ?: "(not fetched)")
+                store.learnedClimateKey?.let { put("learnedClimateKey", it) }
                 runCatching { api.vehicleListEntry(v.id) }.getOrNull()?.let { put("vhcllst", it) }
                 api.lastCommand?.let { put("lastCommand", it) }
             }
