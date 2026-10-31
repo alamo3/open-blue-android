@@ -1,0 +1,12 @@
+Model Information:
+* title:	Hyundai Ioniq 6
+* source:	https://sketchfab.com/3d-models/hyundai-ioniq-6-84b503d8606542ae80c09a859e9fd2f2
+* author:	Mona x Supercars (https://sketchfab.com/Car2022)
+
+Model License:
+* license type:	CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+* requirements:	Author must be credited. Commercial use is allowed.
+
+This work is based on "Hyundai Ioniq 6" (https://sketchfab.com/3d-models/hyundai-ioniq-6-84b503d8606542ae80c09a859e9fd2f2) by Mona x Supercars (https://sketchfab.com/Car2022) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+
+Changes: converted from COLLADA, edge lines and duplicate faces removed, doors, frunk and trunk lid separated into hinged parts, repainted Nocturne Grey with the roof in body colour, front plate removed, simplified for phones, ground shadow and charging cable added (tools/model/prep6.py, tools/model/rig6.py).

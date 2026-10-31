@@ -4,7 +4,7 @@ A copy of [alamo3/open-blue-android](https://github.com/alamo3/open-blue-android
 
 ## What's different
 
-- **IONIQ 6 body.** `tools/model/generic.py ioniq6` builds a stand-in shaped like the 2023–25 IONIQ 6 (its published dimensions, one-arc roof, long rear window, the ducktail "elliptical wing" with its stop lamp, charge port at the right rear) with the same hinged parts as the other stand-ins. Output: `app/src/main/assets/models/car_ioniq6.glb` and its anchors, the still `car_still_ioniq6.webp` and the map marker `car_top_ioniq6.webp`, both rendered in Nocturne Grey. `ui/CarBody.kt` picks it for any Bluelink model name containing "IONIQ 6". The other stand-ins build exactly as before.
+- **IONIQ 6 model.** A detailed model of the 2023–25 IONIQ 6 ("Hyundai Ioniq 6" by Mona x Supercars, Sketchfab, CC BY 4.0, credited in Settings and `app/src/main/assets/models/car_ioniq6-LICENSE.txt`), converted and rigged by `tools/model/prep6.py` and `rig6.py`: doors, frunk and trunk open, Nocturne Grey paint with the roof in body colour, no front plate, charging cable at the right-rear port. Output: `car_ioniq6.glb` and its anchors, the still `car_still_ioniq6.webp` and the map marker `car_top_ioniq6.webp`. `ui/CarBody.kt` picks it for any Bluelink model name containing "IONIQ 6". See `tools/model/README.md`.
 - **Nocturne Grey** paint replaces the generic grey swatch (`ui/CarBody.kt`, `CarPaint.GREY`) and is the default until another colour is chosen in Settings > Your car in 3D. Hyundai publishes no colour value, so it's matched by eye to a dark charcoal.
 - **Updates come from this fork.** `update/Updater.kt` reads this repository's `latest` release, so the app only installs builds made here.
 - Screenshot tests use an IONIQ 6 as the demo car.

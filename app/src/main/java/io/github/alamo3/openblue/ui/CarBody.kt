@@ -12,9 +12,9 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 /**
- * Which 3D car to show. The IONIQ 5 has its own model and the IONIQ 6 a stand-in shaped like it;
- * any other car gets a stand-in of its body type (tools/model/generic.py), with the same hinged
- * parts so doors, frunk, tailgate and the charging cable work the same way.
+ * Which 3D car to show. The IONIQ 5 and IONIQ 6 have their own models (tools/model/rig.py,
+ * rig6.py); any other car gets a stand-in of its body type (tools/model/generic.py), with the same
+ * hinged parts so doors, frunk, tailgate and the charging cable work the same way.
  */
 enum class CarBody(
     val label: String,

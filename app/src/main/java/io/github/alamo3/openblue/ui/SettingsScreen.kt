@@ -102,7 +102,7 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, open: (Route) -> Unit 
                 modifier = Modifier.fillMaxWidth(),
             )
             Text(
-                "The IONIQ 5 has its own model and the IONIQ 6 a stand-in shaped like it. Other cars get a stand-in of their body type, with doors, frunk, tailgate and the charging cable all working.",
+                "The IONIQ 5 and IONIQ 6 have their own models. Other cars get a stand-in of their body type, with doors, frunk, tailgate and the charging cable all working.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -221,7 +221,9 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, open: (Route) -> Unit 
                 "Open Blue ${BuildConfig.VERSION_NAME}. An unofficial app, not affiliated with Hyundai or Kia. " +
                     "Set in Barlow, licensed under the SIL Open Font License. " +
                     "3D car based on \"2024 Hyundai Ioniq 5 N\" by Ddiaz Design (sketchfab.com/ddiaz-design), " +
-                    "licensed under CC BY-NC 4.0 and modified (doors, frunk and tailgate separated, repainted, simplified, shadow and charging cable added).",
+                    "licensed under CC BY-NC 4.0 and modified (doors, frunk and tailgate separated, repainted, simplified, shadow and charging cable added). " +
+                    "IONIQ 6 based on \"Hyundai Ioniq 6\" by Mona x Supercars (sketchfab.com/Car2022), licensed under CC BY 4.0 and modified " +
+                    "(converted, doors, frunk and trunk separated, repainted, front plate removed, simplified, shadow and charging cable added).",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

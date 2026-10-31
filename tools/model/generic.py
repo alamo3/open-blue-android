@@ -1,4 +1,4 @@
-"""Generic stand-in cars for models the app has no 3D model of: generic.py <sedan|crossover|suv|ioniq6> out.glb
+"""Generic stand-in cars for models the app has no 3D model of: generic.py <sedan|crossover|suv> out.glb
 
 Built from scratch (no third-party meshes): the body is lofted from a side profile, a plan-view
 outline and cross-sections, then split into the same named, hinged parts as the IONIQ 5 rig
@@ -40,24 +40,6 @@ TYPES = {
              (-1.95, 1.75), (-2.30, 1.70), (-2.40, 1.12), (-2.42, 1.00), (-2.43, 0.66)],
         belt=(1.10, 1.16), cowl=1.05, ws_top=0.20, rear_top=-2.30, rear_bot=-2.40,
     ),
-    # IONIQ 6 (2023-25): one arc from the windshield to a ducktail, a long shallow rear window ending
-    # at the elliptical wing, a narrow greenhouse that tapers to the rear. Optional keys: e_front/e_rear
-    # (plan-view roundness), tumble (how much narrower the roof is than the body), c_pillar (where the
-    # side glass ends, if not just behind the rear glass), wing (a spoiler on the trunk lid).
-    "ioniq6": dict(
-        L=4.855, W=1.88, H=1.495, WB=2.95, R=0.352, front_oh=0.85, clear=0.141, cladding=False, hatch=False,
-        top=[(2.4275, 0.58), (2.38, 0.69), (2.28, 0.755), (2.10, 0.80), (1.85, 0.845), (1.60, 0.885), (1.35, 0.925),
-             (1.09, 0.955), (0.80, 1.14), (0.50, 1.33), (0.25, 1.44), (0.05, 1.485), (-0.15, 1.495), (-0.45, 1.475),
-             (-0.75, 1.43), (-1.05, 1.36), (-1.35, 1.27), (-1.65, 1.17), (-1.90, 1.09), (-2.10, 1.04), (-2.28, 1.005),
-             (-2.37, 0.985), (-2.405, 0.97), (-2.4275, 0.92)],
-        belt=(0.99, 1.02), cowl=1.09, ws_top=0.25, rear_top=-0.80, rear_bot=-1.88,
-        e_front=3.5, e_rear=4.5, tumble=0.30, tumble_rear=0.12, c_pillar=-1.28, rg_inset=2, cabin_end=-1.30,
-        nose_trim=9, tail_trim=10, mirror=(0.22, 0.12, 0.09),
-        # the "elliptical wing": a ducktail spoiler across the end of the trunk lid, its ends curling
-        # down into winglets, with the high-mounted stop lamp along its trailing edge
-        wing=dict(s=-2.30, chord=0.20, lift=0.012, span=0.62, thick=0.035, tip=-0.05, struts=False, lamp=0.36),
-        paint_rgb=(0.048, 0.053, 0.060), paint_metal=(0.35, 0.28),   # Nocturne Grey (by eye: dark charcoal)
-    ),
 }
 P = TYPES[KIND]
 L, W, H, WB, R = P["L"], P["W"], P["H"], P["WB"], P["R"]
@@ -91,7 +73,7 @@ def z_bot(s):
     return z
 def half_w(s):
     # Rounder at the nose than at the tail (plan view).
-    u = min(1.0, abs(s) / HALF); e = P.get("e_front", 4.0) if s > 0 else P.get("e_rear", 6.0)
+    u = min(1.0, abs(s) / HALF); e = 4.0 if s > 0 else 6.0
     return W / 2 * (1 - u ** e) ** (1 / e)
 def cabin(s):  # how much greenhouse there is here, 0..1
     return max(0.0, min(1.0, (z_top(s) - z_belt(s) - 0.05) / 0.12))
@@ -107,9 +89,8 @@ SPLIT = S_F - RA - 1.02     # B-pillar
 DOOR_F0 = S_F - RA - 0.04   # front door leading edge
 DOOR_R1 = S_R + RA * 0.55   # rear door trailing edge
 cowl, wst, rtop, rbot = P["cowl"], P["ws_top"], P["rear_top"], P["rear_bot"]
-CPIL = P.get("c_pillar", rtop + (0.18 if P["hatch"] else 0.12))   # where the side glass ends
 A_GAP = 0.16                # A-pillar width along the car at the window line
-cuts = [SPLIT - 0.05, SPLIT + 0.05, DOOR_F0, DOOR_R1, cowl, wst, rtop, rbot, CPIL,
+cuts = [SPLIT - 0.05, SPLIT + 0.05, DOOR_F0, DOOR_R1, cowl, wst, rtop, rbot, rtop + (0.18 if P["hatch"] else 0.12),
         HALF - 0.14, HALF - 0.16, -HALF + 0.12, -HALF + 0.14, cowl - A_GAP]
 s_vals = sorted(set([round(x, 4) for x in np.arange(-HALF + 0.002, HALF - 0.002, 0.022)] + [round(c, 4) for c in cuts]), reverse=True)
 s_vals = [x for x in s_vals if -HALF < x < HALF]
@@ -131,8 +112,7 @@ rings, ring_s = [], []
 for s in s_vals:
     zs, zl, zt, g = row_heights(s)
     zb = zs[0]; w = half_w(s)
-    taper = max(0.0, min(1.0, (SPLIT - s) / (SPLIT - rbot)))   # 0 at the B-pillar, 1 at the rear glass's foot
-    top_w = w * (1 - (P.get("tumble", 0.22) + P.get("tumble_rear", 0.0) * taper) * g)
+    top_w = w * (1 - 0.22 * g)
     pts = []
     for z in zs:
         hw = w if (z <= zl or g == 0) else w + (top_w - w) * (z - zl) / max(zt - zl, 1e-3)
@@ -180,7 +160,7 @@ def mat(name, color, metallic=0.0, rough=0.5, emit=None, alpha=1.0):
     MATS[name] = len(MATS)
     return m
 mats = [
-    mat("paint", P.get("paint_rgb", (0.78, 0.78, 0.75)), *P.get("paint_metal", (0.0, 0.32))),
+    mat("paint", (0.78, 0.78, 0.75), 0.0, 0.32),
     mat("glass", (0.02, 0.025, 0.03), 0.0, 0.04, alpha=0.62),
     mat("trim", (0.025, 0.026, 0.028), 0.0, 0.6),
     mat("light_front", (0.9, 0.92, 0.95), 0.0, 0.2, emit=(0.85, 0.9, 1.0)),
@@ -206,19 +186,15 @@ def classify(f):
     if (kind == 'tail' or (kind in ('L', 'R') and s < -HALF + 0.10)) and row in LIGHT_R: return "light_rear"
     # Black sill and arch edges (the lowest rows follow the wheel arches), more on crossovers and SUVs.
     if kind == 'bottom' or (kind in ('L', 'R', 'nose', 'tail') and 0 <= row < (3 if P["cladding"] else 1)): return "trim"
-    # A black lower intake across the nose and a diffuser across the tail (rows from the bottom).
-    if (kind == 'nose' or (kind in ('L', 'R') and s > HALF - 0.12)) and row < P.get("nose_trim", 0): return "trim"
-    if (kind == 'tail' or (kind in ('L', 'R') and s < -HALF + 0.10)) and row < P.get("tail_trim", 0): return "trim"
     if g > 0.5 and kind in ('top', 'L', 'R') and (row in BAND2 or row in BAND3 or kind == 'top'):
         front = wst < s < cowl
         rear = rbot < s < rtop
         if front and (kind == 'top' or row in BAND3 or nrm.y < -0.35): return "glass"
-        if rear and (kind == 'top' or (row in BAND3 and row >= N1 + N2 + P.get("rg_inset", 0))
-                     or (nrm.y > 0.35 and not P.get("rg_inset"))): return "glass"
+        if rear and (kind == 'top' or row in BAND3 or nrm.y > 0.35): return "glass"
         if kind in ('L', 'R') and row in BAND2:
             a_pillar = s > cowl - A_GAP
             b_pillar = abs(s - SPLIT) < 0.05
-            c_pillar = s < CPIL
+            c_pillar = s < rtop + (0.18 if P["hatch"] else 0.12)
             if not (a_pillar or b_pillar or c_pillar): return "glass"
     return "paint"
 
@@ -287,51 +263,6 @@ for lab, o in parts.items():
     set_origin(o, hinge)
     print(lab, len(o.data.polygons), "faces, hinge", [round(x, 3) for x in hinge])
 
-# ------------------------------------------------------------------ optional wing on the trunk lid
-if P.get("wing") and "tailgate" in parts:
-    wg = P["wing"]
-    bmw = bmesh.new()
-    NS, NA = 24, 16                     # sections across the car, points round each section
-    secs = []
-    for i in range(NS + 1):
-        x = -wg["span"] + 2 * wg["span"] * i / NS
-        u = abs(x) / wg["span"]
-        zc = z_top(wg["s"]) + wg["lift"] + wg["tip"] * u ** 4
-        ch = wg["chord"] * (1 - 0.35 * u ** 6)  # tips taper a little
-        ring = []
-        for k in range(NA):
-            a = 2 * math.pi * k / NA
-            ds = 0.5 * ch * math.cos(a)
-            dz = 0.5 * wg["thick"] * math.sin(a) * (1.0 if math.sin(a) > 0 else 0.6)
-            ring.append(bmw.verts.new((x, -(wg["s"] + ds), zc + dz)))
-        secs.append(ring)
-    for r0, r1 in zip(secs, secs[1:]):
-        for k in range(NA):
-            bmw.faces.new((r0[k], r0[(k + 1) % NA], r1[(k + 1) % NA], r1[k]))
-    bmw.faces.new(list(reversed(secs[0]))); bmw.faces.new(secs[-1])
-    # two short struts down to the deck
-    for xs in ((-wg["span"] * 0.55, wg["span"] * 0.55) if wg.get("struts", True) else ()):
-        m = (mathutils.Matrix.Translation(V((xs, -wg["s"], z_top(wg["s"]) + wg["lift"] / 2))) @
-             mathutils.Matrix.Diagonal(V((0.03, wg["chord"] * 0.5, wg["lift"] + 0.02, 1))))
-        bmesh.ops.create_cube(bmw, size=1.0, matrix=m)
-    bmesh.ops.recalc_face_normals(bmw, faces=bmw.faces)
-    for f in bmw.faces: f.smooth = True; f.material_index = 0
-    if wg.get("lamp"):
-        # high-mounted stop lamp: a thin red strip along the trailing edge
-        zl_ = z_top(wg["s"]) + wg["lift"]
-        m = (mathutils.Matrix.Translation(V((0, -(wg["s"] - 0.5 * wg["chord"]) + 0.004, zl_))) @
-             mathutils.Matrix.Diagonal(V((2 * wg["lamp"], 0.012, 0.012, 1))))
-        lamp = bmesh.ops.create_cube(bmw, size=1.0, matrix=m)
-        for v in lamp["verts"]:
-            for f in v.link_faces: f.material_index = 1
-    mw_ = bpy.data.meshes.new("wing"); bmw.to_mesh(mw_); bmw.free()
-    mw_.materials.append(bpy.data.materials["paint"]); mw_.materials.append(bpy.data.materials["light_rear"])
-    wo = bpy.data.objects.new("wing", mw_); coll.objects.link(wo)
-    bpy.ops.object.select_all(action='DESELECT')
-    wo.select_set(True); parts["tailgate"].select_set(True)
-    bpy.context.view_layer.objects.active = parts["tailgate"]; bpy.ops.object.join()
-    print("wing joined to the trunk lid")
-
 # ------------------------------------------------------------------ cabin, wheels, mirrors
 def box(name, x0, x1, y0, y1, z0, z1, m, bevel=0.0):
     bmx = bmesh.new()
@@ -347,7 +278,7 @@ def box(name, x0, x1, y0, y1, z0, z1, m, bevel=0.0):
 dark = mat("interior", (0.035, 0.036, 0.04), 0.0, 0.8)
 seat = mat("seat", (0.06, 0.062, 0.068), 0.0, 0.7)
 iw = half_w(0) - 0.08
-cab = [box("interior", -iw, iw, -(cowl - 0.05), -P.get("cabin_end", rbot + 0.25), z_bot(0) + 0.05, z_belt(0) - 0.02, dark)]
+cab = [box("interior", -iw, iw, -(cowl - 0.05), -(rbot + 0.25), z_bot(0) + 0.05, z_belt(0) - 0.02, dark)]
 # dash and seats, so the cabin isn't empty through the glass
 cab.append(box("dash", -iw, iw, -(cowl - 0.05), -(cowl - 0.45), z_belt(0) - 0.15, z_belt(0) + 0.05, dark, 0.03))
 for sx in (-0.38, 0.38):
@@ -397,8 +328,7 @@ pm = bpy.data.materials["paint"]
 for side in (1, -1):
     s0 = cowl - 0.22; zl = z_belt(s0)
     x0 = side * (half_w(s0) - 0.02)
-    mw, ml, mh = P.get("mirror", (0.2, 0.14, 0.13))
-    o = box("mirror", min(x0, x0 + side * mw), max(x0, x0 + side * mw), -(s0 + 0.04), -(s0 + 0.04 - ml), zl + 0.02, zl + 0.02 + mh, pm, min(0.035, mh / 3))
+    o = box("mirror", min(x0, x0 + side * 0.2), max(x0, x0 + side * 0.2), -(s0 + 0.04), -(s0 - 0.1), zl + 0.02, zl + 0.15, pm, 0.035)
     o.parent = None
 
 # ------------------------------------------------------------------ anchors for the app's effects

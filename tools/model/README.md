@@ -43,3 +43,25 @@ Outputs live in `app/src/main/assets/models/car_<kind>.glb` with their anchors; 
 `appview.py` with `CAR_ANCHORS=<anchors>` (so the framing matches the app's) and the map markers a
 top-down orthographic render (`res/drawable-nodpi/car_still_<kind>.webp`, `car_top_<kind>.webp`).
 `ui/CarBody.kt` picks one from the Bluelink model name (or Settings > Your car in 3D).
+
+## IONIQ 6
+
+Source: "Hyundai Ioniq 6" by Mona x Supercars (Sketchfab, CC BY 4.0), downloaded in its original
+format, a SketchUp COLLADA export (`model.dae`). Output: `app/src/main/assets/models/car_ioniq6.glb`,
+its anchors and `car_ioniq6-LICENSE.txt`.
+
+1. `prep6.py model.dae stage1.blend` reads the COLLADA with pycollada (`pip install pycollada`;
+   Blender 5 has no COLLADA importer), drops SketchUp's edge lines and the duplicate back faces,
+   scales to the real 4,855 mm length and builds one object per material.
+2. `rig6.py stage1.blend car_ioniq6.glb`:
+   - paint (the material `paint`) set to Nocturne Grey and the black roof panel painted to match;
+     glass, light lenses, lamps, rims and tyres given phone-friendly materials;
+   - the front plate removed (Alberta);
+   - islands sorted by region, as in `rig.py`: anything inside a wheel's space joins `wheels`;
+     `door_fl/fr/rl/rr` (with glass, handles, trim and the door-mounted mirrors), `hood`, and
+     `tailgate` (the trunk lid with its wing, emblem and stop lamp), origins on the hinges;
+   - wheels, interior and trim decimated, paint panels left alone (about 263,000 triangles);
+   - ground shadow, charging cable at the right-rear port, and `car_ioniq6-anchors.json` in
+     `generic.py`'s format.
+3. The still and the map marker: `appview.py` with `CAR_ANCHORS=car_ioniq6-anchors.json` (`... 40 12 0
+   none 1100 748`), and a top-down orthographic render cropped to the car and scaled to 240 px wide.
