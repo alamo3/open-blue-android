@@ -145,7 +145,7 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, open: (Route) -> Unit 
             )
             Text(
                 "Automatic matches the official app: \"remoteControl\" for Gen3 cars, \"hvacInfo\" for older ones. " +
-                    "Your car reports ${vm.caps.genType ?: "an unknown generation"}, so climate starts use \"${vm.climateKey}\".",
+                    "Your car reports ${vm.vehicle?.generation ?: vm.caps.genType ?: "an unknown generation"}, so climate starts use \"${vm.climateKey}\".",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

@@ -314,6 +314,13 @@ class MainViewModel(
         val c = api.capsFrom(selected)
         store.caps = c
         caps = c
+        // vhcllst's vehicleGeneration picks the climate payload; older installs saved the car without it.
+        if (v.generation == null) {
+            runCatching { api.vehicles().firstOrNull { it.id == v.id }?.takeIf { it.generation != null } }.getOrNull()?.let { fresh ->
+                store.vehicle = fresh
+                vehicle = fresh
+            }
+        }
         val s = selected["status"] as? JsonObject ?: api.cachedStatus(v.id)
         applyStatus(s)
     }
