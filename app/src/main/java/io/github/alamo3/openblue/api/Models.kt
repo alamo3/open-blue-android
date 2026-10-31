@@ -25,8 +25,6 @@ data class VehicleCaps(
     val genType: String? = null,
     val hvacTempType: Int? = null,
     val strgWhlHeatingOption: Int? = null,
-    /** The Climate feature's "RearWinodwHeat" flag; false when the car has no rear window heater. */
-    val rearWindowHeat: Boolean = true,
     /** drv, ast, rl, rr */
     val seatOptions: List<Int?> = listOf(null, null, null, null),
     val photoUrl: String? = null,
@@ -63,8 +61,7 @@ data class VehicleCaps(
     val splitHeating: Boolean get() = strgWhlHeatingOption == 1
 
     fun heatingOptions(): List<Heating> =
-        if (splitHeating && !rearWindowHeat) listOf(Heating.OFF, Heating.STEERING)
-        else if (splitHeating) listOf(Heating.OFF, Heating.STEERING, Heating.REAR_MIRRORS, Heating.STEERING_REAR_MIRRORS)
+        if (splitHeating) listOf(Heating.OFF, Heating.STEERING, Heating.REAR_MIRRORS, Heating.STEERING_REAR_MIRRORS)
         else listOf(Heating.OFF, Heating.ALL)
 
     /**

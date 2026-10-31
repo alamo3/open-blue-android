@@ -127,8 +127,6 @@ fun ClimateSettings.forCar(caps: VehicleCaps): ClimateSettings {
     var out = copy(
         heating = when {
             heating == 0 -> 0
-            // No rear window heater on the car: only the steering wheel can be asked for.
-            caps.splitHeating && !caps.rearWindowHeat -> 3
             caps.splitHeating -> if (heating == 1) 4 else heating
             else -> 1
         },
