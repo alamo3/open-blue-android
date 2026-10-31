@@ -6,6 +6,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -390,6 +391,9 @@ class BluelinkClient(private val store: SecureStore) {
             val auth = pAuth(t, vehicleId, pin)
             val body = JsonObject(extra + ("pin" to JsonPrimitive(pin)))
             val r = post(path, body, mapOf("accessToken" to t, "vehicleId" to vehicleId, "pAuth" to auth))
+            // Kept (without the PIN, and redacted) so a failed command can be shared from Settings.
+            lastCommand = "POST $path\n" + pretty.encodeToString(JsonObject.serializer(), JsonObject(extra)) +
+                "\n\nResponse:\n" + pretty.encodeToString(JsonElement.serializer(), Redact.json(r.body))
             check(r)
             r.headers["transactionId"] ?: throw ApiException(null, "Command was accepted but returned no transaction ID")
         }
@@ -451,6 +455,16 @@ class BluelinkClient(private val store: SecureStore) {
             "\n\nResponse:\n" + pretty.encodeToString(JsonObject.serializer(), r.body)
         val body = iacCheck(r)
         (body["result"] as? JsonObject) ?: JsonObject(emptyMap())
+    }
+
+    /** The last remote command (climate start, lock, ...) as sent and answered, for troubleshooting. */
+    var lastCommand: String? = null
+        private set
+
+    /** This car's entry in the vehicle list (vhcllst), as Bluelink sends it. */
+    suspend fun vehicleListEntry(vehicleId: String): JsonObject? = authed { t ->
+        val body = check(post("vhcllst", headers = mapOf("accessToken" to t)))
+        body.arr("result.vehicles").firstOrNull { it.str("vehicleId") == vehicleId } as? JsonObject
     }
 
     /** The last charging-service request and its raw answer, for troubleshooting. */
