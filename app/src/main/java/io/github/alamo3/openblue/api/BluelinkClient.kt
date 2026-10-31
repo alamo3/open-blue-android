@@ -240,6 +240,7 @@ class BluelinkClient(private val store: SecureStore) {
                 vin = v.str("vin").orEmpty(),
                 fuelKindCode = v.str("fuelKindCode").orEmpty(),
                 kindCode = v.str("vehicleKindCode")?.takeIf { it.isNotBlank() } ?: v.str("modelCode")?.takeIf { it.isNotBlank() },
+                generation = v.str("vehicleGeneration")?.takeIf { it.isNotBlank() },
             )
         }
     }
@@ -696,7 +697,11 @@ class BluelinkClient(private val store: SecureStore) {
     fun climateKey(): String = when (store.climateFormat) {
         ClimateFormat.HVAC_INFO -> "hvacInfo"
         ClimateFormat.REMOTE_CONTROL -> "remoteControl"
-        ClimateFormat.AUTO -> if (store.caps?.isGen3 == true) "remoteControl" else "hvacInfo"
+        // The official app uses remoteControl only when vhcllst's vehicleGeneration is "Gen3";
+        // genType (sltvhcl) says G3 for the 2023 IONIQ 5 too. Fall back to it until vhcllst is read.
+        ClimateFormat.AUTO -> store.vehicle?.generation
+            ?.let { if (it.equals("Gen3", true)) "remoteControl" else "hvacInfo" }
+            ?: if (store.caps?.isGen3 == true) "remoteControl" else "hvacInfo"
     }
 
     suspend fun startClimate(vehicle: VehicleInfo, s: ClimateSettings): String {

@@ -12,6 +12,8 @@ data class VehicleInfo(
     val fuelKindCode: String,
     /** Model code the charging services want (vehicleKindCode in vhcllst). */
     val kindCode: String? = null,
+    /** vehicleGeneration in vhcllst ("Gen3" ...): what the official app picks the climate payload by. */
+    val generation: String? = null,
 )
 
 /**
