@@ -713,11 +713,15 @@ class BluelinkClient(private val store: SecureStore) {
                 put("hvacTempType", hvacTempType)
             }
             put("igniOnDuration", s.durationMin)
-            putJsonObject("seatHeaterVentCMD") {
-                put("drvSeatOptCmd", s.driverSeat)
-                put("astSeatOptCmd", s.passengerSeat)
-                put("rlSeatOptCmd", s.rearLeftSeat)
-                put("rrSeatOptCmd", s.rearRightSeat)
+            // Cars that can't set seats remotely (e.g. a 2023 IONIQ 5) refuse the request (6452)
+            // if the seat block is there at all, even with every seat at 0, so leave it out.
+            if (store.caps?.remoteSeats != false) {
+                putJsonObject("seatHeaterVentCMD") {
+                    put("drvSeatOptCmd", s.driverSeat)
+                    put("astSeatOptCmd", s.passengerSeat)
+                    put("rlSeatOptCmd", s.rearLeftSeat)
+                    put("rrSeatOptCmd", s.rearRightSeat)
+                }
             }
         }
         return command("evc/rfon", vehicle.id, buildJsonObject { put(climateKey(), settings) })
