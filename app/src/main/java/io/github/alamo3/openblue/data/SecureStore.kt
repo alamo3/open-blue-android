@@ -54,6 +54,10 @@ class SecureStore(private val prefs: SharedPreferences) {
     var brand: Brand
         get() = Brand.entries.firstOrNull { it.name == read("brand") } ?: Brand.HYUNDAI
         set(v) = write("brand", v.name)
+    /** The climate payload key that worked after Bluelink refused the other one (6452); Automatic only. */
+    var learnedClimateKey: String?
+        get() = read("learnedClimateKey")
+        set(v) = write("learnedClimateKey", v)
     var username: String?
         get() = read("username")
         set(v) = write("username", v)

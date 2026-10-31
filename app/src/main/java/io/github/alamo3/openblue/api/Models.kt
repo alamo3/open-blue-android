@@ -26,7 +26,8 @@ data class VehicleCaps(
     /**
      * The "genType" HTTP header on the sltvhcl answer ("Gen3" ...). The official app calls it the
      * vehicle generation and picks the climate payload by it; the body's genType ("G3") is a
-     * different thing and reads G3 on older head units too.
+     * different thing and reads G3 on older head units too. null = not fetched yet; "" = the answer
+     * had no such header (the official app then sends hvacInfo).
      */
     val genHeader: String? = null,
     val hvacTempType: Int? = null,
