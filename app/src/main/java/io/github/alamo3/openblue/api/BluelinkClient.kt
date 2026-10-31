@@ -241,13 +241,16 @@ class BluelinkClient(private val store: SecureStore) {
                 vin = v.str("vin").orEmpty(),
                 fuelKindCode = v.str("fuelKindCode").orEmpty(),
                 kindCode = v.str("vehicleKindCode")?.takeIf { it.isNotBlank() } ?: v.str("modelCode")?.takeIf { it.isNotBlank() },
-                generation = v.str("vehicleGeneration")?.takeIf { it.isNotBlank() },
             )
         }
     }
 
+    /** The genType header of the last sltvhcl answer (see [VehicleCaps.genHeader]). */
+    private var genHeader: String? = null
+
     fun capsFrom(selected: JsonObject) = VehicleCaps(
         genType = selected.str("vehicle.genType"),
+        genHeader = genHeader,
         hvacTempType = selected.int("features.hvacTempType"),
         strgWhlHeatingOption = selected.int("features.strgWhlHeatingOption"),
         seatOptions = listOf("drv", "ast", "rl", "rr").map { selected.int("features.seatHeatVent.${it}SeatHeatOption") },
@@ -338,7 +341,9 @@ class BluelinkClient(private val store: SecureStore) {
 
     /** sltvhcl: vehicle + status + feature flags (hvacTempType etc). Returns the "result" object. */
     suspend fun selectVehicle(vehicleId: String): JsonObject = authed { t ->
-        val body = check(post("sltvhcl", headers = mapOf("accessToken" to t, "vehicleId" to vehicleId)))
+        val reply = post("sltvhcl", headers = mapOf("accessToken" to t, "vehicleId" to vehicleId))
+        genHeader = reply.headers["genType"]
+        val body = check(reply)
         (body.at("result") as? JsonObject) ?: JsonObject(emptyMap())
     }
 
@@ -711,9 +716,9 @@ class BluelinkClient(private val store: SecureStore) {
     fun climateKey(): String = when (store.climateFormat) {
         ClimateFormat.HVAC_INFO -> "hvacInfo"
         ClimateFormat.REMOTE_CONTROL -> "remoteControl"
-        // The official app uses remoteControl only when vhcllst's vehicleGeneration is "Gen3";
-        // genType (sltvhcl) says G3 for the 2023 IONIQ 5 too. Fall back to it until vhcllst is read.
-        ClimateFormat.AUTO -> store.vehicle?.generation
+        // The official app uses remoteControl only when the sltvhcl genType header says "Gen3";
+        // the body's genType says G3 for the 2023 IONIQ 5 too. Fall back to it if there's no header.
+        ClimateFormat.AUTO -> store.caps?.genHeader
             ?.let { if (it.equals("Gen3", true)) "remoteControl" else "hvacInfo" }
             ?: if (store.caps?.isGen3 == true) "remoteControl" else "hvacInfo"
     }

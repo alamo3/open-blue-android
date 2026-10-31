@@ -12,8 +12,6 @@ data class VehicleInfo(
     val fuelKindCode: String,
     /** Model code the charging services want (vehicleKindCode in vhcllst). */
     val kindCode: String? = null,
-    /** vehicleGeneration in vhcllst ("Gen3" ...): what the official app picks the climate payload by. */
-    val generation: String? = null,
 )
 
 /**
@@ -25,6 +23,12 @@ data class VehicleInfo(
 @Serializable
 data class VehicleCaps(
     val genType: String? = null,
+    /**
+     * The "genType" HTTP header on the sltvhcl answer ("Gen3" ...). The official app calls it the
+     * vehicle generation and picks the climate payload by it; the body's genType ("G3") is a
+     * different thing and reads G3 on older head units too.
+     */
+    val genHeader: String? = null,
     val hvacTempType: Int? = null,
     val strgWhlHeatingOption: Int? = null,
     /** drv, ast, rl, rr */
