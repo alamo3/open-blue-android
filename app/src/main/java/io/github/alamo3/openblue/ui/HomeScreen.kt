@@ -199,7 +199,9 @@ fun HomeScreen(vm: MainViewModel, open: (Route) -> Unit, onUnlock: () -> Unit) {
             )
             NavRow(Icons.Rounded.DirectionsCar, "Vehicle", st?.let { vehicleLine(it) }, onClick = { open(Route.Vehicle) },
                 iconTint = if (st != null && needsAttention(st)) app.alert else MaterialTheme.colorScheme.onSurface)
-            NavRow(Icons.Rounded.Storefront, "Bluelink Store", "Features on demand from Hyundai", onClick = { open(Route.Store) })
+            if (vm.brand.hasStore) {
+                NavRow(Icons.Rounded.Storefront, "Bluelink Store", "Features on demand from Hyundai", onClick = { open(Route.Store) })
+            }
         }
     }
 

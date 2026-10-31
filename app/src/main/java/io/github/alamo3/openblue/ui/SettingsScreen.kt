@@ -215,10 +215,10 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, open: (Route) -> Unit 
 
             HorizontalDivider(color = app.hairline, modifier = Modifier.padding(top = 8.dp))
             SectionTitle("Help")
-            ClickRow("Show raw vehicle data", "What Bluelink reports for your car, for troubleshooting", enabled = vm.busy == null) { vm.loadDiagnostics() }
+            ClickRow("Show raw vehicle data", "What ${vm.brand.serviceName} reports for your car, for troubleshooting", enabled = vm.busy == null) { vm.loadDiagnostics() }
             Spacer(Modifier.height(8.dp))
             Text(
-                "Open Blue ${BuildConfig.VERSION_NAME}. An unofficial app, not affiliated with Hyundai. " +
+                "Open Blue ${BuildConfig.VERSION_NAME}. An unofficial app, not affiliated with Hyundai or Kia. " +
                     "Set in Barlow, licensed under the SIL Open Font License. " +
                     "3D car based on \"2024 Hyundai Ioniq 5 N\" by Ddiaz Design (sketchfab.com/ddiaz-design), " +
                     "licensed under CC BY-NC 4.0 and modified (doors, frunk and tailgate separated, repainted, simplified, shadow and charging cable added).",

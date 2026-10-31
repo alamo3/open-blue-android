@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import io.github.alamo3.openblue.api.Brand
 import io.github.alamo3.openblue.api.CarLocation
 import io.github.alamo3.openblue.api.ClimateFormat
 import io.github.alamo3.openblue.api.ClimateSettings
@@ -49,6 +50,10 @@ class SecureStore(private val prefs: SharedPreferences) {
     val deviceId: String
         get() = read(KEY_DEVICE) ?: UUID.randomUUID().toString().also { write(KEY_DEVICE, it) }
 
+    /** Which brand's service the account belongs to; chosen on the login screen. */
+    var brand: Brand
+        get() = Brand.entries.firstOrNull { it.name == read("brand") } ?: Brand.HYUNDAI
+        set(v) = write("brand", v.name)
     var username: String?
         get() = read("username")
         set(v) = write("username", v)

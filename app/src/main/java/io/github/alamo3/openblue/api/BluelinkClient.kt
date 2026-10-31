@@ -46,16 +46,14 @@ sealed interface LoginResult {
 enum class CommandResult { SUCCESS, FAILED, TIMEOUT }
 
 /**
- * Client for the Hyundai Canada Bluelink API (https://mybluelink.ca/tods/api/).
+ * Client for the Canadian Bluelink / Kia Connect API (https://mybluelink.ca/tods/api/ for Hyundai,
+ * https://kiaconnect.ca/tods/api/ for Kia; see [Brand]).
  * Endpoints, headers and payloads mirror the official Android app 2.0.47, with
  * the login/MFA flow cross-checked against hyundai_kia_connect_api.
  */
 class BluelinkClient(private val store: SecureStore) {
 
     companion object {
-        private const val BASE_URL = "https://mybluelink.ca/tods/api/"
-        private const val CLIENT_ID = "HATAHSPACA0232141ED9722C67715A0B"
-        private const val CLIENT_SECRET = "CLISCR01AHSPA"
         private const val MFA_API_CODE = "0107"
         private const val OTP_REQUIRED = "7110"
 
@@ -71,6 +69,18 @@ class BluelinkClient(private val store: SecureStore) {
 
     private class Reply(val body: JsonObject, val headers: Headers)
 
+    /** The headers every request carries, from the signed-in brand. */
+    private fun Request.Builder.brandHeaders(): Request.Builder {
+        val brand = store.brand
+        header("language", "0")
+        header("offset", offsetHours())
+        header("from", "SPA")
+        brand.brandHeader?.let { header("brand", it) }
+        header("client_id", brand.clientId)
+        header("client_secret", brand.clientSecret)
+        return this
+    }
+
     private fun offsetHours(): String =
         (TimeZone.getDefault().getOffset(System.currentTimeMillis()) / 3_600_000).toString()
 
@@ -82,14 +92,9 @@ class BluelinkClient(private val store: SecureStore) {
         method: String = "POST",
     ): Reply = withContext(Dispatchers.IO) {
         val builder = Request.Builder()
-            .url(BASE_URL + path)
+            .url(store.brand.baseUrl + path)
             .header("Content-Type", "application/json")
-            .header("language", "0")
-            .header("offset", offsetHours())
-            .header("from", "SPA")
-            .header("brand", "H")
-            .header("client_id", CLIENT_ID)
-            .header("client_secret", CLIENT_SECRET)
+            .brandHeaders()
         if (withDeviceId) builder.header("deviceId", store.deviceId)
         headers.forEach { (k, v) -> builder.header(k, v) }
         if (method == "GET") {
@@ -640,14 +645,9 @@ class BluelinkClient(private val store: SecureStore) {
         if (authorise) store.pin?.let { pin -> headers["pAuth"] = pAuth(t, vehicleId, pin) }
         withContext(Dispatchers.IO) {
             val builder = Request.Builder()
-                .url(BASE_URL + path.trimStart('/'))
+                .url(store.brand.baseUrl + path.trimStart('/'))
                 .header("Content-Type", "application/json")
-                .header("language", "0")
-                .header("offset", offsetHours())
-                .header("from", "SPA")
-                .header("brand", "H")
-                .header("client_id", CLIENT_ID)
-                .header("client_secret", CLIENT_SECRET)
+                .brandHeaders()
             headers.forEach { (k, v) -> builder.header(k, v) }
             builder.post(body.toString().toRequestBody(JSON_MEDIA))
             http.newCall(builder.build()).execute().use { resp ->

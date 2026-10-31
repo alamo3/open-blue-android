@@ -230,7 +230,11 @@ class MainViewModel(
 
     // ------------------------------------------------------------------ auth
 
-    fun login(user: String, pass: String, pin: String) = task("Signing in") {
+    /** The brand the account belongs to (Hyundai unless chosen otherwise at sign-in). */
+    val brand: io.github.alamo3.openblue.api.Brand get() = store.brand
+
+    fun login(user: String, pass: String, pin: String, brand: io.github.alamo3.openblue.api.Brand) = task("Signing in") {
+        store.brand = brand
         pendingUser = user.trim()
         pendingPass = pass
         pendingPin = pin.trim()
