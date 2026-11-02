@@ -32,6 +32,7 @@ import androidx.glance.layout.Column
 import androidx.glance.layout.ContentScale
 import androidx.glance.layout.Row
 import androidx.glance.layout.Spacer
+import androidx.glance.layout.fillMaxHeight
 import androidx.glance.layout.fillMaxSize
 import androidx.glance.layout.fillMaxWidth
 import androidx.glance.layout.height
@@ -45,8 +46,6 @@ import androidx.glance.unit.ColorProvider
 import io.github.alamo3.openblue.CommandProgress
 import io.github.alamo3.openblue.MainActivity
 import io.github.alamo3.openblue.R
-import io.github.alamo3.openblue.api.ClimateSettings
-import io.github.alamo3.openblue.api.SeatWeather
 import io.github.alamo3.openblue.data.SecureStore
 import io.github.alamo3.openblue.ui.CarStatus
 import io.github.alamo3.openblue.ui.formatMinutes
@@ -56,6 +55,9 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import java.text.DateFormat
 import kotlin.math.roundToInt
+
+/** One extra status line on the widget. */
+data class Detail(val text: String, val alert: Boolean = false)
 
 /** What the widget shows, read from what the app keeps on the phone. */
 data class WidgetData(
@@ -70,8 +72,8 @@ data class WidgetData(
     val tempOutside: Int?,
     /** "Locking…" while a command from the widget waits for the car. */
     val pending: String?,
-    /** The last climate settings' seats don't suit the weather: ask in the app before starting. */
-    val climateNeedsCheck: Boolean,
+    /** Extra status lines for the tall layout; [Detail.alert] ones need attention. */
+    val details: List<Detail> = emptyList(),
     /** Picture of the car (its model, or the stand-in for its body type). */
     val still: Int = R.drawable.car_still,
 ) {
@@ -98,7 +100,18 @@ data class WidgetData(
                 st.charging -> "Charging"
                 else -> st.updatedAt?.let { "Updated " + DateFormat.getTimeInstance(DateFormat.SHORT).format(it) } ?: ""
             }
-            val climate = store.lastClimate ?: ClimateSettings()
+            val details = buildList {
+                if (st == null) return@buildList
+                val open = st.openDoors.map { "$it door" } + st.openWindows.map { "$it window" } +
+                    listOfNotNull("trunk".takeIf { st.trunkOpen }, "frunk".takeIf { st.frunkOpen })
+                if (open.isNotEmpty()) add(Detail("Open: " + open.joinToString(", "), alert = true))
+                if (st.tireWarning) add(Detail("Tire pressure low", alert = true))
+                st.battery12v?.takeIf { it < 40 }?.let { add(Detail("12V battery $it%", alert = true)) }
+                if (st.climateOn) add(Detail("Climate on" + (st.setTempC?.let { " · ${it.roundToInt()}°" } ?: "")))
+                if (st.pluggedIn && !st.charging) add(Detail("Plugged in"))
+                val limits = listOfNotNull(st.chargeLimitAc?.let { "AC $it%" }, st.chargeLimitDc?.let { "DC $it%" })
+                if (st.pluggedIn && limits.isNotEmpty()) add(Detail("Limit " + limits.joinToString(" · ")))
+            }
             return WidgetData(
                 signedIn = signedIn,
                 name = v?.nickname?.ifBlank { null } ?: "Your car",
@@ -110,7 +123,7 @@ data class WidgetData(
                 climateOn = st?.climateOn == true,
                 tempOutside = weather?.tempC?.roundToInt(),
                 pending = pending,
-                climateNeedsCheck = SeatWeather.warning(climate.seats, weather) != null,
+                details = details,
                 still = io.github.alamo3.openblue.ui.CarBody.current(context).still,
             )
         }
@@ -153,6 +166,10 @@ private fun openApp(context: Context, climate: Boolean = false) = actionStartAct
         flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
         if (climate) putExtra(MainActivity.EXTRA_START_CLIMATE, true)
     },
+)
+
+private fun openPicker(context: Context) = actionStartActivity(
+    Intent(context, ClimatePickerActivity::class.java).apply { flags = Intent.FLAG_ACTIVITY_NEW_TASK },
 )
 
 private fun run(what: String) = actionRunCallback<WidgetAction>(actionParametersOf(WidgetAction.WHAT to what))
@@ -221,11 +238,25 @@ private fun Full(context: Context, d: WidgetData, tall: Boolean) {
             maxLines = 1,
         )
         if (tall) {
-            Image(
-                ImageProvider(d.still), d.name,
-                GlanceModifier.fillMaxWidth().defaultWeight().padding(vertical = 4.dp),
-                contentScale = ContentScale.Fit,
-            )
+            Row(GlanceModifier.fillMaxWidth().defaultWeight().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                if (d.details.isNotEmpty()) {
+                    Column(GlanceModifier.defaultWeight().padding(end = 6.dp)) {
+                        d.details.take(4).forEach { line ->
+                            Text(
+                                line.text,
+                                style = TextStyle(color = if (line.alert) RED else c.onSurfaceVariant, fontSize = 12.sp),
+                                maxLines = 2,
+                                modifier = GlanceModifier.padding(bottom = 3.dp),
+                            )
+                        }
+                    }
+                }
+                Image(
+                    ImageProvider(d.still), d.name,
+                    GlanceModifier.defaultWeight().fillMaxHeight(),
+                    contentScale = ContentScale.Fit,
+                )
+            }
         } else {
             Spacer(GlanceModifier.defaultWeight())
         }
@@ -243,12 +274,8 @@ private fun Full(context: Context, d: WidgetData, tall: Boolean) {
                 icon = R.drawable.ic_w_air,
                 label = if (d.climateOn) "Stop" else "Climate",
                 tint = if (d.climateOn) ORANGE else c.onSurface,
-                action = when {
-                    d.climateOn -> run(WidgetAction.CLIMATE_STOP)
-                    // Heated seats on a warm day (or cooled on a cold one): let the app ask.
-                    d.climateNeedsCheck -> openApp(context, climate = true)
-                    else -> run(WidgetAction.CLIMATE_START)
-                },
+                // Starting asks which settings or preset to use; stopping is one tap.
+                action = if (d.climateOn) run(WidgetAction.CLIMATE_STOP) else openPicker(context),
                 modifier = GlanceModifier.defaultWeight(),
             )
             Spacer(GlanceModifier.width(8.dp))
