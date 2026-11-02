@@ -220,41 +220,48 @@ private fun LockIcon(locked: Boolean?, dp: Int) {
     )
 }
 
+/** Name and outside temperature, battery and range, and the status line. */
+@Composable
+private fun Header(d: WidgetData) {
+    val c = GlanceTheme.colors
+    Row(GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text(d.name, style = TextStyle(color = c.onSurface, fontWeight = FontWeight.Medium, fontSize = 15.sp), maxLines = 1)
+        Spacer(GlanceModifier.defaultWeight())
+        d.tempOutside?.let { Text("$it°", style = TextStyle(color = c.onSurfaceVariant, fontSize = 14.sp)) }
+    }
+    Row(GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
+        Text(d.battery?.let { "$it%" } ?: "–", style = TextStyle(color = c.onSurface, fontWeight = FontWeight.Bold, fontSize = 30.sp))
+        Spacer(GlanceModifier.width(8.dp))
+        d.range?.let { Text(it, style = TextStyle(color = c.onSurfaceVariant, fontSize = 15.sp), modifier = GlanceModifier.padding(bottom = 5.dp)) }
+        if (d.charging) {
+            Spacer(GlanceModifier.width(6.dp))
+            Image(ImageProvider(R.drawable.ic_w_bolt), "Charging", GlanceModifier.size(20.dp).padding(bottom = 4.dp), colorFilter = ColorFilter.tint(GREEN))
+        }
+    }
+    Text(
+        d.pending ?: d.line,
+        style = TextStyle(color = if (d.pending != null) c.primary else if (d.charging) GREEN else c.onSurfaceVariant, fontSize = 12.sp),
+        maxLines = 1,
+    )
+}
+
 @Composable
 private fun Full(context: Context, d: WidgetData, tall: Boolean) {
     val c = GlanceTheme.colors
     Column(GlanceModifier.fillMaxSize().padding(14.dp)) {
-        Row(GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text(d.name, style = TextStyle(color = c.onSurface, fontWeight = FontWeight.Medium, fontSize = 15.sp), maxLines = 1)
-            Spacer(GlanceModifier.defaultWeight())
-            d.tempOutside?.let { Text("$it°", style = TextStyle(color = c.onSurfaceVariant, fontSize = 14.sp)) }
-        }
-        Row(GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
-            Text(d.battery?.let { "$it%" } ?: "–", style = TextStyle(color = c.onSurface, fontWeight = FontWeight.Bold, fontSize = 30.sp))
-            Spacer(GlanceModifier.width(8.dp))
-            d.range?.let { Text(it, style = TextStyle(color = c.onSurfaceVariant, fontSize = 15.sp), modifier = GlanceModifier.padding(bottom = 5.dp)) }
-            if (d.charging) {
-                Spacer(GlanceModifier.width(6.dp))
-                Image(ImageProvider(R.drawable.ic_w_bolt), "Charging", GlanceModifier.size(20.dp).padding(bottom = 4.dp), colorFilter = ColorFilter.tint(GREEN))
-            }
-        }
-        Text(
-            d.pending ?: d.line,
-            style = TextStyle(color = if (d.pending != null) c.primary else if (d.charging) GREEN else c.onSurfaceVariant, fontSize = 12.sp),
-            maxLines = 1,
-        )
         if (tall) {
-            Row(GlanceModifier.fillMaxWidth().defaultWeight().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                if (d.details.isNotEmpty()) {
-                    Column(GlanceModifier.defaultWeight().padding(end = 6.dp)) {
-                        d.details.take(4).forEach { line ->
-                            Text(
-                                line.text,
-                                style = TextStyle(color = if (line.alert) RED else c.onSurfaceVariant, fontSize = 12.sp),
-                                maxLines = 2,
-                                modifier = GlanceModifier.padding(bottom = 3.dp),
-                            )
-                        }
+            // The car gets the whole right half, from the top down to the buttons.
+            Row(GlanceModifier.fillMaxWidth().defaultWeight()) {
+                Column(GlanceModifier.defaultWeight().fillMaxHeight().padding(end = 6.dp)) {
+                    Header(d)
+                    Spacer(GlanceModifier.height(6.dp))
+                    d.details.take(4).forEach { line ->
+                        Text(
+                            line.text,
+                            style = TextStyle(color = if (line.alert) RED else c.onSurfaceVariant, fontSize = 12.sp),
+                            maxLines = 2,
+                            modifier = GlanceModifier.padding(bottom = 3.dp),
+                        )
                     }
                 }
                 Image(
@@ -264,6 +271,7 @@ private fun Full(context: Context, d: WidgetData, tall: Boolean) {
                 )
             }
         } else {
+            Header(d)
             Spacer(GlanceModifier.defaultWeight())
         }
         Row(GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
