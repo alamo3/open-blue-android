@@ -100,17 +100,23 @@ data class WidgetData(
                 st.charging -> "Charging"
                 else -> st.updatedAt?.let { "Updated " + DateFormat.getTimeInstance(DateFormat.SHORT).format(it) } ?: ""
             }
+            // Most urgent first: the tall layout shows the first few.
             val details = buildList {
                 if (st == null) return@buildList
                 val open = st.openDoors.map { "$it door" } + st.openWindows.map { "$it window" } +
                     listOfNotNull("trunk".takeIf { st.trunkOpen }, "frunk".takeIf { st.frunkOpen })
                 if (open.isNotEmpty()) add(Detail("Open: " + open.joinToString(", "), alert = true))
+                if (st.locked == false) add(Detail("Unlocked", alert = true))
                 if (st.tireWarning) add(Detail("Tire pressure low", alert = true))
-                st.battery12v?.takeIf { it < 40 }?.let { add(Detail("12V battery $it%", alert = true)) }
+                val v12 = st.battery12v
+                if (v12 != null && v12 < 40) add(Detail("12V battery $v12%", alert = true))
                 if (st.climateOn) add(Detail("Climate on" + (st.setTempC?.let { " · ${it.roundToInt()}°" } ?: "")))
                 if (st.pluggedIn && !st.charging) add(Detail("Plugged in"))
+                if (st.locked == true) add(Detail(if (open.isEmpty()) "Locked · all closed" else "Locked"))
+                if (v12 != null && v12 >= 40) add(Detail("12V battery $v12%"))
+                if (!st.tireWarning) add(Detail("Tires OK"))
                 val limits = listOfNotNull(st.chargeLimitAc?.let { "AC $it%" }, st.chargeLimitDc?.let { "DC $it%" })
-                if (st.pluggedIn && limits.isNotEmpty()) add(Detail("Limit " + limits.joinToString(" · ")))
+                if (limits.isNotEmpty()) add(Detail("Limit " + limits.joinToString(" · ")))
             }
             return WidgetData(
                 signedIn = signedIn,
