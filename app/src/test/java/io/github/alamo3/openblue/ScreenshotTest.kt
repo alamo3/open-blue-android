@@ -117,6 +117,10 @@ class ScreenshotTest(private val night: Boolean) {
 
     /** A car Bluelink says can't set its seats (all 0), with Settings > Experiments > Try seat heating anyway on. */
     @Test fun climateTryingSeats() = demoVm(seatOptions = listOf(0, 0, 0, 0), trySeats = true).let { vm ->
+        // Tall enough for the line under the cabin.
+        paparazzi.unsafeUpdateConfig(
+            deviceConfig = DeviceConfig.PIXEL_5.copy(screenHeight = 2700, nightMode = if (night) NightMode.NIGHT else NightMode.NOTNIGHT),
+        )
         vm.showDemoWeather(-8.0)
         vm.updateEditor { it.withSeat(1, 0).withSeat(2, io.github.alamo3.openblue.api.SeatLevel.HEAT_LOW.code) }
         shot { ClimateScreen(vm, onBack = {}) }
