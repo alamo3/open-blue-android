@@ -20,6 +20,8 @@ import io.github.alamo3.openblue.api.forCar
 import io.github.alamo3.openblue.data.SecureStore
 import io.github.alamo3.openblue.work.CommandWorker
 import io.github.alamo3.openblue.work.Notifier
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.json.Json
 
 /** A tap on one of the widget's buttons: hand the work to [WidgetCommandWorker]. */
 class WidgetAction : ActionCallback {
@@ -30,14 +32,24 @@ class WidgetAction : ActionCallback {
             SecureStore(context).widgetPending = "${action.name}|${System.currentTimeMillis()}"
             CarWidget.updateAll(context)
         }
-        val req = OneTimeWorkRequestBuilder<WidgetCommandWorker>()
-            .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
-            .setInputData(workDataOf(WidgetCommandWorker.KEY_WHAT to what))
-            .build()
-        WorkManager.getInstance(context).enqueueUniqueWork("widget-$what", ExistingWorkPolicy.KEEP, req)
+        enqueue(context, what)
     }
 
     companion object {
+        /** Hands [what] to [WidgetCommandWorker]; [settingsJson] are the climate settings to start with. */
+        fun enqueue(context: Context, what: String, settingsJson: String? = null) {
+            val req = OneTimeWorkRequestBuilder<WidgetCommandWorker>()
+                .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
+                .setInputData(
+                    workDataOf(
+                        WidgetCommandWorker.KEY_WHAT to what,
+                        WidgetCommandWorker.KEY_SETTINGS to settingsJson,
+                    ),
+                )
+                .build()
+            WorkManager.getInstance(context).enqueueUniqueWork("widget-$what", ExistingWorkPolicy.KEEP, req)
+        }
+
         val WHAT = ActionParameters.Key<String>("what")
         const val LOCK = "lock"
         const val CLIMATE_START = "climateStart"
@@ -70,6 +82,9 @@ class WidgetCommandWorker(context: Context, params: WorkerParameters) : Coroutin
         val api = BluelinkClient(store)
         val car = v.nickname.ifBlank { "Your car" }
         val action = WidgetAction.actionFor(what)
+        val chosen = inputData.getString(KEY_SETTINGS)?.let { runCatching { Json.decodeFromString<ClimateSettings>(it) }.getOrNull() }
+        // The picker sets the "starting" note itself; draw it.
+        if (action != null) CarWidget.updateAll(applicationContext)
         try {
             if (action == null) {
                 // Refresh: what Bluelink already has, without waking the car.
@@ -78,7 +93,7 @@ class WidgetCommandWorker(context: Context, params: WorkerParameters) : Coroutin
                 val tx = when (action) {
                     CommandProgress.Action.LOCK -> api.lock(v.id)
                     CommandProgress.Action.CLIMATE_STOP -> api.stopClimate(v.id)
-                    else -> api.startClimate(v, (store.lastClimate ?: ClimateSettings()).forCar(store.caps ?: VehicleCaps()))
+                    else -> api.startClimate(v, (chosen ?: store.lastClimate ?: ClimateSettings()).forCar(store.caps ?: VehicleCaps()))
                 }
                 CommandWorker.enqueue(applicationContext, v.id, tx, action, car)
                 return Result.success()  // CommandWorker clears the pending note when the car answers
@@ -104,5 +119,6 @@ class WidgetCommandWorker(context: Context, params: WorkerParameters) : Coroutin
 
     companion object {
         const val KEY_WHAT = "what"
+        const val KEY_SETTINGS = "settings"
     }
 }

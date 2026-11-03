@@ -105,6 +105,11 @@ class SecureStore(private val prefs: SharedPreferences) {
         get() = read("localPresets")?.let { runCatching { json.decodeFromString<List<ClimateSettings>>(it) }.getOrNull() } ?: emptyList()
         set(v) = write("localPresets", json.encodeToString(v))
 
+    /** The presets Bluelink had last time they were loaded, so the widget can offer them without a request. */
+    var serverPresetsCache: List<ClimateSettings>
+        get() = read("serverPresetsCache")?.let { runCatching { json.decodeFromString<List<ClimateSettings>>(it) }.getOrNull() } ?: emptyList()
+        set(v) = write("serverPresetsCache", json.encodeToString(v))
+
     var lastClimate: ClimateSettings?
         get() = read("lastClimate")?.let { runCatching { json.decodeFromString<ClimateSettings>(it) }.getOrNull() }
         set(v) = write("lastClimate", v?.let { json.encodeToString(it) })

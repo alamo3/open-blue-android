@@ -366,7 +366,7 @@ class BluelinkClient(private val store: SecureStore) {
 
     suspend fun serverPresets(vehicleId: String, table: List<TempTables.Entry>): List<ServerPreset> = authed { t ->
         val body = check(post("gtfvsttng", headers = mapOf("accessToken" to t, "vehicleId" to vehicleId)))
-        body.arr("result").map { p ->
+        val presets = body.arr("result").map { p ->
             ServerPreset(
                 id = p.int("id"),
                 isDefault = p.bool("defaultFavorite") == true,
@@ -384,6 +384,8 @@ class BluelinkClient(private val store: SecureStore) {
                 ),
             )
         }
+        store.serverPresetsCache = presets.map { it.settings }
+        presets
     }
 
     // -------------------------------------------------------------- commands

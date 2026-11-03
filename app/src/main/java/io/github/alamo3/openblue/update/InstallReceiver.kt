@@ -8,7 +8,11 @@ import android.content.pm.PackageInstaller
 import android.os.Build
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ProcessLifecycleOwner
+import io.github.alamo3.openblue.widget.CarWidget
 import io.github.alamo3.openblue.work.Notifier
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 /** Android's answer to an install: usually "ask the user first" the very first time. */
 class InstallReceiver : BroadcastReceiver() {
@@ -43,6 +47,11 @@ class InstallReceiver : BroadcastReceiver() {
 class UpdatedReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != Intent.ACTION_MY_PACKAGE_REPLACED) return
+        // A widget keeps the picture it had until redrawn, so redraw it for the new version.
+        val pending = goAsync()
+        CoroutineScope(Dispatchers.Default).launch {
+            try { CarWidget.updateAll(context) } finally { pending.finish() }
+        }
         val (name, msg) = UpdateState.takeInstalledNote(context) ?: return
         Notifier.post(context, Notifier.CHANNEL_UPDATES, 7302, "Open Blue updated to $name", msg.ifBlank { "Tap to open." })
         UpdateWorker.schedule(context)
