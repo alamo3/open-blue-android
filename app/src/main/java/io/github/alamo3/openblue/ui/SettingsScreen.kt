@@ -157,6 +157,14 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, open: (Route) -> Unit 
                 if (vm.worldLabsKeySet) "Saved. The 3D view can have World Labs generate a full 3D world from your photos (billed to your key)."
                 else "Add your own key to have World Labs generate full 3D worlds from the 3D view's photos",
             ) { editingWorldKey = true }
+            if (vm.caps.seatOptions.any { it == 0 }) {
+                SettingSwitch(
+                    "Try seat heating anyway",
+                    vm.trySeatsNote?.takeIf { !vm.trySeats }
+                        ?: "Bluelink says it can't heat this car's seats remotely. Sends seat heat with climate all the same; if your car turns it down, climate starts without it and this switches itself off.",
+                    vm.trySeats,
+                ) { vm.changeTrySeats(it) }
+            }
 
             HorizontalDivider(color = app.hairline, modifier = Modifier.padding(top = 16.dp))
             SectionTitle("Developer")

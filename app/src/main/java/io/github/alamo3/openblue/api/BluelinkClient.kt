@@ -728,7 +728,35 @@ class BluelinkClient(private val store: SecureStore) {
         }
     }
 
+    /** True when the last climate start went without its seats because Bluelink turned them down. */
+    var seatsTurnedDown = false
+        private set
+
+    /**
+     * Starts climate. [s] only heats seats Bluelink says it can't set while trying them anyway
+     * (Settings > Experiments); if Bluelink then turns the whole request down, it goes once more
+     * without the seats, and trying stops.
+     */
     suspend fun startClimate(vehicle: VehicleInfo, s: ClimateSettings): String {
+        seatsTurnedDown = false
+        try {
+            return startClimateWith(vehicle, s)
+        } catch (e: ApiException) {
+            if (e.code != "6452" || store.caps?.triesUnreportedSeats(s) != true) throw e
+            val first = lastCommand
+            try {
+                val tid = startClimateWith(vehicle, s.withoutSeats())
+                seatsTurnedDown = true
+                store.trySeats = false
+                store.trySeatsNote = SEATS_OFF_NOTE
+                return tid
+            } finally {
+                lastCommand = listOfNotNull(first, "--- retried without the seats ---", lastCommand).joinToString("\n\n")
+            }
+        }
+    }
+
+    private suspend fun startClimateWith(vehicle: VehicleInfo, s: ClimateSettings): String {
         val hvacTempType = store.caps?.hvacTempType ?: if (vehicle.fuelKindCode.equals("E", true)) 1 else 0
         val table = TempTables.forVehicle(hvacTempType, vehicle.model, vehicle.fuelKindCode)
         val entry = TempTables.nearest(table, s.tempC)

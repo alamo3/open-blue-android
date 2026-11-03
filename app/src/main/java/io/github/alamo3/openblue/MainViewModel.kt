@@ -51,6 +51,9 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import io.github.alamo3.openblue.api.forCar
+import io.github.alamo3.openblue.api.SEATS_OFF_NOTE
+import io.github.alamo3.openblue.api.trialSeats
+import io.github.alamo3.openblue.api.triesUnreportedSeats
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -87,6 +90,9 @@ data class CommandProgress(val action: Action, val stage: Stage, val note: Strin
         LOCATE("Asking the car where it is", "Found the car"),
     }
 }
+
+/** Added to "Climate is on" when climate started without the seats Bluelink says it can't set. */
+private const val SEATS_TURNED_DOWN = "Without the seats: your car turned them down, so Try seat heating anyway is now off."
 
 /**
  * [online] = false keeps the ViewModel from making network calls on its own (used by the
@@ -138,6 +144,26 @@ class MainViewModel(
         private set
     var climateFormat by mutableStateOf(store.climateFormat)
         private set
+    /** Settings > Experiments > Try seat heating anyway (see [SecureStore.trySeats]). */
+    var trySeats by mutableStateOf(store.trySeats)
+        private set
+    /** Why trying seats switched itself off, shown under the switch. */
+    var trySeatsNote by mutableStateOf(store.trySeatsNote)
+        private set
+    /** [caps] with the seats Bluelink says it can't set made heatable while trying them anyway. */
+    val seatCaps: VehicleCaps get() = caps.trialSeats(trySeats)
+    /** Trying seats Bluelink says it can't set. */
+    val seatTrial: Boolean get() = trySeats && caps.seatOptions.any { it == 0 }
+
+    fun changeTrySeats(on: Boolean) {
+        trySeats = on
+        store.trySeats = on
+        if (on) {
+            trySeatsNote = null
+            store.trySeatsNote = null
+        }
+    }
+
     var confirmUnlock by mutableStateOf(store.confirmUnlock)
         private set
     /** Surround-view photos, newest first: everything archived on this phone plus Bluelink's latest. */
@@ -437,7 +463,7 @@ class MainViewModel(
     private fun finish(action: CommandProgress.Action, ok: Boolean, note: String? = null) {
         showProgress(CommandProgress(action, if (ok) CommandProgress.Stage.DONE else CommandProgress.Stage.FAILED, note))
         clearProgressJob = viewModelScope.launch {
-            delay(if (ok) 3_500 else 10_000)
+            delay(if (ok && note == null) 3_500 else 10_000)
             progress = null
         }
     }
@@ -450,6 +476,10 @@ class MainViewModel(
     private fun command(
         action: CommandProgress.Action,
         simulate: (DebugState) -> DebugState = { it },
+        /** Added to the success message, worked out once the car has answered. */
+        note: () -> String? = { null },
+        /** Sent instead if the car turns [send] down; on success, its note is shown. */
+        fallback: Pair<suspend (VehicleInfo) -> String, () -> String>? = null,
         send: suspend (VehicleInfo) -> String,
     ) {
         val v = vehicle ?: return
@@ -462,8 +492,18 @@ class MainViewModel(
         launchSafely(onError = { finish(action, false, describe(it)) }) {
             val tx = send(v)
             showProgress(CommandProgress(action, CommandProgress.Stage.WAITING))
-            when (awaitCommand(v, tx, action)) {
-                CommandResult.SUCCESS -> finish(action, true)
+            val result = awaitCommand(v, tx, action)
+            if (result == CommandResult.FAILED && fallback != null) {
+                showProgress(CommandProgress(action, CommandProgress.Stage.SENDING, "The car turned that down. Trying once more without the seats."))
+                val again = fallback.first(v)
+                showProgress(CommandProgress(action, CommandProgress.Stage.WAITING))
+                if (awaitCommand(v, again, action) == CommandResult.SUCCESS) {
+                    finish(action, true, fallback.second())
+                    return@launchSafely
+                }
+            }
+            when (result) {
+                CommandResult.SUCCESS -> finish(action, true, note())
                 CommandResult.FAILED -> finish(action, false, "The car didn't accept the command.")
                 CommandResult.TIMEOUT -> finish(action, false, "No answer from the car yet. It may still go through, so check again in a minute.")
             }
@@ -519,13 +559,35 @@ class MainViewModel(
             return
         }
         pendingClimate = null
-        val fixed = settings.forCar(caps)
+        val fixed = settings.forCar(seatCaps)
+        // Seats Bluelink says it can't set: if the car turns the start down, once more without them.
+        val again: suspend (VehicleInfo) -> String = { v -> api.startClimate(v, fixed.withoutSeats()) }
+        val withoutSeats = if (!caps.triesUnreportedSeats(fixed)) null else again to { stopTryingSeats(); SEATS_TURNED_DOWN }
         command(CommandProgress.Action.CLIMATE_START, {
             it.copy(
                 climateOn = fixed.climateOn, tempC = fixed.tempC, defrost = fixed.defrost,
                 wheelHeat = fixed.heating != 0, seats = fixed.seats.map { s -> if (s == 0) 2 else s },
             )
-        }) { api.startClimate(it, fixed) }
+        }, note = { seatTrialNote(fixed) }, fallback = withoutSeats) { api.startClimate(it, fixed) }
+    }
+
+    /** Switches Try seat heating anyway off, with the reason under the switch. */
+    private fun stopTryingSeats() {
+        store.trySeats = false
+        store.trySeatsNote = store.trySeatsNote ?: SEATS_OFF_NOTE
+        trySeats = false
+        trySeatsNote = store.trySeatsNote
+    }
+
+    /** What "Climate is on" adds while seats Bluelink says it can't set are being tried. */
+    private fun seatTrialNote(sent: ClimateSettings): String? = when {
+        // Bluelink refused the start outright and the client sent it again without the seats.
+        api.seatsTurnedDown -> {
+            stopTryingSeats()
+            SEATS_TURNED_DOWN
+        }
+        caps.triesUnreportedSeats(sent) -> "Bluelink can't confirm this car's seats, so check the seat itself to see if it's warming."
+        else -> null
     }
 
     // ------------------------------------------------- public charging (read-only)
@@ -1274,7 +1336,7 @@ class MainViewModel(
         store.lastClimate = editor
     }
 
-    fun cycleSeat(index: Int) = updateEditor { e -> e.withSeat(index, caps.nextSeatLevel(index, e.seats[index]).code) }
+    fun cycleSeat(index: Int) = updateEditor { e -> e.withSeat(index, seatCaps.nextSeatLevel(index, e.seats[index]).code) }
 
     // --------------------------------------------------------- surround view
 
@@ -1949,6 +2011,7 @@ class MainViewModel(
             // key chosen from it, and the last command sent with its answer.
             val extra = buildJsonObject {
                 put("climateKey", api.climateKey())
+                put("trySeats", store.trySeats)
                 put("climateFormatSetting", store.climateFormat.name)
                 put("genTypeHeader", caps.genHeader?.ifEmpty { "(absent)" } ?: "(not fetched)")
                 store.learnedClimateKey?.let { put("learnedClimateKey", it) }

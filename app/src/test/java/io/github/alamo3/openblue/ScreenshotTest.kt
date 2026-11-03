@@ -72,8 +72,9 @@ class ScreenshotTest(private val night: Boolean) {
         maxPercentDifference = 1.0,
     )
 
-    private fun demoVm(signedIn: Boolean = true): MainViewModel {
+    private fun demoVm(signedIn: Boolean = true, seatOptions: List<Int?> = listOf(6, 6, 1, 1), trySeats: Boolean = false): MainViewModel {
         val store = SecureStore(MemoryPrefs())
+        store.trySeats = trySeats
         if (signedIn) {
             store.username = "driver@example.com"
             store.password = "x"
@@ -81,7 +82,7 @@ class ScreenshotTest(private val night: Boolean) {
             store.vehicle = VehicleInfo("demo", "My IONIQ 6", "IONIQ 6", "2024", "KMHDEMO0000000000", "E")
             store.caps = VehicleCaps(
                 genType = "G3", hvacTempType = 1, strgWhlHeatingOption = 2,
-                seatOptions = listOf(6, 6, 1, 1), trim = "Ultimate", odometer = 1234.0, odometerUnit = 1, hasSvm = true,
+                seatOptions = seatOptions, trim = "Ultimate", odometer = 1234.0, odometerUnit = 1, hasSvm = true,
             )
             store.cachedStatus = DEMO_STATUS
             store.lastClimate = ClimateSettings(tempC = 22.0, driverSeat = 8, passengerSeat = 3, heating = 1, durationMin = 15)
@@ -111,6 +112,13 @@ class ScreenshotTest(private val night: Boolean) {
     @Test fun climateSeatWarning() = demoVm().let { vm ->
         vm.showDemoWeather(27.0, code = 0)
         vm.updateEditor { it.withSeat(0, io.github.alamo3.openblue.api.SeatLevel.HEAT_HIGH.code) }
+        shot { ClimateScreen(vm, onBack = {}) }
+    }
+
+    /** A car Bluelink says can't set its seats (all 0), with Settings > Experiments > Try seat heating anyway on. */
+    @Test fun climateTryingSeats() = demoVm(seatOptions = listOf(0, 0, 0, 0), trySeats = true).let { vm ->
+        vm.showDemoWeather(-8.0)
+        vm.updateEditor { it.withSeat(1, 0).withSeat(2, io.github.alamo3.openblue.api.SeatLevel.HEAT_LOW.code) }
         shot { ClimateScreen(vm, onBack = {}) }
     }
 
@@ -161,6 +169,18 @@ class ScreenshotTest(private val night: Boolean) {
         )
         val vm = demoVm().apply { changeWatch(true) }
         vm.showDemoUpdate()
+        shot {
+            CompositionLocalProvider(LocalActivityResultRegistryOwner provides NoopRegistryOwner) {
+                SettingsScreen(vm, onBack = {})
+            }
+        }
+    }
+    /** Whole settings screen for a car Bluelink says can't set its seats: Experiments has the seat heating switch. */
+    @Test fun settingsTryingSeats() {
+        paparazzi.unsafeUpdateConfig(
+            deviceConfig = DeviceConfig.PIXEL_5.copy(screenHeight = 3600, nightMode = if (night) NightMode.NIGHT else NightMode.NOTNIGHT),
+        )
+        val vm = demoVm(seatOptions = listOf(0, 0, 0, 0), trySeats = true)
         shot {
             CompositionLocalProvider(LocalActivityResultRegistryOwner provides NoopRegistryOwner) {
                 SettingsScreen(vm, onBack = {})
