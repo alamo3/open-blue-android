@@ -92,9 +92,9 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, open: (Route) -> Unit 
                 selected = vm.carBodyOverride,
                 optionLabel = { b ->
                     when {
-                        b == null && auto == CarBody.IONIQ5 -> "Automatic (IONIQ 5)"
+                        b == null && auto.named -> "Automatic (${auto.label})"
                         b == null -> "Automatic (${auto.label.lowercase()} stand-in)"
-                        b == CarBody.IONIQ5 -> "IONIQ 5"
+                        b.named -> b.label
                         else -> "${b.label} stand-in"
                     }
                 },
@@ -102,7 +102,7 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, open: (Route) -> Unit 
                 modifier = Modifier.fillMaxWidth(),
             )
             Text(
-                "The IONIQ 5 has its own model. Other cars get a stand-in of their body type, with doors, frunk, tailgate and the charging cable all working.",
+                "The IONIQ 5 and IONIQ 6 have their own models. Other cars get a stand-in of their body type, with doors, frunk, tailgate and the charging cable all working.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -157,6 +157,14 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, open: (Route) -> Unit 
                 if (vm.worldLabsKeySet) "Saved. The 3D view can have World Labs generate a full 3D world from your photos (billed to your key)."
                 else "Add your own key to have World Labs generate full 3D worlds from the 3D view's photos",
             ) { editingWorldKey = true }
+            if (vm.caps.seatOptions.any { it == 0 }) {
+                SettingSwitch(
+                    "Try seat heating anyway",
+                    vm.trySeatsNote?.takeIf { !vm.trySeats }
+                        ?: "Bluelink says it can't heat this car's seats remotely. Sends seat heat with climate all the same; if your car turns it down, climate starts without it and this switches itself off.",
+                    vm.trySeats,
+                ) { vm.changeTrySeats(it) }
+            }
 
             HorizontalDivider(color = app.hairline, modifier = Modifier.padding(top = 16.dp))
             SectionTitle("Developer")
@@ -221,7 +229,9 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, open: (Route) -> Unit 
                 "Open Blue ${BuildConfig.VERSION_NAME}. An unofficial app, not affiliated with Hyundai or Kia. " +
                     "Set in Barlow, licensed under the SIL Open Font License. " +
                     "3D car based on \"2024 Hyundai Ioniq 5 N\" by Ddiaz Design (sketchfab.com/ddiaz-design), " +
-                    "licensed under CC BY-NC 4.0 and modified (doors, frunk and tailgate separated, repainted, simplified, shadow and charging cable added).",
+                    "licensed under CC BY-NC 4.0 and modified (doors, frunk and tailgate separated, repainted, simplified, shadow and charging cable added). " +
+                    "IONIQ 6 based on \"Hyundai Ioniq 6\" by Mona x Supercars (sketchfab.com/Car2022), licensed under CC BY 4.0 and modified " +
+                    "(converted, doors, frunk and trunk separated, repainted, front plate removed, simplified, shadow and charging cable added).",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

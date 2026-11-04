@@ -50,22 +50,45 @@ import kotlin.math.PI
 import kotlin.math.max
 import kotlin.math.sin
 
-/** Width / height of res/drawable-nodpi/cabin_top.webp (tools/model/cabinview.py). */
-private const val CABIN_ASPECT = 700f / 1500f
-
 /**
- * Seats in the cabin image, as fractions of its width and height: driver, passenger,
- * rear left, rear right. The nose is at the top and the driver's side on the left.
+ * One car's cabin picture (tools/model/cabinview.py) and where things are in it, as fractions of
+ * its width and height. Seats: driver, passenger, rear left, rear right. The nose is at the top
+ * and the driver's side on the left.
  */
-private val SEAT_RECTS = listOf(
-    Rect(0.211f, 0.398f, 0.45f, 0.56f),
-    Rect(0.55f, 0.398f, 0.789f, 0.56f),
-    Rect(0.211f, 0.602f, 0.425f, 0.743f),
-    Rect(0.575f, 0.602f, 0.789f, 0.743f),
+private class CabinLayout(
+    @androidx.annotation.DrawableRes val image: Int,
+    /** Width / height of the picture. */
+    val aspect: Float,
+    val seats: List<Rect>,
+    val wheelCenter: Offset,
+    /** Of the width. */
+    val wheelRadius: Float,
+    val windshield: Rect,
 )
-private val WHEEL_CENTER = Offset(0.330f, 0.388f)
-private const val WHEEL_RADIUS = 0.071f // of the width
-private val WINDSHIELD = Rect(0.16f, 0.21f, 0.84f, 0.28f)
+
+/** The IONIQ 5's cabin (res/drawable-nodpi/cabin_top.webp), also used for other cars. */
+private val IONIQ5_CABIN = CabinLayout(
+    R.drawable.cabin_top, 700f / 1500f,
+    listOf(
+        Rect(0.211f, 0.398f, 0.45f, 0.56f),
+        Rect(0.55f, 0.398f, 0.789f, 0.56f),
+        Rect(0.211f, 0.602f, 0.425f, 0.743f),
+        Rect(0.575f, 0.602f, 0.789f, 0.743f),
+    ),
+    Offset(0.330f, 0.388f), 0.071f, Rect(0.16f, 0.21f, 0.84f, 0.28f),
+)
+
+/** The IONIQ 6's cabin (cabin_top_ioniq6.webp: cabinview.py car_ioniq6.glb … 1.06 700 1500 -2.45 2.45). */
+private val IONIQ6_CABIN = CabinLayout(
+    R.drawable.cabin_top_ioniq6, 700f / 1500f,
+    listOf(
+        Rect(0.217f, 0.392f, 0.454f, 0.55f),
+        Rect(0.561f, 0.392f, 0.796f, 0.55f),
+        Rect(0.215f, 0.592f, 0.43f, 0.733f),
+        Rect(0.57f, 0.592f, 0.785f, 0.733f),
+    ),
+    Offset(0.331f, 0.379f), 0.068f, Rect(0.19f, 0.215f, 0.81f, 0.29f),
+)
 
 /**
  * The real cabin seen from above with the roof cut away (rendered from the same 3D model as the
@@ -80,7 +103,9 @@ fun CabinView(
     defrost: Boolean,
     onSeat: (Int) -> Unit,
     modifier: Modifier = Modifier,
+    body: CarBody = CarBody.IONIQ5,
 ) {
+    val cab = if (body == CarBody.IONIQ6) IONIQ6_CABIN else IONIQ5_CABIN
     val colors = AppTheme.colors
     // Each seat's warmth eases in and out: + for heat, - for cooling, magnitude 0..3.
     val levels = seats.mapIndexed { i, s ->
@@ -105,33 +130,33 @@ fun CabinView(
         while (true) withFrameNanos { time = (it - start) / 1e9f }
     }
 
-    BoxWithConstraints(modifier.aspectRatio(CABIN_ASPECT)) {
+    BoxWithConstraints(modifier.aspectRatio(cab.aspect)) {
         val w = maxWidth
         val h = maxHeight
         Image(
-            painterResource(R.drawable.cabin_top),
+            painterResource(cab.image),
             contentDescription = "Cabin seen from above: driver, passenger, rear left and rear right seats",
             contentScale = ContentScale.FillBounds,
             modifier = Modifier.fillMaxSize(),
         )
         Canvas(Modifier.fillMaxSize()) {
             val t = time
-            if (glass > 0f) drawDefrost(WINDSHIELD.scaled(size), t, colors.heat, glass)
+            if (glass > 0f) drawDefrost(cab.windshield.scaled(size), t, colors.heat, glass)
             levels.forEachIndexed { i, level ->
-                val r = SEAT_RECTS[i].scaled(size)
+                val r = cab.seats[i].scaled(size)
                 when {
                     level > 0f -> drawSeatHeat(r, t, colors.heat, level, i)
                     level < 0f -> drawSeatCool(r, t, colors.cool, -level, i)
                 }
             }
             if (wheel > 0f) {
-                val c = Offset(WHEEL_CENTER.x * size.width, WHEEL_CENTER.y * size.height)
-                drawWheelHeat(c, WHEEL_RADIUS * size.width, t, colors.heat, wheel)
+                val c = Offset(cab.wheelCenter.x * size.width, cab.wheelCenter.y * size.height)
+                drawWheelHeat(c, cab.wheelRadius * size.width, t, colors.heat, wheel)
             }
         }
         // Tap targets, each with a small readout of its level.
         seats.forEachIndexed { i, level ->
-            val r = SEAT_RECTS[i]
+            val r = cab.seats[i]
             Box(
                 Modifier
                     .offset(w * r.left, h * r.top)

@@ -82,6 +82,19 @@ class SecureStore(private val prefs: SharedPreferences) {
         get() = read("climateFormat")?.let { runCatching { ClimateFormat.valueOf(it) }.getOrNull() } ?: ClimateFormat.AUTO
         set(v) = write("climateFormat", v.name)
 
+    /**
+     * Settings > Experiments > Try seat heating anyway: seats Bluelink reports as not remotely
+     * settable (seatHeatVent option 0) can be heated with climate all the same.
+     */
+    var trySeats: Boolean
+        get() = prefs.getBoolean("trySeats", false)
+        set(v) = prefs.edit().putBoolean("trySeats", v).apply()
+
+    /** Why [trySeats] switched itself off (the car turned the seats down), or null. */
+    var trySeatsNote: String?
+        get() = read("trySeatsNote")
+        set(v) = write("trySeatsNote", v)
+
     /** Shows the floating developer panel. */
     var developerMode: Boolean
         get() = prefs.getBoolean("developerMode", false)

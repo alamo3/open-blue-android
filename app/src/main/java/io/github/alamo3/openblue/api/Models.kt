@@ -94,6 +94,22 @@ data class VehicleCaps(
     val remoteSeats: Boolean get() = (0 until 4).any { seatLevels(it).size > 1 }
 }
 
+/**
+ * These caps with stand-ins for the seats Bluelink reports as not remotely settable (option 0),
+ * when [on] (Settings > Experiments > Try seat heating anyway): front seats heat in three levels and
+ * rear seats in two, as the official app reads options 2 and 1. Cooling isn't tried.
+ */
+fun VehicleCaps.trialSeats(on: Boolean): VehicleCaps =
+    if (!on || seatOptions.none { it == 0 }) this
+    else copy(seatOptions = seatOptions.mapIndexed { i, o -> if (o == 0) (if (i < 2) 2 else 1) else o })
+
+/** Under Settings > Experiments > Try seat heating anyway once it has switched itself off. */
+const val SEATS_OFF_NOTE = "Switched itself off: your car turned the seats down, so climate started without them."
+
+/** True when [s] heats or cools a seat these caps say Bluelink can't set (only while trying seats anyway). */
+fun VehicleCaps.triesUnreportedSeats(s: ClimateSettings): Boolean =
+    s.seats.withIndex().any { (i, code) -> code != 0 && seatOptions.getOrNull(i) == 0 }
+
 enum class ClimateFormat(val label: String) {
     AUTO("Automatic"),
     HVAC_INFO("Older cars (\"hvacInfo\")"),
@@ -167,6 +183,8 @@ data class ClimateSettings(
         2 -> copy(rearLeftSeat = code)
         else -> copy(rearRightSeat = code)
     }
+
+    fun withoutSeats() = copy(driverSeat = 0, passengerSeat = 0, rearLeftSeat = 0, rearRightSeat = 0)
 
     /** Short plain-language description, e.g. "22 °C for 10 min, defrost, 2 seats heated". */
     fun summary(): String {
