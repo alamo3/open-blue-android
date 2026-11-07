@@ -9,6 +9,7 @@ import android.view.View
 import android.webkit.URLUtil
 import android.widget.Toast
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.HorizontalDivider
@@ -75,6 +76,11 @@ fun StoreScreen(vm: MainViewModel, onBack: () -> Unit) {
     val main = remember { Layer(0, null) }
     val children = remember { mutableStateListOf<Layer>() }
     var nextId by remember { mutableIntStateOf(1) }
+    val log = remember { mutableStateListOf<String>() }
+    val note: (String) -> Unit = { line ->
+        if (log.size >= 200) log.removeAt(0)
+        log.add(java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US).format(java.util.Date()) + " " + line)
+    }
     val top = children.lastOrNull() ?: main
 
     fun close(layer: Layer, ok: Boolean) {
@@ -95,7 +101,7 @@ fun StoreScreen(vm: MainViewModel, onBack: () -> Unit) {
         if (vm.storeLoading || (page?.url != null && top.progress < 100)) {
             LinearProgressIndicator(Modifier.fillMaxWidth())
         }
-        if (vm.developerMode) StoreCheck(vm)
+        if (vm.developerMode) StoreCheck(vm, log)
         when {
             vm.storeError != null -> Explain(
                 listOfNotNull(
@@ -125,6 +131,7 @@ fun StoreScreen(vm: MainViewModel, onBack: () -> Unit) {
                                 page = page,
                                 visible = layer === top,
                                 debugging = vm.developerMode,
+                                onLog = note,
                                 onClose = { ok -> close(layer, ok) },
                                 onOpenChild = { url -> children.add(Layer(nextId++, url)) },
                                 modifier = Modifier.fillMaxSize(),
@@ -146,11 +153,20 @@ private class Layer(val id: Int, val url: String?) {
 
 /** Developer mode: what Bluelink says about the car that decides what the store offers. */
 @Composable
-private fun StoreCheck(vm: MainViewModel) {
+private fun StoreCheck(vm: MainViewModel, log: List<String>) {
     var open by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(open, vm.storePage?.url) { if (open) vm.loadStoreCheck() }
+    val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
     Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
-        TextButton(onClick = { open = !open }) { Text(if (open) "Hide store check" else "Store check (developer)") }
+        Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            TextButton(onClick = { open = !open }) { Text(if (open) "Hide store check" else "Store check (developer)") }
+            if (open) {
+                TextButton(onClick = {
+                    val rows = vm.storeCheck.orEmpty().joinToString("\n") { (k, v) -> "$k: $v" }
+                    clipboard.setText(androidx.compose.ui.text.AnnotatedString(rows + "\n\nPage log:\n" + log.joinToString("\n").ifEmpty { "(nothing yet)" }))
+                }) { Text("Copy") }
+            }
+        }
         if (open) {
             val rows = vm.storeCheck
             Column(Modifier.fillMaxWidth().heightIn(max = 300.dp).verticalScroll(rememberScrollState())) {
@@ -161,6 +177,13 @@ private fun StoreCheck(vm: MainViewModel) {
                             Text(k, style = MaterialTheme.typography.labelMedium, color = AppTheme.colors.muted, modifier = Modifier.padding(top = 6.dp))
                             Text(v, style = MaterialTheme.typography.bodySmall)
                         }
+                        Text("Page log", style = MaterialTheme.typography.labelMedium, color = AppTheme.colors.muted, modifier = Modifier.padding(top = 10.dp))
+                        Text(
+                            "Failed requests and page errors, without addresses' query strings. Open the store, use My page, then copy.",
+                            style = MaterialTheme.typography.bodySmall, color = AppTheme.colors.muted,
+                        )
+                        if (log.isEmpty()) Text("Nothing yet.", style = MaterialTheme.typography.bodySmall)
+                        log.forEach { Text(it, style = MaterialTheme.typography.bodySmall) }
                     }
                 }
             }
@@ -168,6 +191,12 @@ private fun StoreCheck(vm: MainViewModel) {
         }
     }
 }
+
+/** Keeps a logged address to scheme, host and path: queries can carry tokens. */
+private fun plain(url: String?): String = url?.substringBefore('?')?.substringBefore('#').orEmpty()
+
+/** Hides long token-like runs in a message. */
+private fun masked(text: String): String = text.replace(Regex("[A-Za-z0-9_\\-.=+/]{40,}"), "…").take(300)
 
 @Composable
 private fun Explain(lines: List<String>, action: @Composable () -> Unit = {}) {
@@ -238,8 +267,10 @@ private fun StoreWeb(
     debugging: Boolean,
     onClose: (ok: Boolean) -> Unit,
     onOpenChild: (String) -> Unit,
+    onLog: (String) -> Unit,
     modifier: Modifier,
 ) {
+    val logNow by rememberUpdatedState(onLog)
     val onCloseNow by rememberUpdatedState(onClose)
     val onOpenNow by rememberUpdatedState(onOpenChild)
     AndroidView(
@@ -278,6 +309,7 @@ private fun StoreWeb(
                         carrier.webViewClient = object : WebViewClient() {
                             override fun shouldOverrideUrlLoading(v: WebView, request: WebResourceRequest): Boolean {
                                 val u = request.url.toString()
+                                logNow("new window ${plain(u)}")
                                 if (u.startsWith(CLOSE_LINK)) onCloseNow(false) else onOpenNow(u)
                                 v.post { v.destroy() }
                                 return true
@@ -289,6 +321,13 @@ private fun StoreWeb(
                     }
 
                     override fun onCloseWindow(window: WebView) { onCloseNow(true) }
+
+                    override fun onConsoleMessage(m: android.webkit.ConsoleMessage): Boolean {
+                        if (m.messageLevel() == android.webkit.ConsoleMessage.MessageLevel.ERROR || m.messageLevel() == android.webkit.ConsoleMessage.MessageLevel.WARNING) {
+                            logNow("console ${m.messageLevel().name.lowercase()}: ${masked(m.message())} (${plain(m.sourceId()).substringAfterLast('/')}:${m.lineNumber()})")
+                        }
+                        return false
+                    }
                 }
                 webViewClient = object : WebViewClient() {
                     override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
@@ -308,6 +347,15 @@ private fun StoreWeb(
 
                     override fun doUpdateVisitedHistory(view: WebView, url: String?, isReload: Boolean) {
                         layer.canGoBack = view.canGoBack()
+                        logNow("page ${plain(url)}")
+                    }
+
+                    override fun onReceivedHttpError(view: WebView, request: WebResourceRequest, response: android.webkit.WebResourceResponse) {
+                        logNow("HTTP ${response.statusCode} ${request.method} ${plain(request.url.toString())}" + if (request.isForMainFrame) " (page)" else "")
+                    }
+
+                    override fun onReceivedError(view: WebView, request: WebResourceRequest, error: android.webkit.WebResourceError) {
+                        logNow("error ${error.description} ${plain(request.url.toString())}")
                     }
                 }
                 layer.web = this
