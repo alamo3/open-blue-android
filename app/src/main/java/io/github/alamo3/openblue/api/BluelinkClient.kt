@@ -712,6 +712,47 @@ class BluelinkClient(private val store: SecureStore) {
             },
         )
     }
+    // ------------------------------------------------------------ schedules (kept on the server)
+
+    suspend fun climateSchedule(vehicleId: String, table: List<TempTables.Entry>): ClimateSchedule = authed { t ->
+        val body = check(post("v2/rc/ev/getreshvac", headers = mapOf("accessToken" to t, "vehicleId" to vehicleId), method = "GET"))
+        ClimateSchedule.fromJson(body.at("result"), table)
+    }
+
+    /** Saves both climate slots. Returns the transactionId when the server gives one. */
+    suspend fun saveClimateSchedule(vehicleId: String, schedule: ClimateSchedule, table: List<TempTables.Entry>): String? {
+        val hex = { c: Double -> TempTables.nearest(table, c).hex }
+        return scheduleCommand(
+            "v2/rc/ev/reshvacset", vehicleId,
+            buildJsonObject {
+                put("reservedHVACInfo1", schedule.first.toJson(hex(schedule.first.tempC)))
+                put("reservedHVACInfo2", schedule.second.toJson(hex(schedule.second.tempC)))
+            },
+        )
+    }
+
+    /** The charging window, or null when the server has none for this car. */
+    suspend fun chargeSchedule(vehicleId: String): ChargeWindow? = authed { t ->
+        val body = check(post("v2/rc/ev/getrescharge", headers = mapOf("accessToken" to t, "vehicleId" to vehicleId), method = "GET"))
+        ChargeWindow.fromJson(body.at("result"))
+    }
+
+    suspend fun saveChargeSchedule(vehicleId: String, window: ChargeWindow): String? {
+        val pin = store.pin ?: throw ApiException(null, "No Bluelink PIN saved")
+        return scheduleCommand("v2/rc/ev/reschargeset", vehicleId, window.toJson(pin))
+    }
+
+    /** A PIN-checked save: the PIN goes in the body (as the official app does) and in pAuth. */
+    private suspend fun scheduleCommand(path: String, vehicleId: String, fields: JsonObject): String? {
+        val pin = store.pin ?: throw ApiException(null, "No Bluelink PIN saved")
+        return authed { t ->
+            val auth = pAuth(t, vehicleId, pin)
+            val r = post(path, JsonObject(fields + ("pin" to JsonPrimitive(pin))), mapOf("accessToken" to t, "vehicleId" to vehicleId, "pAuth" to auth))
+            check(r)
+            r.headers["transactionId"]
+        }
+    }
+
     suspend fun unlock(vehicleId: String) = command("drulck", vehicleId)
     suspend fun stopClimate(vehicleId: String) = command("evc/rfoff", vehicleId)
 

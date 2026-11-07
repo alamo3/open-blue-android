@@ -11,7 +11,9 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import io.github.alamo3.openblue.api.ApiException
 import io.github.alamo3.openblue.api.BluelinkClient
+import io.github.alamo3.openblue.api.ChargeWindow
 import io.github.alamo3.openblue.api.ClimateFormat
+import io.github.alamo3.openblue.api.ClimateSchedule
 import io.github.alamo3.openblue.api.ClimateSettings
 import io.github.alamo3.openblue.api.CommandResult
 import io.github.alamo3.openblue.api.LoginResult
@@ -85,6 +87,8 @@ data class CommandProgress(val action: Action, val stage: Stage, val note: Strin
         PRECONDITION_OFF("Turning off battery preconditioning", "Battery preconditioning off"),
         CHARGE_LIMITS("Saving charge limits", "Charge limits saved"),
         LOCATE("Asking the car where it is", "Found the car"),
+        SCHEDULE_CLIMATE("Saving the climate schedule", "Climate schedule saved"),
+        SCHEDULE_CHARGE("Saving the charging schedule", "Charging schedule saved"),
     }
 }
 
@@ -1226,6 +1230,85 @@ class MainViewModel(
                     // The limits are saved; the status will catch up on the next refresh.
                 }
             }
+        }
+    }
+
+    // ------------------------------------------------------------ schedules
+
+    /** Schedules kept on Bluelink's servers; null until loaded. */
+    var climateSchedule by mutableStateOf<ClimateSchedule?>(null)
+        private set
+    var chargeSchedule by mutableStateOf<ChargeWindow?>(null)
+        private set
+    var schedulesLoading by mutableStateOf(false)
+        private set
+    /** Why the schedules couldn't be read, per kind (the car may not support one of them). */
+    var climateScheduleError by mutableStateOf<String?>(null)
+        private set
+    var chargeScheduleError by mutableStateOf<String?>(null)
+        private set
+
+    val hasChargeSchedule: Boolean get() = vehicle?.fuelKindCode.equals("E", ignoreCase = true)
+
+    fun loadSchedules() {
+        val v = vehicle ?: return
+        if (!online || schedulesLoading) return
+        schedulesLoading = true
+        viewModelScope.launch {
+            try {
+                try {
+                    climateSchedule = api.climateSchedule(v.id, tempTable)
+                    climateScheduleError = null
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    climateScheduleError = describe(e)
+                }
+                if (hasChargeSchedule) {
+                    try {
+                        chargeSchedule = api.chargeSchedule(v.id) ?: ChargeWindow()
+                        chargeScheduleError = null
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        chargeScheduleError = describe(e)
+                    }
+                }
+            } finally {
+                schedulesLoading = false
+            }
+        }
+    }
+
+    fun saveClimateSchedule(schedule: ClimateSchedule) = saveSchedule(CommandProgress.Action.SCHEDULE_CLIMATE) { v ->
+        val tx = api.saveClimateSchedule(v.id, schedule, tempTable)
+        climateSchedule = schedule
+        tx
+    }
+
+    fun saveChargeSchedule(window: ChargeWindow) = saveSchedule(CommandProgress.Action.SCHEDULE_CHARGE) { v ->
+        val tx = api.saveChargeSchedule(v.id, window)
+        chargeSchedule = window
+        tx
+    }
+
+    private fun saveSchedule(action: CommandProgress.Action, send: suspend (VehicleInfo) -> String?) {
+        val v = vehicle ?: return
+        if (!canAct) return
+        showProgress(CommandProgress(action, CommandProgress.Stage.SENDING))
+        launchSafely(onError = { finish(action, false, describe(it)) }) {
+            val tx = send(v)
+            if (tx != null) {
+                showProgress(CommandProgress(action, CommandProgress.Stage.WAITING))
+                when (awaitCommand(v, tx, action)) {
+                    CommandResult.SUCCESS -> finish(action, true)
+                    CommandResult.FAILED -> finish(action, false, "The car didn't accept the schedule.")
+                    CommandResult.TIMEOUT -> finish(action, false, "No answer from the car yet. It may still go through; reopen this screen in a minute to check.")
+                }
+            } else {
+                finish(action, true)
+            }
+            loadSchedules()
         }
     }
 
