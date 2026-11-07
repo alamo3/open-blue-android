@@ -1034,6 +1034,48 @@ class MainViewModel(
     fun closeStore() {
         storePage = null
         storeError = null
+        storeCheck = null
+    }
+
+    /** Developer mode: what Bluelink says about this car that decides what the store offers. */
+    var storeCheck by mutableStateOf<List<Pair<String, String>>?>(null)
+        private set
+
+    fun loadStoreCheck() {
+        val v = vehicle ?: return
+        if (!online) return
+        launchSafely {
+            val raw = api.selectVehicle(v.id)
+            val entry = runCatching { api.vehicleListEntry(v.id) }.getOrNull()
+            val car = raw["vehicle"] as? JsonObject
+            fun f(o: JsonObject?, k: String) = o?.get(k)?.let { (it as? kotlinx.serialization.json.JsonPrimitive)?.content }?.ifBlank { null }
+            val featureNames = (raw["featuresModel"] as? JsonObject)?.get("features")?.let { it as? kotlinx.serialization.json.JsonArray }
+                ?.flatMap { cat -> ((cat as? JsonObject)?.get("features") as? kotlinx.serialization.json.JsonArray).orEmpty().mapNotNull { f(it as? JsonObject, "featureName") } }
+                .orEmpty()
+            val keywords = Regex("fod|store|theme|ota|update|profile|ccnc|digital|commerce", RegexOption.IGNORE_CASE)
+            // Any field in the vehicle details or list entry whose name mentions the store.
+            val storeFields = listOfNotNull(car, entry).flatMap { o ->
+                o.entries.filter { (k, _) -> keywords.containsMatchIn(k) }
+                    .map { (k, value) -> k to ((value as? kotlinx.serialization.json.JsonPrimitive)?.content ?: value.toString()) }
+            }.distinct()
+            val rows = mutableListOf<Pair<String, String>>()
+            rows += "Car" to listOfNotNull(f(car, "modelName"), f(car, "modelYear"), f(car, "trim")).joinToString(" · ")
+            rows += "Model code" to listOfNotNull(f(car, "modelCode"), f(car, "vehicleKindCode")).joinToString(" / ")
+            rows += "Generation" to (f(car, "genType") ?: "?") + (caps.genHeader?.takeIf { it.isNotEmpty() }?.let { " (header $it)" } ?: "")
+            rows += "Bluelink subscription" to "${f(car, "subscriptionStatus") ?: "?"}, ends ${f(car, "subscriptionEndDate") ?: "?"}"
+            rows += "Enrollment status" to (f(car, "enrollmentStatus") ?: "?")
+            rows += "Lists the store (Fod)" to if ("Fod" in featureNames) "yes" else "no"
+            rows += "Store address (English)" to (f(car, "fodWebManualUrlEn") ?: f(entry, "fodWebManualUrlEn") ?: "none")
+            rows += "Store address (French)" to (f(car, "fodWebManualUrlFr") ?: f(entry, "fodWebManualUrlFr") ?: "none")
+            val page = storePage
+            rows += "Opened" to (page?.url ?: "nothing yet")
+            rows += "Store token" to (page?.let { "handed out, lasts ${it.expiresIn ?: "?"} s" } ?: "not asked for yet")
+            val related = featureNames.filter { keywords.containsMatchIn(it) }
+            rows += "Related features" to (related.joinToString(", ").ifEmpty { "none" })
+            if (storeFields.isNotEmpty()) rows += "Related fields" to storeFields.joinToString("\n") { (k, value) -> "$k = ${value.take(120)}" }
+            rows += "All features" to featureNames.joinToString(", ").ifEmpty { "none listed" }
+            storeCheck = rows
+        }
     }
 
     // ------------------------------------------------------- developer: endpoint probe

@@ -1,6 +1,21 @@
 package io.github.alamo3.openblue.ui
 
 import android.annotation.SuppressLint
+import android.app.DownloadManager
+import android.content.Context
+import android.os.Environment
+import android.os.Message
+import android.view.View
+import android.webkit.URLUtil
+import android.widget.Toast
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.rememberUpdatedState
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
@@ -46,23 +61,41 @@ import io.github.alamo3.openblue.MainViewModel
  * The Bluelink Store (Hyundai's "features on demand"), the same web page the official app shows,
  * opened with the same cookie and user agent. The official app only offers it when the car's
  * feature list includes "Fod"; this offers it for every car and lets Hyundai's page decide.
+ *
+ * Like the official app, a page that opens a new window ("My page", checkout) gets its own layer
+ * on top, closed again by the page itself (window.close(), CloseHandler.closeWindow() or a
+ * hmg-commerce://close link); closing one with window.close() tells the page underneath
+ * (notifyChildWindowClosed()), which is how the store refreshes after a purchase.
  */
 @Composable
 fun StoreScreen(vm: MainViewModel, onBack: () -> Unit) {
     LaunchedEffect(Unit) { vm.openStore() }
     DisposableEffect(Unit) { onDispose { vm.closeStore() } }
-    var web by remember { mutableStateOf<WebView?>(null) }
-    var progress by remember { mutableIntStateOf(100) }
-    var canGoBack by remember { mutableStateOf(false) }
     val page = vm.storePage
+    val main = remember { Layer(0, null) }
+    val children = remember { mutableStateListOf<Layer>() }
+    var nextId by remember { mutableIntStateOf(1) }
+    val top = children.lastOrNull() ?: main
 
-    BackHandler(enabled = canGoBack) { web?.goBack() }
+    fun close(layer: Layer, ok: Boolean) {
+        if (layer === main) { onBack(); return }
+        val i = children.indexOf(layer)
+        if (i < 0) return
+        children.removeAt(i)
+        val below = if (i == 0) main else children[i - 1]
+        if (ok) below.web?.evaluateJavascript("javascript:notifyChildWindowClosed()", null)
+    }
+
+    BackHandler(enabled = children.isNotEmpty() || top.canGoBack) {
+        if (top.canGoBack) top.web?.goBack() else close(top, ok = false)
+    }
 
     Column(Modifier.fillMaxSize()) {
         ScreenHeader("Bluelink Store", onBack)
-        if (vm.storeLoading || (page?.url != null && progress < 100)) {
+        if (vm.storeLoading || (page?.url != null && top.progress < 100)) {
             LinearProgressIndicator(Modifier.fillMaxWidth())
         }
+        if (vm.developerMode) StoreCheck(vm)
         when {
             vm.storeError != null -> Explain(
                 listOfNotNull(
@@ -82,14 +115,56 @@ fun StoreScreen(vm: MainViewModel, onBack: () -> Unit) {
                         modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp),
                     )
                 }
-                StoreWeb(
-                    page, onClose = onBack,
-                    onCreated = { web = it },
-                    onProgress = { progress = it },
-                    onHistory = { canGoBack = it },
-                    modifier = Modifier.fillMaxWidth().weight(1f),
-                )
+                Box(Modifier.fillMaxWidth().weight(1f)) {
+                    val all = listOf(main) + children.toList()
+                    all.forEach { layer ->
+                        key(layer.id) {
+                            StoreWeb(
+                                layer = layer,
+                                url = layer.url ?: page.url.orEmpty(),
+                                page = page,
+                                visible = layer === top,
+                                debugging = vm.developerMode,
+                                onClose = { ok -> close(layer, ok) },
+                                onOpenChild = { url -> children.add(Layer(nextId++, url)) },
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                        }
+                    }
+                }
             }
+        }
+    }
+}
+
+/** One page of the store: the first, or one the page opened in a new window. */
+private class Layer(val id: Int, val url: String?) {
+    var web: WebView? = null
+    var canGoBack by mutableStateOf(false)
+    var progress by mutableIntStateOf(100)
+}
+
+/** Developer mode: what Bluelink says about the car that decides what the store offers. */
+@Composable
+private fun StoreCheck(vm: MainViewModel) {
+    var open by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(open, vm.storePage?.url) { if (open) vm.loadStoreCheck() }
+    Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
+        TextButton(onClick = { open = !open }) { Text(if (open) "Hide store check" else "Store check (developer)") }
+        if (open) {
+            val rows = vm.storeCheck
+            Column(Modifier.fillMaxWidth().heightIn(max = 300.dp).verticalScroll(rememberScrollState())) {
+                if (rows == null) Text("Loading…", style = MaterialTheme.typography.bodySmall)
+                SelectionContainer {
+                    Column {
+                        rows?.forEach { (k, v) ->
+                            Text(k, style = MaterialTheme.typography.labelMedium, color = AppTheme.colors.muted, modifier = Modifier.padding(top = 6.dp))
+                            Text(v, style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                }
+            }
+            HorizontalDivider(Modifier.padding(top = 8.dp))
         }
     }
 }
@@ -156,14 +231,17 @@ private const val UA_SUFFIX = "_CCS_APP_AOS"
 @SuppressLint("SetJavaScriptEnabled", "JavascriptInterface")
 @Composable
 private fun StoreWeb(
+    layer: Layer,
+    url: String,
     page: MainViewModel.StorePage,
-    onClose: () -> Unit,
-    onCreated: (WebView) -> Unit,
-    onProgress: (Int) -> Unit,
-    onHistory: (Boolean) -> Unit,
+    visible: Boolean,
+    debugging: Boolean,
+    onClose: (ok: Boolean) -> Unit,
+    onOpenChild: (String) -> Unit,
     modifier: Modifier,
 ) {
-    val url = page.url ?: return
+    val onCloseNow by rememberUpdatedState(onClose)
+    val onOpenNow by rememberUpdatedState(onOpenChild)
     AndroidView(
         modifier = modifier,
         factory = { ctx ->
@@ -172,35 +250,71 @@ private fun StoreWeb(
                 settings.domStorageEnabled = true
                 settings.useWideViewPort = true
                 settings.loadWithOverviewMode = true
+                settings.setSupportZoom(true)
+                settings.builtInZoomControls = true
+                settings.displayZoomControls = false
+                settings.javaScriptCanOpenWindowsAutomatically = true
+                settings.setSupportMultipleWindows(true)
+                settings.mediaPlaybackRequiresUserGesture = false
                 settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
                 settings.userAgentString = settings.userAgentString + UA_SUFFIX
+                if (debugging) WebView.setWebContentsDebuggingEnabled(true)
                 // The page's "close" button calls CloseHandler.closeWindow(), as in the official app.
                 addJavascriptInterface(object {
                     @JavascriptInterface
-                    fun closeWindow() = post { onClose() }
+                    fun closeWindow() = post { onCloseNow(false) }
                 }, "CloseHandler")
+                setDownloadListener { dl, userAgent, disposition, mime, _ -> download(ctx, dl, userAgent, disposition, mime) }
                 webChromeClient = object : WebChromeClient() {
-                    override fun onProgressChanged(view: WebView, newProgress: Int) = onProgress(newProgress)
+                    override fun onProgressChanged(view: WebView, newProgress: Int) { layer.progress = newProgress }
+
+                    // The page opened a window. Like the official app, take the address it
+                    // wanted and show it as a layer of our own; the throwaway view that carries
+                    // the request is never shown.
+                    override fun onCreateWindow(view: WebView, isDialog: Boolean, isUserGesture: Boolean, resultMsg: Message?): Boolean {
+                        val msg = resultMsg ?: return false
+                        val transport = msg.obj as? WebView.WebViewTransport ?: return false
+                        val carrier = WebView(view.context)
+                        carrier.webViewClient = object : WebViewClient() {
+                            override fun shouldOverrideUrlLoading(v: WebView, request: WebResourceRequest): Boolean {
+                                val u = request.url.toString()
+                                if (u.startsWith(CLOSE_LINK)) onCloseNow(false) else onOpenNow(u)
+                                v.post { v.destroy() }
+                                return true
+                            }
+                        }
+                        transport.webView = carrier
+                        msg.sendToTarget()
+                        return true
+                    }
+
+                    override fun onCloseWindow(window: WebView) { onCloseNow(true) }
                 }
                 webViewClient = object : WebViewClient() {
                     override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                         val u = request.url
-                        if (u.scheme == "https" || u.scheme == "http") return false
-                        // tel:, mailto:, intent: and the like go to whatever handles them.
-                        try {
-                            ctx.startActivity(Intent(Intent.ACTION_VIEW, u).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-                        } catch (_: ActivityNotFoundException) {
+                        val text = u.toString()
+                        if (text.startsWith(CLOSE_LINK)) { onCloseNow(false); return true }
+                        if (u.scheme == "https" || u.scheme == "http") {
+                            // Links the store marks to open in the phone's own browser.
+                            val marker = EXTERNAL_MARKERS.firstOrNull { text.contains(it) } ?: return false
+                            openExternally(ctx, Uri.parse(text.replace(marker, "")))
+                            return true
                         }
+                        // tel:, mailto:, intent: and the like go to whatever handles them.
+                        openExternally(ctx, u)
                         return true
                     }
 
-                    override fun doUpdateVisitedHistory(view: WebView, url: String?, isReload: Boolean) =
-                        onHistory(view.canGoBack())
+                    override fun doUpdateVisitedHistory(view: WebView, url: String?, isReload: Boolean) {
+                        layer.canGoBack = view.canGoBack()
+                    }
                 }
-                onCreated(this)
+                layer.web = this
             }
         },
         update = { view ->
+            view.visibility = if (visible) View.VISIBLE else View.GONE
             if (view.tag != url) {
                 view.tag = url
                 val cookies = CookieManager.getInstance()
@@ -211,8 +325,41 @@ private fun StoreWeb(
                 view.loadUrl(url)
             }
         },
-        onRelease = { it.destroy() },
+        onRelease = { if (layer.web === it) layer.web = null; it.destroy() },
     )
+}
+
+private const val CLOSE_LINK = "hmg-commerce://close"
+
+/** Store links carrying one of these open in the phone's browser, without the marker. */
+private val EXTERNAL_MARKERS = listOf("&HBrowser=_Extetrnal", "&ICPBrowser=_Extetrnal")
+
+private fun openExternally(ctx: Context, uri: Uri) {
+    try {
+        ctx.startActivity(Intent(Intent.ACTION_VIEW, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    } catch (_: ActivityNotFoundException) {
+    }
+}
+
+/** Hands an https download (an invoice PDF, say) to the system downloader, with the page's cookies. */
+private fun download(ctx: Context, url: String, userAgent: String?, disposition: String?, mime: String?) {
+    if (!url.startsWith("https://")) {
+        Toast.makeText(ctx, "Open Blue can't save this kind of download yet.", Toast.LENGTH_LONG).show()
+        return
+    }
+    try {
+        val name = URLUtil.guessFileName(url, disposition, mime)
+        val request = DownloadManager.Request(Uri.parse(url))
+            .setTitle(name)
+            .setMimeType(mime)
+            .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+            .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, name)
+        CookieManager.getInstance().getCookie(url)?.takeIf { it.isNotBlank() }?.let { request.addRequestHeader("Cookie", it) }
+        userAgent?.takeIf { it.isNotBlank() }?.let { request.addRequestHeader("User-Agent", it) }
+        (ctx.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager).enqueue(request)
+    } catch (e: RuntimeException) {
+        Toast.makeText(ctx, "Couldn't start the download.", Toast.LENGTH_LONG).show()
+    }
 }
 
 /** The cookie the official app sets: t=<token>;Max-Age=<expiresIn>;Domain=<host>; Path=/ on scheme://host. */
