@@ -17,6 +17,7 @@ import io.github.alamo3.openblue.api.BluelinkClient
 import io.github.alamo3.openblue.api.ClimateSettings
 import io.github.alamo3.openblue.api.VehicleCaps
 import io.github.alamo3.openblue.api.forCar
+import io.github.alamo3.openblue.api.trialSeats
 import io.github.alamo3.openblue.data.SecureStore
 import io.github.alamo3.openblue.work.CommandWorker
 import io.github.alamo3.openblue.work.Notifier
@@ -93,7 +94,7 @@ class WidgetCommandWorker(context: Context, params: WorkerParameters) : Coroutin
                 val tx = when (action) {
                     CommandProgress.Action.LOCK -> api.lock(v.id)
                     CommandProgress.Action.CLIMATE_STOP -> api.stopClimate(v.id)
-                    else -> api.startClimate(v, (chosen ?: store.lastClimate ?: ClimateSettings()).forCar(store.caps ?: VehicleCaps()))
+                    else -> api.startClimate(v, (chosen ?: store.lastClimate ?: ClimateSettings()).forCar((store.caps ?: VehicleCaps()).trialSeats(store.trySeats)))
                 }
                 CommandWorker.enqueue(applicationContext, v.id, tx, action, car)
                 return Result.success()  // CommandWorker clears the pending note when the car answers

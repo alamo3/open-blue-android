@@ -12,9 +12,9 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 /**
- * Which 3D car to show. The IONIQ 5 has its own model; any other car gets a stand-in of its
- * body type (tools/model/generic.py), with the same hinged parts so doors, frunk, tailgate and
- * the charging cable work the same way.
+ * Which 3D car to show. The IONIQ 5 and IONIQ 6 have their own models (tools/model/rig.py,
+ * rig6.py); any other car gets a stand-in of its body type (tools/model/generic.py), with the same
+ * hinged parts so doors, frunk, tailgate and the charging cable work the same way.
  */
 enum class CarBody(
     val label: String,
@@ -25,9 +25,13 @@ enum class CarBody(
     @DrawableRes val top: Int,
 ) {
     IONIQ5("IONIQ 5", "models/car.glb", null, R.drawable.car_still, R.drawable.car_top),
+    IONIQ6("IONIQ 6", "models/car_ioniq6.glb", "models/car_ioniq6-anchors.json", R.drawable.car_still_ioniq6, R.drawable.car_top_ioniq6),
     SEDAN("Sedan", "models/car_sedan.glb", "models/car_sedan-anchors.json", R.drawable.car_still_sedan, R.drawable.car_top_sedan),
     CROSSOVER("Crossover", "models/car_crossover.glb", "models/car_crossover-anchors.json", R.drawable.car_still_crossover, R.drawable.car_top_crossover),
     SUV("SUV", "models/car_suv.glb", "models/car_suv-anchors.json", R.drawable.car_still_suv, R.drawable.car_top_suv);
+
+    /** Shown by its own name in Settings rather than as a body-type stand-in. */
+    val named: Boolean get() = this == IONIQ5 || this == IONIQ6
 
     companion object {
         /** The body type for a Bluelink model name ("IONIQ 5", "Kona Electric", "Santa Fe"…). */
@@ -35,8 +39,9 @@ enum class CarBody(
             val m = model.orEmpty().uppercase().replace("-", " ")
             return when {
                 Regex("IONIQ\\s*5").containsMatchIn(m) -> IONIQ5
+                Regex("IONIQ\\s*6").containsMatchIn(m) -> IONIQ6
                 listOf("PALISADE", "SANTA FE", "SANTAFE", "IONIQ 9", "IONIQ9", "SANTA CRUZ", "XCIENT").any { it in m } -> SUV
-                listOf("ELANTRA", "SONATA", "IONIQ 6", "IONIQ6", "ACCENT", "AZERA", "GENESIS").any { it in m } -> SEDAN
+                listOf("ELANTRA", "SONATA", "ACCENT", "AZERA", "GENESIS").any { it in m } -> SEDAN
                 else -> CROSSOVER // Kona, Venue, Tucson, Nexo, IONIQ (hatch) and anything new
             }
         }
@@ -71,7 +76,8 @@ enum class CarBody(
 enum class CarPaint(val label: String, val rgb: FloatArray, val swatch: Long) {
     WHITE("White", floatArrayOf(0.78f, 0.78f, 0.75f), 0xFFE9E9E4),
     SILVER("Silver", floatArrayOf(0.42f, 0.43f, 0.44f), 0xFFAEB1B4),
-    GREY("Grey", floatArrayOf(0.12f, 0.125f, 0.13f), 0xFF5E6266),
+    // Nocturne Grey Metallic (Hyundai T2G), matched by eye: Hyundai publishes no colour value.
+    GREY("Nocturne Grey", floatArrayOf(0.048f, 0.053f, 0.060f), 0xFF3E4145),
     BLACK("Black", floatArrayOf(0.012f, 0.012f, 0.014f), 0xFF17181A),
     BLUE("Blue", floatArrayOf(0.02f, 0.07f, 0.22f), 0xFF234C86),
     RED("Red", floatArrayOf(0.35f, 0.012f, 0.012f), 0xFFA3202A),
@@ -81,7 +87,7 @@ enum class CarPaint(val label: String, val rgb: FloatArray, val swatch: Long) {
     companion object {
         private const val PREFS = "car_look"
         fun current(context: Context): CarPaint =
-            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString("paint", null)?.let { n -> entries.firstOrNull { it.name == n } } ?: WHITE
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString("paint", null)?.let { n -> entries.firstOrNull { it.name == n } } ?: GREY
         fun set(context: Context, paint: CarPaint) =
             context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString("paint", paint.name).apply()
     }
