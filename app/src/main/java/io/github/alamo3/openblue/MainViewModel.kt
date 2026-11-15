@@ -8,6 +8,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.lifecycle.viewModelScope
 import io.github.alamo3.openblue.api.ApiException
 import io.github.alamo3.openblue.api.BluelinkClient
@@ -166,6 +169,16 @@ class MainViewModel(
     private var pendingPin: String? = null
     private var clearProgressJob: Job? = null
 
+    /**
+     * A command's widget update can be lost (the app backgrounded mid-command, a worker that
+     * didn't get to run, a one-off failure). Coming back to the foreground is the moment that
+     * matters to someone looking at the widget, so it always pushes the widget again then, from
+     * whatever's in memory already (no network call) — a cheap backstop against ever lagging.
+     */
+    private val widgetResyncObserver = LifecycleEventObserver { _, event ->
+        if (event == Lifecycle.Event.ON_START) updateWidgets()
+    }
+
     init {
         val v = store.vehicle
         if (store.username != null && store.password != null && v != null) {
@@ -180,6 +193,11 @@ class MainViewModel(
             launchSafely(onDone = { refreshing = false }) {
                 loadVehicle(v)
                 serverPresets = api.serverPresets(v.id, tempTable)
+            }
+        }
+        if (online) {
+            viewModelScope.launch(Dispatchers.Main) {
+                ProcessLifecycleOwner.get().lifecycle.addObserver(widgetResyncObserver)
             }
         }
     }
@@ -401,7 +419,10 @@ class MainViewModel(
     private fun updateWidgets() {
         if (!online) return
         val ctx = getApplication<Application>()
-        viewModelScope.launch { runCatching { io.github.alamo3.openblue.widget.CarWidget.updateAll(ctx) } }
+        viewModelScope.launch {
+            runCatching { io.github.alamo3.openblue.widget.CarWidget.updateAll(ctx) }
+                .onFailure { android.util.Log.w("OpenBlue", "Widget update failed", it) }
+        }
     }
 
     /** Pull-to-refresh: reloads what Bluelink has stored. Doesn't wake the car. */
@@ -2021,6 +2042,7 @@ class MainViewModel(
     override fun onCleared() {
         // The sound keeps running in its service; only stop watching it.
         soundPoll?.cancel()
+        ProcessLifecycleOwner.get().lifecycle.removeObserver(widgetResyncObserver)
         super.onCleared()
     }
 

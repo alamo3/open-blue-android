@@ -76,7 +76,7 @@ class WidgetCommandWorker(context: Context, params: WorkerParameters) : Coroutin
         val v = store.vehicle
         if (v == null || store.username == null) {
             store.widgetPending = null
-            CarWidget.updateAll(applicationContext)
+            updateWidgetSafely()
             return Result.success()
         }
         val api = BluelinkClient(store)
@@ -84,7 +84,7 @@ class WidgetCommandWorker(context: Context, params: WorkerParameters) : Coroutin
         val action = WidgetAction.actionFor(what)
         val chosen = inputData.getString(KEY_SETTINGS)?.let { runCatching { Json.decodeFromString<ClimateSettings>(it) }.getOrNull() }
         // The picker sets the "starting" note itself; draw it.
-        if (action != null) CarWidget.updateAll(applicationContext)
+        if (action != null) updateWidgetSafely()
         try {
             if (action == null) {
                 // Refresh: what Bluelink already has, without waking the car.
@@ -108,8 +108,13 @@ class WidgetCommandWorker(context: Context, params: WorkerParameters) : Coroutin
             }
         }
         store.widgetPending = null
-        CarWidget.updateAll(applicationContext)
+        updateWidgetSafely()
         return Result.success()
+    }
+
+    private suspend fun updateWidgetSafely() {
+        runCatching { CarWidget.updateAll(applicationContext) }
+            .onFailure { android.util.Log.w("OpenBlue", "Widget update failed", it) }
     }
 
     override suspend fun getForegroundInfo(): ForegroundInfo {

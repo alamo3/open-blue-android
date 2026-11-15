@@ -103,12 +103,27 @@ class BluelinkClient(private val store: SecureStore) {
             builder.post(body?.toString()?.toRequestBody(JSON_MEDIA) ?: ByteArray(0).toRequestBody(null))
         }
 
-        http.newCall(builder.build()).execute().use { resp ->
+        val resp = try {
+            http.newCall(builder.build()).execute()
+        } catch (e: java.net.UnknownHostException) {
+            throw ApiException(null, "Couldn't reach ${store.brand.host} (no network, or the address doesn't resolve)")
+        } catch (e: javax.net.ssl.SSLException) {
+            throw ApiException(null, "Couldn't make a secure connection to ${store.brand.host}: ${e.message}")
+        } catch (e: java.io.IOException) {
+            throw ApiException(null, "Couldn't reach ${store.brand.host}: ${e.message ?: e.javaClass.simpleName}")
+        }
+        resp.use {
             val text = resp.body?.string().orEmpty()
             val parsed = try {
                 Json.parseToJsonElement(text).jsonObject
             } catch (e: Exception) {
-                throw ApiException(null, "Unexpected response from Bluelink (HTTP ${resp.code})")
+                // Not Bluelink's usual JSON: a gateway/WAF page, an empty body, or an outage. Show
+                // enough of it to tell those apart without dumping a whole HTML page.
+                val snippet = text.trim().take(160).ifEmpty { "(empty body)" }
+                throw ApiException(
+                    resp.code.toString(),
+                    "${store.brand.company}'s server answered HTTP ${resp.code} with something unexpected: $snippet",
+                )
             }
             Reply(parsed, resp.headers)
         }

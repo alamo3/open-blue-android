@@ -46,6 +46,7 @@ class CommandWorker(context: Context, params: WorkerParameters) : CoroutineWorke
         // A widget that sent this (or shows the car) catches up.
         if (store.widgetPending?.startsWith("${action?.name}|") == true) store.widgetPending = null
         runCatching { io.github.alamo3.openblue.widget.CarWidget.updateAll(applicationContext) }
+            .onFailure { android.util.Log.w("OpenBlue", "Widget update failed after $action", it) }
         return Result.success(workDataOf(KEY_RESULT to result.name))
     }
 
