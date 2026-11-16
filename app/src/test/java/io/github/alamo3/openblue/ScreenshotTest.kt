@@ -72,13 +72,13 @@ class ScreenshotTest(private val night: Boolean) {
         maxPercentDifference = 1.0,
     )
 
-    private fun demoVm(signedIn: Boolean = true): MainViewModel {
+    private fun demoVm(signedIn: Boolean = true, carName: String = "My IONIQ 5"): MainViewModel {
         val store = SecureStore(MemoryPrefs())
         if (signedIn) {
             store.username = "driver@example.com"
             store.password = "x"
             store.pin = "0000"
-            store.vehicle = VehicleInfo("demo", "My IONIQ 5", "IONIQ 5 EV", "2027", "KM8DEMO0000000000", "E")
+            store.vehicle = VehicleInfo("demo", carName, "IONIQ 5 EV", "2027", "KM8DEMO0000000000", "E")
             store.caps = VehicleCaps(
                 genType = "G3", hvacTempType = 1, strgWhlHeatingOption = 2,
                 seatOptions = listOf(6, 6, 1, 1), trim = "Ultimate", odometer = 1234.0, odometerUnit = 1, hasSvm = true,
@@ -93,7 +93,7 @@ class ScreenshotTest(private val night: Boolean) {
         return MainViewModel(Application(), store, online = false)
     }
 
-    private fun shot(content: @Composable () -> Unit) = paparazzi.snapshot {
+    private fun shot(name: String? = null, content: @Composable () -> Unit) = paparazzi.snapshot(name = name) {
         OpenBlueTheme {
             Surface(color = MaterialTheme.colorScheme.background) { content() }
         }
@@ -106,7 +106,40 @@ class ScreenshotTest(private val night: Boolean) {
         vm.showDemoLook(io.github.alamo3.openblue.ui.CarBody.CROSSOVER, io.github.alamo3.openblue.ui.CarPaint.WHITE)
         shot { HomeScreen(vm, open = {}, onUnlock = {}) }
     }
+    private fun modelScreens(body: io.github.alamo3.openblue.ui.CarBody) {
+        val vm = demoVm(carName = "My ${body.label}")
+        vm.showDemoLook(body, io.github.alamo3.openblue.ui.CarPaint.WHITE)
+        shot(name = "home") { HomeScreen(vm, open = {}, onUnlock = {}) }
+        shot(name = "climate") { ClimateScreen(vm, onBack = {}) }
+    }
+
+    @Test fun modelIoniq5N() = modelScreens(io.github.alamo3.openblue.ui.CarBody.IONIQ5)
+    @Test fun modelIoniq5() = modelScreens(io.github.alamo3.openblue.ui.CarBody.IONIQ5_STANDARD)
+    @Test fun modelIoniq6() = modelScreens(io.github.alamo3.openblue.ui.CarBody.IONIQ6)
+    @Test fun modelIoniq9() = modelScreens(io.github.alamo3.openblue.ui.CarBody.IONIQ9)
+    @Test fun modelKonaElectric() = modelScreens(io.github.alamo3.openblue.ui.CarBody.KONA_ELECTRIC)
+    @Test fun modelElantra() = modelScreens(io.github.alamo3.openblue.ui.CarBody.ELANTRA)
+    @Test fun modelElantraN() = modelScreens(io.github.alamo3.openblue.ui.CarBody.ELANTRA_N)
+    @Test fun modelKona() = modelScreens(io.github.alamo3.openblue.ui.CarBody.KONA)
+    @Test fun modelPalisade() = modelScreens(io.github.alamo3.openblue.ui.CarBody.PALISADE)
+    @Test fun modelSantaFe() = modelScreens(io.github.alamo3.openblue.ui.CarBody.SANTA_FE)
+    @Test fun modelSonata() = modelScreens(io.github.alamo3.openblue.ui.CarBody.SONATA)
+    @Test fun modelTucson() = modelScreens(io.github.alamo3.openblue.ui.CarBody.TUCSON)
+    @Test fun modelVenue() = modelScreens(io.github.alamo3.openblue.ui.CarBody.VENUE)
+
     @Test fun climate() = demoVm().let { vm -> vm.showDemoWeather(8.0); shot { ClimateScreen(vm, onBack = {}) } }
+    @Test fun climateIoniq6Cabin() = demoVm().let { vm ->
+        vm.showDemoLook(io.github.alamo3.openblue.ui.CarBody.IONIQ6, io.github.alamo3.openblue.ui.CarPaint.WHITE)
+        shot { ClimateScreen(vm, onBack = {}) }
+    }
+    @Test fun climateIoniq9Cabin() = demoVm().let { vm ->
+        vm.showDemoLook(io.github.alamo3.openblue.ui.CarBody.IONIQ9, io.github.alamo3.openblue.ui.CarPaint.WHITE)
+        shot { ClimateScreen(vm, onBack = {}) }
+    }
+    @Test fun climateKonaElectricCabin() = demoVm().let { vm ->
+        vm.showDemoLook(io.github.alamo3.openblue.ui.CarBody.KONA_ELECTRIC, io.github.alamo3.openblue.ui.CarPaint.WHITE)
+        shot { ClimateScreen(vm, onBack = {}) }
+    }
     /** Heated seats on a warm day: the climate screen points it out. */
     @Test fun climateSeatWarning() = demoVm().let { vm ->
         vm.showDemoWeather(27.0, code = 0)
@@ -252,8 +285,9 @@ private const val DEMO_STATUS = """
 """
 
 /** Minimal in-memory SharedPreferences for tests. */
-private class MemoryPrefs : SharedPreferences {
+internal class MemoryPrefs : SharedPreferences {
     private val map = mutableMapOf<String, Any?>()
+    private val listeners = mutableSetOf<SharedPreferences.OnSharedPreferenceChangeListener>()
 
     override fun getAll(): MutableMap<String, *> = map
     override fun getString(key: String, defValue: String?) = map[key] as? String ?: defValue
@@ -264,8 +298,8 @@ private class MemoryPrefs : SharedPreferences {
     override fun getFloat(key: String, defValue: Float) = map[key] as? Float ?: defValue
     override fun getBoolean(key: String, defValue: Boolean) = map[key] as? Boolean ?: defValue
     override fun contains(key: String) = map.containsKey(key)
-    override fun registerOnSharedPreferenceChangeListener(l: SharedPreferences.OnSharedPreferenceChangeListener?) {}
-    override fun unregisterOnSharedPreferenceChangeListener(l: SharedPreferences.OnSharedPreferenceChangeListener?) {}
+    override fun registerOnSharedPreferenceChangeListener(l: SharedPreferences.OnSharedPreferenceChangeListener?) { if (l != null) listeners.add(l) }
+    override fun unregisterOnSharedPreferenceChangeListener(l: SharedPreferences.OnSharedPreferenceChangeListener?) { listeners.remove(l) }
 
     override fun edit(): SharedPreferences.Editor = object : SharedPreferences.Editor {
         private val pending = mutableMapOf<String, Any?>()
@@ -283,8 +317,11 @@ private class MemoryPrefs : SharedPreferences {
             return true
         }
         override fun apply() {
+            val changed = if (clear) map.keys.toMutableSet() else mutableSetOf()
             if (clear) map.clear()
             pending.forEach { (k, v) -> if (v == null) map.remove(k) else map[k] = v }
+            changed.addAll(pending.keys)
+            changed.forEach { key -> listeners.toList().forEach { it.onSharedPreferenceChanged(this@MemoryPrefs, key) } }
         }
     }
 }

@@ -146,6 +146,7 @@ fun ClimateScreen(vm: MainViewModel, onBack: () -> Unit) {
                 defrost = e.defrost,
                 onSeat = { vm.cycleSeat(it) },
                 modifier = Modifier.width(250.dp),
+                body = vm.carBody,
             )
             val seatWarning = vm.seatWarning()
             Text(

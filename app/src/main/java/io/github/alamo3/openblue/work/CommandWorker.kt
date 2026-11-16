@@ -31,7 +31,12 @@ class CommandWorker(context: Context, params: WorkerParameters) : CoroutineWorke
 
         val result = runCatching { api.awaitResult(vehicleId, tx) }.getOrDefault(CommandResult.TIMEOUT)
         // Keep the stored status fresh for whoever opens the app next.
-        runCatching { store.cachedStatus = api.cachedStatus(vehicleId).toString() }
+        runCatching {
+            val status = api.cachedStatus(vehicleId)
+            if (store.vehicle?.id == vehicleId && store.username != null) {
+                store.cachedStatus = status.toString()
+            }
+        }
 
         // Skip the notification only when the app is open and showing this command's progress.
         val shownInApp = tx in watching && Notifier.appInForeground()

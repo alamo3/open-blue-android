@@ -57,15 +57,56 @@ private const val CABIN_ASPECT = 700f / 1500f
  * Seats in the cabin image, as fractions of its width and height: driver, passenger,
  * rear left, rear right. The nose is at the top and the driver's side on the left.
  */
-private val SEAT_RECTS = listOf(
+private val DEFAULT_SEATS = listOf(
     Rect(0.211f, 0.398f, 0.45f, 0.56f),
     Rect(0.55f, 0.398f, 0.789f, 0.56f),
     Rect(0.211f, 0.602f, 0.425f, 0.743f),
     Rect(0.575f, 0.602f, 0.789f, 0.743f),
 )
-private val WHEEL_CENTER = Offset(0.330f, 0.388f)
-private const val WHEEL_RADIUS = 0.071f // of the width
-private val WINDSHIELD = Rect(0.16f, 0.21f, 0.84f, 0.28f)
+private data class CabinLayout(
+    val image: Int,
+    val seats: List<Rect>,
+    val wheel: Offset,
+    val windshield: Rect,
+    val wheelRadius: Float = 0.071f,
+)
+
+/** Positions are fractions of each model's 700 x 1500 cutaway. */
+private fun cabinLayout(body: CarBody): CabinLayout {
+    fun seats(left: Float, right: Float, top: Float, bottom: Float, rearTop: Float, rearBottom: Float) = listOf(
+        Rect(left, top, .45f, bottom), Rect(.55f, top, right, bottom),
+        Rect(left, rearTop, .45f, rearBottom), Rect(.55f, rearTop, right, rearBottom),
+    )
+    return when (body) {
+        CarBody.IONIQ5_STANDARD -> CabinLayout(
+            R.drawable.cabin_top_ioniq5, seats(.21f, .79f, .405f, .56f, .605f, .76f),
+            Offset(.325f, .395f), Rect(.16f, .21f, .84f, .28f),
+        )
+        CarBody.IONIQ6 -> CabinLayout(
+            R.drawable.cabin_top_ioniq6, seats(.225f, .775f, .405f, .57f, .60f, .785f),
+            Offset(.35f, .388f), Rect(.16f, .235f, .84f, .295f),
+        )
+        CarBody.IONIQ9 -> CabinLayout(
+            R.drawable.cabin_top_ioniq9, seats(.205f, .79f, .37f, .525f, .57f, .72f),
+            Offset(.32f, .36f), Rect(.16f, .21f, .84f, .28f),
+        )
+        CarBody.KONA_ELECTRIC -> CabinLayout(
+            R.drawable.cabin_top_kona_electric, seats(.215f, .79f, .39f, .56f, .60f, .77f),
+            Offset(.32f, .395f), Rect(.15f, .24f, .85f, .305f),
+        )
+        CarBody.ELANTRA, CarBody.ELANTRA_N -> CabinLayout(
+            if (body == CarBody.ELANTRA) R.drawable.cabin_top_elantra else R.drawable.cabin_top_elantra_n,
+            seats(.21f, .79f, .40f, .56f, .60f, .76f), Offset(.32f, .39f), Rect(.16f, .22f, .84f, .29f),
+        )
+        CarBody.KONA -> CabinLayout(R.drawable.cabin_top_kona, seats(.215f, .79f, .39f, .56f, .60f, .77f), Offset(.32f, .395f), Rect(.15f, .24f, .85f, .305f))
+        CarBody.PALISADE -> CabinLayout(R.drawable.cabin_top_palisade, seats(.205f, .79f, .37f, .525f, .57f, .72f), Offset(.32f, .36f), Rect(.16f, .21f, .84f, .28f))
+        CarBody.SANTA_FE -> CabinLayout(R.drawable.cabin_top_santa_fe, seats(.205f, .79f, .37f, .525f, .57f, .72f), Offset(.32f, .36f), Rect(.16f, .21f, .84f, .28f))
+        CarBody.SONATA -> CabinLayout(R.drawable.cabin_top_sonata, seats(.23f, .77f, .44f, .61f, .61f, .78f), Offset(.35f, .43f), Rect(.16f, .31f, .84f, .38f))
+        CarBody.TUCSON -> CabinLayout(R.drawable.cabin_top_tucson, seats(.21f, .79f, .39f, .56f, .59f, .75f), Offset(.32f, .39f), Rect(.15f, .22f, .85f, .29f))
+        CarBody.VENUE -> CabinLayout(R.drawable.cabin_top_venue, seats(.21f, .79f, .39f, .56f, .59f, .75f), Offset(.32f, .39f), Rect(.15f, .22f, .85f, .29f))
+        else -> CabinLayout(R.drawable.cabin_top, DEFAULT_SEATS, Offset(.330f, .388f), Rect(.16f, .21f, .84f, .28f))
+    }
+}
 
 /**
  * The real cabin seen from above with the roof cut away (rendered from the same 3D model as the
@@ -80,8 +121,10 @@ fun CabinView(
     defrost: Boolean,
     onSeat: (Int) -> Unit,
     modifier: Modifier = Modifier,
+    body: CarBody = CarBody.IONIQ5,
 ) {
     val colors = AppTheme.colors
+    val cabin = remember(body) { cabinLayout(body) }
     // Each seat's warmth eases in and out: + for heat, - for cooling, magnitude 0..3.
     val levels = seats.mapIndexed { i, s ->
         animateFloatAsState(
@@ -109,29 +152,29 @@ fun CabinView(
         val w = maxWidth
         val h = maxHeight
         Image(
-            painterResource(R.drawable.cabin_top),
+            painterResource(cabin.image),
             contentDescription = "Cabin seen from above: driver, passenger, rear left and rear right seats",
             contentScale = ContentScale.FillBounds,
             modifier = Modifier.fillMaxSize(),
         )
         Canvas(Modifier.fillMaxSize()) {
             val t = time
-            if (glass > 0f) drawDefrost(WINDSHIELD.scaled(size), t, colors.heat, glass)
+            if (glass > 0f) drawDefrost(cabin.windshield.scaled(size), t, colors.heat, glass)
             levels.forEachIndexed { i, level ->
-                val r = SEAT_RECTS[i].scaled(size)
+                val r = cabin.seats[i].scaled(size)
                 when {
                     level > 0f -> drawSeatHeat(r, t, colors.heat, level, i)
                     level < 0f -> drawSeatCool(r, t, colors.cool, -level, i)
                 }
             }
             if (wheel > 0f) {
-                val c = Offset(WHEEL_CENTER.x * size.width, WHEEL_CENTER.y * size.height)
-                drawWheelHeat(c, WHEEL_RADIUS * size.width, t, colors.heat, wheel)
+                val c = Offset(cabin.wheel.x * size.width, cabin.wheel.y * size.height)
+                drawWheelHeat(c, cabin.wheelRadius * size.width, t, colors.heat, wheel)
             }
         }
         // Tap targets, each with a small readout of its level.
         seats.forEachIndexed { i, level ->
-            val r = SEAT_RECTS[i]
+            val r = cabin.seats[i]
             Box(
                 Modifier
                     .offset(w * r.left, h * r.top)

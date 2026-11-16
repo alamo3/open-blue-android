@@ -85,17 +85,16 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, open: (Route) -> Unit 
 
             HorizontalDivider(color = app.hairline, modifier = Modifier.padding(top = 8.dp))
             SectionTitle("Your car in 3D")
-            val auto = CarBody.forModel(vm.vehicle?.model)
+            val auto = CarBody.forModel(vm.vehicle?.model, vm.vehicle?.fuelKindCode, vm.caps.trim)
             Picker(
                 label = "Model",
                 options = listOf<CarBody?>(null) + CarBody.entries,
                 selected = vm.carBodyOverride,
                 optionLabel = { b ->
                     when {
-                        b == null && auto == CarBody.IONIQ5 -> "Automatic (IONIQ 5)"
-                        b == null -> "Automatic (${auto.label.lowercase()} stand-in)"
-                        b == CarBody.IONIQ5 -> "IONIQ 5"
-                        else -> "${b.label} stand-in"
+                        b == null -> "Automatic (${auto.label}${if (auto.isStandIn) " stand-in" else ""})"
+                        b.isStandIn -> "${b.label} stand-in"
+                        else -> b.label
                     }
                 },
                 onSelect = { vm.changeCarBody(it) },

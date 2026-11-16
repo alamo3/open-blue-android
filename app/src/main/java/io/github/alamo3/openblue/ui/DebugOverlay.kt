@@ -120,6 +120,14 @@ private fun DebugPanel(vm: MainViewModel, onClose: () -> Unit) {
                 vm.updateDebug { it.copy(dryRun = on) }
             }
 
+            DebugHeading("Vehicle model")
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                DebugToggle("Automatic", vm.carBodyOverride == null) { vm.changeCarBody(null) }
+                CarBody.entries.forEach { body ->
+                    DebugToggle(body.label, vm.carBodyOverride == body) { vm.changeCarBody(body) }
+                }
+            }
+
             if (d.simulate) {
                 DebugHeading("Doors and body")
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {

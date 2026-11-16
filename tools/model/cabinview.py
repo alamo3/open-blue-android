@@ -20,7 +20,7 @@ for o in list(O):
     bm.transform(o.matrix_world.inverted())
     bm.to_mesh(me); bm.free()
 sc = bpy.context.scene
-sc.render.engine = 'CYCLES'; sc.cycles.device = 'CPU'; sc.cycles.samples = 48
+sc.render.engine = 'CYCLES'; sc.cycles.device = 'CPU'; sc.cycles.samples = int(os.environ.get('CABIN_SAMPLES', '48'))
 sc.render.resolution_x, sc.render.resolution_y = W, H
 sc.render.film_transparent = True
 world = bpy.data.worlds.new("W"); sc.world = world; world.use_nodes = True

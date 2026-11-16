@@ -11,7 +11,7 @@ It exists because the official app hides heated/ventilated seat controls for som
 - **Home:** a 3D model of the car, sitting on the ground, whose doors, frunk and tailgate open to match the real car. While climate runs, warm or cool air streams into the intake and through the cabin (and up the windshield when defrosting); while plugged in, a charging cable is in the port with current running down it. Drag to look around, pinch to zoom, double-tap to reset; the view swings round to whatever just changed; battery and range, charging time, and one-tap controls for lock/unlock, climate, camera and waking the car. Pull down to refresh.
 - **Climate:** temperature, the car's real cabin seen from above (roof cut away) where you tap each seat to cycle heat/cool levels and watch it warm up or breathe cool air, front defrost, heated wheel and rear defrost, run time, start/stop. Matches what your car supports (combined or split heating, heat-only rear seats).
 - **Where and what's it like:** the street the car was last located on and the weather there (or near you, until the car has been located), on the home screen. Starting climate with heated seats on a warm day (20 °C or more) or cooled seats on a cold one (12 °C or less) asks first, with an option to start without them.
-- **Other cars:** the IONIQ 5 has its own 3D model; any other Hyundai gets a stand-in of its body type (sedan, crossover or SUV, built from scratch in `tools/model/generic.py`) with working doors, frunk, tailgate and charging cable. Settings > Your car in 3D picks the model and the paint colour.
+- **Other cars:** the IONIQ 5, IONIQ 5 N, IONIQ 6, IONIQ 9, Kona, Kona Electric, Elantra, Elantra N, Palisade, Santa Fe, Sonata, Tucson and Venue have their own 3D models and cabin views. Other cars get a stand-in of their body type. Settings > Your car in 3D picks the model and paint colour.
 - **Home-screen widget:** battery, range and charging; stretched taller it shows the car. One tap to lock, start or stop climate with your last settings (heated seats on a warm day, or cooled on a cold one, open the app to ask first), or refresh. Unlocking opens the app, so the fingerprint check still applies.
 - **Updates itself:** every few hours on Wi-Fi it installs the newest build from this repo's "latest" release while you're not using it (Settings > App updates, or install one by hand there). Android asks you to confirm the first update; after that it updates without asking.
 - **Presets:** your presets from mybluelink.ca plus presets saved on the phone; start in one tap or load into the controls.
@@ -38,6 +38,18 @@ CI renders every screen with made-up demo data (light and dark) using Paparazzi 
 ## Install
 
 Every push to `main` builds an APK and publishes it to the [**latest** release](../../releases/tag/latest). Open that page on your phone, download `OpenBlue.apk`, and allow installs from your browser when Android asks.
+
+### Build and test locally
+
+Install a JDK (Java 17 is used by CI; Java 21 also works) and the Android SDK with the Android 34 platform and build tools. Set `JAVA_HOME` to the JDK and `ANDROID_HOME` to the SDK; the screenshot tests need `ANDROID_HOME` even if `sdk.dir` is set in an untracked `local.properties` file. The Gradle wrapper downloads the same Gradle version used by CI on its first run.
+
+```sh
+./gradlew :app:assembleDebug        # APK: app/build/outputs/apk/debug/app-debug.apk
+./gradlew :app:testDebugUnitTest     # JVM unit tests
+./gradlew :app:recordPaparazziDebug  # render demo screens to app/src/test/snapshots/images
+```
+
+To install a debug build, connect an Android device and run `./gradlew :app:installDebug`. The APK includes arm64 native libraries only, so use an arm64 device or emulator. An installed build signed with a different key must be removed before installing the debug build.
 
 ### Stable signing (so updates install over the old version)
 

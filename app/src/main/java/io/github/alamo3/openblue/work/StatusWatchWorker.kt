@@ -38,6 +38,7 @@ class StatusWatchWorker(context: Context, params: WorkerParameters) : CoroutineW
         } catch (e: IOException) {
             return Result.retry()
         }
+        if (store.vehicle?.id != v.id || store.username == null) return Result.success()
         store.cachedStatus = raw.toString()
         runCatching { io.github.alamo3.openblue.widget.CarWidget.updateAll(applicationContext) }
             .onFailure { android.util.Log.w("OpenBlue", "Widget update failed after a background status check", it) }

@@ -168,18 +168,29 @@ class MainViewModel(
     private var pendingPass: String? = null
     private var pendingPin: String? = null
     private var clearProgressJob: Job? = null
+    private var stopObservingStatus: (() -> Unit)? = null
 
     /**
      * A command's widget update can be lost (the app backgrounded mid-command, a worker that
      * didn't get to run, a one-off failure). Coming back to the foreground is the moment that
-     * matters to someone looking at the widget, so it always pushes the widget again then, from
-     * whatever's in memory already (no network call) — a cheap backstop against ever lagging.
+     * matters to someone looking at the widget, so it reloads the shared cache and pushes the
+     * widget again then, without a network call.
      */
     private val widgetResyncObserver = LifecycleEventObserver { _, event ->
-        if (event == Lifecycle.Event.ON_START) updateWidgets()
+        if (event == Lifecycle.Event.ON_START) {
+            syncCachedStatus()
+            updateWidgets()
+        }
     }
 
     init {
+        if (online) {
+            stopObservingStatus = store.observeStatus {
+                // Workers can write on a background thread. Read the latest value on Main so
+                // queued notifications cannot put an older status back on screen.
+                viewModelScope.launch { syncCachedStatus() }
+            }
+        }
         val v = store.vehicle
         if (store.username != null && store.password != null && v != null) {
             screen = Screen.Main
@@ -313,6 +324,8 @@ class MainViewModel(
 
     private suspend fun chooseVehicleNow(v: VehicleInfo) {
         if (store.vehicle?.id != v.id) {
+            store.cachedStatus = null
+            realStatus = null
             store.learnedClimateKey = null
             store.lastLocation = null
             location = null
@@ -322,6 +335,7 @@ class MainViewModel(
         }
         store.vehicle = v
         vehicle = v
+        updateWidgets()
         svm = emptyList()
         svmLoaded = false
         try {
@@ -366,6 +380,7 @@ class MainViewModel(
         chargeHistory = null
         progress = null
         screen = Screen.Login
+        updateWidgets()
     }
 
     /** Replaces the car photo on Bluelink (the picture shown top right), like the official app. */
@@ -409,6 +424,12 @@ class MainViewModel(
     }
 
     // ---------------------------------------------------------------- status
+
+    private fun syncCachedStatus() {
+        realStatus = store.cachedStatus?.let { raw ->
+            runCatching { Json.parseToJsonElement(raw).jsonObject }.getOrNull()
+        }
+    }
 
     private fun applyStatus(s: JsonObject) {
         realStatus = s
@@ -511,7 +532,7 @@ class MainViewModel(
         try {
             val id = CommandWorker.enqueue(ctx, v.id, tx, action, v.nickname.ifBlank { "Your car" })
             val info = WorkManager.getInstance(ctx).getWorkInfoByIdFlow(id).first { it?.state?.isFinished == true }
-            store.cachedStatus?.let { raw -> runCatching { Json.parseToJsonElement(raw).jsonObject }.getOrNull() }?.let { realStatus = it }
+            syncCachedStatus()
             return info?.outputData?.getString(CommandWorker.KEY_RESULT)
                 ?.let { runCatching { CommandResult.valueOf(it) }.getOrNull() }
                 ?: CommandResult.TIMEOUT
@@ -1785,7 +1806,7 @@ class MainViewModel(
     var carBodyOverride by mutableStateOf(if (online) io.github.alamo3.openblue.ui.CarBody.override(app) else null)
         private set
     val carBody: io.github.alamo3.openblue.ui.CarBody
-        get() = carBodyOverride ?: io.github.alamo3.openblue.ui.CarBody.forModel(vehicle?.model)
+        get() = carBodyOverride ?: io.github.alamo3.openblue.ui.CarBody.forModel(vehicle?.model, vehicle?.fuelKindCode, caps.trim)
     var carPaint by mutableStateOf(if (online) io.github.alamo3.openblue.ui.CarPaint.current(app) else io.github.alamo3.openblue.ui.CarPaint.WHITE)
         private set
 
@@ -2042,6 +2063,7 @@ class MainViewModel(
     override fun onCleared() {
         // The sound keeps running in its service; only stop watching it.
         soundPoll?.cancel()
+        stopObservingStatus?.invoke()
         ProcessLifecycleOwner.get().lifecycle.removeObserver(widgetResyncObserver)
         super.onCleared()
     }

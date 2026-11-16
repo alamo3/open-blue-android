@@ -88,7 +88,10 @@ class WidgetCommandWorker(context: Context, params: WorkerParameters) : Coroutin
         try {
             if (action == null) {
                 // Refresh: what Bluelink already has, without waking the car.
-                store.cachedStatus = api.cachedStatus(v.id).toString()
+                val status = api.cachedStatus(v.id)
+                if (store.vehicle?.id == v.id && store.username != null) {
+                    store.cachedStatus = status.toString()
+                }
             } else {
                 val tx = when (action) {
                     CommandProgress.Action.LOCK -> api.lock(v.id)

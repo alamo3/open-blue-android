@@ -43,3 +43,17 @@ Outputs live in `app/src/main/assets/models/car_<kind>.glb` with their anchors; 
 `appview.py` with `CAR_ANCHORS=<anchors>` (so the framing matches the app's) and the map markers a
 top-down orthographic render (`res/drawable-nodpi/car_still_<kind>.webp`, `car_top_<kind>.webp`).
 `ui/CarBody.kt` picks one from the Bluelink model name (or Settings > Your car in 3D).
+
+## Supplied vehicle models
+
+`import_ev.py` converts the supplied GLBs into the app's named hinge nodes, a charging cable,
+shadow and effect anchors. For example:
+
+```sh
+blender -b --python tools/model/import_ev.py -- ioniq6 /path/to/ioniq-6.glb app/src/main/assets/models/car_ioniq6.glb
+```
+
+The source files are not stored in this repository. `appview.py`, `topview.py` and
+`cabinview.py` render the fallback, map marker and climate cutaway respectively. The cabin
+cut heights and the seat, steering-wheel and windshield positions in `ui/CabinView.kt` must
+be checked together whenever a model is replaced.

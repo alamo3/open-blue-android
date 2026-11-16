@@ -25,18 +25,21 @@ class SecureStore(private val prefs: SharedPreferences) {
 
     companion object {
         private const val KEY_DEVICE = "deviceId"
+        private const val KEY_STATUS = "cachedStatus"
+        @Volatile private var sharedPrefs: SharedPreferences? = null
 
-        private fun encryptedPrefs(context: Context): SharedPreferences {
-            val key = MasterKey.Builder(context)
-                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-                .build()
-            return EncryptedSharedPreferences.create(
-                context,
-                "openblue_secure",
-                key,
-                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
-            )
+        private fun encryptedPrefs(context: Context): SharedPreferences = sharedPrefs ?: synchronized(this) {
+            sharedPrefs ?: run {
+                val app = context.applicationContext
+                val key = MasterKey.Builder(app).setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build()
+                EncryptedSharedPreferences.create(
+                    app,
+                    "openblue_secure",
+                    key,
+                    EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                    EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
+                ).also { sharedPrefs = it }
+            }
         }
     }
 
@@ -130,8 +133,17 @@ class SecureStore(private val prefs: SharedPreferences) {
         set(v) = write("payCardId", v)
 
     var cachedStatus: String?
-        get() = read("cachedStatus")
-        set(v) = write("cachedStatus", v)
+        get() = read(KEY_STATUS)
+        set(v) = write(KEY_STATUS, v)
+
+    /** Observe status writes from the app, widget and workers in this process. */
+    fun observeStatus(onChange: (String?) -> Unit): () -> Unit {
+        val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == KEY_STATUS) onChange(cachedStatus)
+        }
+        prefs.registerOnSharedPreferenceChangeListener(listener)
+        return { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
+    }
 
     /** The last weather the app fetched (for the home-screen widget and the seat check). */
     /** The user's own World Labs API key, for generating 3D worlds (experimental). */

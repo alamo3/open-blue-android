@@ -3,6 +3,10 @@ package io.github.alamo3.openblue.widget
 import android.content.Context
 import android.content.Intent
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
@@ -19,12 +23,14 @@ import androidx.glance.action.actionParametersOf
 import androidx.glance.action.clickable
 import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.GlanceAppWidgetReceiver
+import androidx.glance.appwidget.GlanceAppWidgetManager
 import androidx.glance.appwidget.SizeMode
 import androidx.glance.appwidget.action.actionRunCallback
 import androidx.glance.appwidget.action.actionStartActivity
 import androidx.glance.appwidget.cornerRadius
 import androidx.glance.appwidget.provideContent
-import androidx.glance.appwidget.updateAll
+import androidx.glance.appwidget.state.updateAppWidgetState
+import androidx.glance.currentState
 import androidx.glance.background
 import androidx.glance.layout.Alignment
 import androidx.glance.layout.Box
@@ -46,6 +52,7 @@ import androidx.glance.unit.ColorProvider
 import io.github.alamo3.openblue.CommandProgress
 import io.github.alamo3.openblue.MainActivity
 import io.github.alamo3.openblue.R
+import io.github.alamo3.openblue.api.TempTables
 import io.github.alamo3.openblue.data.SecureStore
 import io.github.alamo3.openblue.ui.CarStatus
 import io.github.alamo3.openblue.ui.formatMinutes
@@ -81,12 +88,17 @@ data class WidgetData(
         /** A command still waiting after this long is shown as done; the notification says how it went. */
         private const val PENDING_MS = 3 * 60_000L
 
-        fun load(context: Context, now: Long = System.currentTimeMillis()): WidgetData {
-            val store = SecureStore(context)
+        fun load(context: Context, now: Long = System.currentTimeMillis()): WidgetData = fromStore(
+            SecureStore(context), io.github.alamo3.openblue.ui.CarBody.current(context).still, now,
+        )
+
+        internal fun fromStore(store: SecureStore, still: Int, now: Long): WidgetData {
             val v = store.vehicle
             val signedIn = v != null && store.username != null
             val st = store.cachedStatus?.let { raw ->
-                runCatching { CarStatus.from(Json.parseToJsonElement(raw).jsonObject, emptyList()) }.getOrNull()
+                val type = store.caps?.hvacTempType ?: if (v?.fuelKindCode.equals("E", true)) 1 else 0
+                val table = TempTables.forVehicle(type, v?.model.orEmpty(), v?.fuelKindCode.orEmpty())
+                runCatching { CarStatus.from(Json.parseToJsonElement(raw).jsonObject, table) }.getOrNull()
             }
             val weather = store.lastWeather?.takeIf { now - it.fetchedAt < 3 * 3600_000L }
             val pending = store.widgetPending?.split('|')?.takeIf { it.size == 2 }?.let { (a, t) ->
@@ -130,7 +142,7 @@ data class WidgetData(
                 tempOutside = weather?.tempC?.roundToInt(),
                 pending = pending,
                 details = details,
-                still = io.github.alamo3.openblue.ui.CarBody.current(context).still,
+                still = still,
             )
         }
     }
@@ -145,17 +157,34 @@ class CarWidget : GlanceAppWidget() {
     override val sizeMode = SizeMode.Responsive(setOf(SMALL, WIDE, LARGE))
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
-        val data = withContext(Dispatchers.IO) { WidgetData.load(context) }
-        provideContent { GlanceTheme { Content(context, data) } }
+        val initial = withContext(Dispatchers.IO) { WidgetData.load(context) }
+        provideContent {
+            // update() does not restart provideGlance while a session is alive. Observe a
+            // revision in Glance state so an update also reloads the encrypted app data.
+            val revision = currentState<Preferences>()[REVISION] ?: 0L
+            val data by produceState(initial, revision) {
+                value = withContext(Dispatchers.IO) { WidgetData.load(context) }
+            }
+            GlanceTheme { Content(context, data) }
+        }
     }
 
     companion object {
         private val SMALL = DpSize(110.dp, 48.dp)
         private val WIDE = DpSize(250.dp, 110.dp)
         private val LARGE = DpSize(250.dp, 200.dp)
+        private val REVISION = longPreferencesKey("data_revision")
 
         /** Redraws every Open Blue widget from what's stored now. */
-        suspend fun updateAll(context: Context) = CarWidget().updateAll(context)
+        suspend fun updateAll(context: Context) {
+            val widget = CarWidget()
+            for (id in GlanceAppWidgetManager(context).getGlanceIds(CarWidget::class.java)) {
+                updateAppWidgetState(context, id) { prefs ->
+                    prefs[REVISION] = (prefs[REVISION] ?: 0L) + 1L
+                }
+                widget.update(context, id)
+            }
+        }
     }
 }
 

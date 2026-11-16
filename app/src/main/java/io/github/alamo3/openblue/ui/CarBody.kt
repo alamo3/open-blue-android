@@ -12,9 +12,8 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 /**
- * Which 3D car to show. The IONIQ 5 has its own model; any other car gets a stand-in of its
- * body type (tools/model/generic.py), with the same hinged parts so doors, frunk, tailgate and
- * the charging cable work the same way.
+ * Supported cars have their own models; other cars get a stand-in of their body type,
+ * with the same hinged panels and charging cable.
  */
 enum class CarBody(
     val label: String,
@@ -24,19 +23,47 @@ enum class CarBody(
     @DrawableRes val still: Int,
     @DrawableRes val top: Int,
 ) {
-    IONIQ5("IONIQ 5", "models/car.glb", null, R.drawable.car_still, R.drawable.car_top),
+    IONIQ5("IONIQ 5 N", "models/car.glb", null, R.drawable.car_still, R.drawable.car_top),
+    IONIQ5_STANDARD("IONIQ 5", "models/car_ioniq5.glb", "models/car_ioniq5-anchors.json", R.drawable.car_still_ioniq5, R.drawable.car_top_ioniq5),
+    IONIQ6("IONIQ 6", "models/car_ioniq6.glb", "models/car_ioniq6-anchors.json", R.drawable.car_still_ioniq6, R.drawable.car_top_ioniq6),
+    IONIQ9("IONIQ 9", "models/car_ioniq9.glb", "models/car_ioniq9-anchors.json", R.drawable.car_still_ioniq9, R.drawable.car_top_ioniq9),
+    KONA_ELECTRIC("Kona Electric", "models/car_kona_electric.glb", "models/car_kona_electric-anchors.json", R.drawable.car_still_kona_electric, R.drawable.car_top_kona_electric),
+    ELANTRA("Elantra", "models/car_elantra.glb", "models/car_elantra-anchors.json", R.drawable.car_still_elantra, R.drawable.car_top_elantra),
+    ELANTRA_N("Elantra N", "models/car_elantra_n.glb", "models/car_elantra_n-anchors.json", R.drawable.car_still_elantra_n, R.drawable.car_top_elantra_n),
+    KONA("Kona", "models/car_kona.glb", "models/car_kona-anchors.json", R.drawable.car_still_kona, R.drawable.car_top_kona),
+    PALISADE("Palisade", "models/car_palisade.glb", "models/car_palisade-anchors.json", R.drawable.car_still_palisade, R.drawable.car_top_palisade),
+    SANTA_FE("Santa Fe", "models/car_santa_fe.glb", "models/car_santa_fe-anchors.json", R.drawable.car_still_santa_fe, R.drawable.car_top_santa_fe),
+    SONATA("Sonata", "models/car_sonata.glb", "models/car_sonata-anchors.json", R.drawable.car_still_sonata, R.drawable.car_top_sonata),
+    TUCSON("Tucson", "models/car_tucson.glb", "models/car_tucson-anchors.json", R.drawable.car_still_tucson, R.drawable.car_top_tucson),
+    VENUE("Venue", "models/car_venue.glb", "models/car_venue-anchors.json", R.drawable.car_still_venue, R.drawable.car_top_venue),
     SEDAN("Sedan", "models/car_sedan.glb", "models/car_sedan-anchors.json", R.drawable.car_still_sedan, R.drawable.car_top_sedan),
     CROSSOVER("Crossover", "models/car_crossover.glb", "models/car_crossover-anchors.json", R.drawable.car_still_crossover, R.drawable.car_top_crossover),
     SUV("SUV", "models/car_suv.glb", "models/car_suv-anchors.json", R.drawable.car_still_suv, R.drawable.car_top_suv);
 
+    val isStandIn: Boolean get() = this == SEDAN || this == CROSSOVER || this == SUV
+
     companion object {
         /** The body type for a Bluelink model name ("IONIQ 5", "Kona Electric", "Santa Fe"…). */
-        fun forModel(model: String?): CarBody {
+        fun forModel(model: String?, fuelKindCode: String? = null, trim: String? = null): CarBody {
             val m = model.orEmpty().uppercase().replace("-", " ")
+            val isN = (Regex("(?:^|\\s)N(?:$|\\s)").containsMatchIn(m) && !m.contains("N LINE")) ||
+                trim.orEmpty().trim().equals("N", ignoreCase = true)
             return when {
-                Regex("IONIQ\\s*5").containsMatchIn(m) -> IONIQ5
-                listOf("PALISADE", "SANTA FE", "SANTAFE", "IONIQ 9", "IONIQ9", "SANTA CRUZ", "XCIENT").any { it in m } -> SUV
-                listOf("ELANTRA", "SONATA", "IONIQ 6", "IONIQ6", "ACCENT", "AZERA", "GENESIS").any { it in m } -> SEDAN
+                Regex("IONIQ\\s*5").containsMatchIn(m) -> {
+                    if (isN) IONIQ5 else IONIQ5_STANDARD
+                }
+                Regex("IONIQ\\s*6").containsMatchIn(m) -> IONIQ6
+                Regex("IONIQ\\s*9").containsMatchIn(m) -> IONIQ9
+                "KONA" in m && ("ELECTRIC" in m || " EV" in m || fuelKindCode.equals("E", true)) -> KONA_ELECTRIC
+                "KONA" in m -> KONA
+                "ELANTRA" in m -> if (isN) ELANTRA_N else ELANTRA
+                "PALISADE" in m -> PALISADE
+                "SANTA FE" in m || "SANTAFE" in m -> SANTA_FE
+                "SONATA" in m -> SONATA
+                "TUCSON" in m -> TUCSON
+                "VENUE" in m -> VENUE
+                listOf("SANTA CRUZ", "XCIENT").any { it in m } -> SUV
+                listOf("ACCENT", "AZERA", "GENESIS").any { it in m } -> SEDAN
                 else -> CROSSOVER // Kona, Venue, Tucson, Nexo, IONIQ (hatch) and anything new
             }
         }
@@ -52,7 +79,11 @@ enum class CarBody(
 
         /** What to show for the signed-in car, outside the app's screens (widget, maps). */
         fun current(context: Context): CarBody =
-            override(context) ?: forModel(runCatching { SecureStore(context).vehicle?.model }.getOrNull())
+            override(context) ?: runCatching {
+                val store = SecureStore(context)
+                val v = store.vehicle
+                forModel(v?.model, v?.fuelKindCode, store.caps?.trim)
+            }.getOrDefault(CROSSOVER)
 
         private val shapes = HashMap<CarBody, CarShape>()
 

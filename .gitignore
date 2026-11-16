@@ -1,10 +1,15 @@
 *.iml
 .gradle/
+.kotlin/
+.gradle-user-home/
+.android-sdk/
+.openblue-local.sh
 /local.properties
 .idea/
 .DS_Store
 build/
 /captures
+/app/src/test/snapshots/
 .externalNativeBuild
 .cxx
 *.apk

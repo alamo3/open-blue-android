@@ -46,7 +46,9 @@ import com.google.android.filament.utils.Utils
 import io.github.alamo3.openblue.R
 import java.nio.ByteBuffer
 import kotlin.math.abs
+import kotlin.math.atan2
 import kotlin.math.exp
+import kotlin.math.PI
 
 /** What the 3D car should show. */
 data class CarPose(
@@ -118,6 +120,10 @@ private class CarRenderer(
     private val shape: CarShape,
 ) : Choreographer.FrameCallback {
     val camera = CarCamera(shape)
+    private val portAzimuth: Double = shape.chargePortNormal.let { normal ->
+        val angle = atan2(normal[0], normal[2]) * 180.0 / PI
+        if (abs(normal[0]) > .7) angle + if (normal[0] < 0) -25.0 else 25.0 else angle
+    }
 
     /** How far the charging cable is pushed in, 0 (away) to 1 (seated). Read by the overlay. */
     var cablePlugged = 0f
@@ -164,11 +170,11 @@ private class CarRenderer(
             field = next
             if (!hasPose) {
                 hasPose = true
-                if (next.pluggedIn) jump(CarCamera.PORT_AZIMUTH)
+                if (next.pluggedIn) jump(portAzimuth)
                 return
             }
             when {
-                next.pluggedIn && !prev.pluggedIn || next.charging && !prev.charging -> focus(CarCamera.PORT_AZIMUTH)
+                next.pluggedIn && !prev.pluggedIn || next.charging && !prev.charging -> focus(portAzimuth)
                 next.frontRight && !prev.frontRight || next.rearRight && !prev.rearRight -> focus(-45.0)
                 next.frontLeft && !prev.frontLeft || next.rearLeft && !prev.rearLeft -> focus(45.0)
                 next.trunk && !prev.trunk -> focus(150.0, 16.0)
