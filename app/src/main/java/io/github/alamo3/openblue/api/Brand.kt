@@ -2,8 +2,8 @@ package io.github.alamo3.openblue.api
 
 /**
  * The Hyundai Motor Group brands that share the Canadian Bluelink API ("tods"): the same paths,
- * headers and payloads on a different host. Kia's host and credentials follow hyundai_kia_connect_api,
- * which sends no brand header to Kia Connect.
+ * and payloads on different hosts. Kia uses the web-portal request profile documented by
+ * hyundai_kia_connect_api and sends no brand header to Kia Connect.
  */
 enum class Brand(
     val label: String,

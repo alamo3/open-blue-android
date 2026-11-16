@@ -2,7 +2,7 @@
 
 A small, personal, **unofficial** Android client for Hyundai **Bluelink Canada** (mybluelink.ca), written in Kotlin + Jetpack Compose.
 
-Kia Connect Canada (kiaconnect.ca) is an experimental second brand, chosen on the sign-in screen: it's the same API on another host, following `hyundai_kia_connect_api`, so it hasn't been tried on a real Kia account yet. The Bluelink Store and Hyundai's in-app charging (chargers, trip planner, charging history) are Hyundai-only and hidden for Kia.
+Kia Connect Canada (kiaconnect.ca) is an experimental second brand, chosen on the sign-in screen. It uses the same API paths with the Kia web-portal request profile described by `hyundai_kia_connect_api`; this profile still needs verification with a real Kia account. The Bluelink Store and Hyundai's in-app charging (chargers, trip planner, charging history) are Hyundai-only and hidden for Kia.
 
 It exists because the official app hides heated/ventilated seat controls for some cars: it requires per-seat feature flags (`RshvDriverSeat` etc.) that Hyundai Canada's servers don't send for every vehicle, even though the API and the website support remote seat control.
 

@@ -43,6 +43,23 @@ sealed interface LoginResult {
     data class NeedsOtp(val challenge: OtpChallenge) : LoginResult
 }
 
+/** Canadian Kia's portal profile is accepted by its API; Hyundai uses its mobile app profile. */
+internal fun Request.Builder.brandHeaders(brand: Brand, offset: String): Request.Builder {
+    header("language", "0")
+    header("offset", offset)
+    header("from", if (brand == Brand.KIA) "CWP" else "SPA")
+    brand.brandHeader?.let { header("brand", it) }
+    header("client_id", brand.clientId)
+    header("client_secret", brand.clientSecret)
+    if (brand == Brand.KIA) {
+        header("Origin", "https://${brand.host}")
+        header("Referer", "https://${brand.host}/login")
+        header("Accept", "application/json, text/plain, */*")
+        header("User-Agent", "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36")
+    }
+    return this
+}
+
 enum class CommandResult { SUCCESS, FAILED, TIMEOUT }
 
 /**
@@ -70,16 +87,7 @@ class BluelinkClient(private val store: SecureStore) {
     private class Reply(val body: JsonObject, val headers: Headers)
 
     /** The headers every request carries, from the signed-in brand. */
-    private fun Request.Builder.brandHeaders(): Request.Builder {
-        val brand = store.brand
-        header("language", "0")
-        header("offset", offsetHours())
-        header("from", "SPA")
-        brand.brandHeader?.let { header("brand", it) }
-        header("client_id", brand.clientId)
-        header("client_secret", brand.clientSecret)
-        return this
-    }
+    private fun Request.Builder.brandHeaders(): Request.Builder = brandHeaders(store.brand, offsetHours())
 
     private fun offsetHours(): String =
         (TimeZone.getDefault().getOffset(System.currentTimeMillis()) / 3_600_000).toString()
