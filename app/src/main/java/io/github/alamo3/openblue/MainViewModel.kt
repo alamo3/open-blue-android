@@ -1819,6 +1819,7 @@ class MainViewModel(
     fun changeCarPaint(paint: io.github.alamo3.openblue.ui.CarPaint) {
         carPaint = paint
         if (online) io.github.alamo3.openblue.ui.CarPaint.set(getApplication(), paint)
+        updateWidgets()
     }
 
     /** Screenshots: show another body and colour. */
@@ -1833,6 +1834,7 @@ class MainViewModel(
         val checking: Boolean = false,
         val release: io.github.alamo3.openblue.update.Release? = null,
         val upToDate: Boolean = false,
+        val channelOlder: Boolean = false,
         /** 0..1 while downloading. */
         val downloading: Float? = null,
         val error: String? = null,
@@ -1843,6 +1845,9 @@ class MainViewModel(
     // (Screenshot tests run without a real Context, hence the online check.)
     var autoUpdate by mutableStateOf(!online || io.github.alamo3.openblue.update.UpdateState.autoUpdate(app))
         private set
+    var updateChannel by mutableStateOf(if (online) io.github.alamo3.openblue.update.UpdateState.channel(app) else io.github.alamo3.openblue.update.UpdateChannel.PUBLIC)
+        private set
+    private var updateCheckGeneration = 0
 
     init {
         if (online) {
@@ -1858,17 +1863,29 @@ class MainViewModel(
         if (on) io.github.alamo3.openblue.update.UpdateWorker.schedule(ctx) else io.github.alamo3.openblue.update.UpdateWorker.cancel(ctx)
     }
 
+    fun changeUpdateChannel(channel: io.github.alamo3.openblue.update.UpdateChannel) {
+        if (channel == updateChannel || update.downloading != null) return
+        updateCheckGeneration++
+        updateChannel = channel
+        if (online) io.github.alamo3.openblue.update.UpdateState.setChannel(getApplication(), channel)
+        update = UpdateUi()
+        checkForUpdate()
+    }
+
     /** Looks for a newer build; [quiet] only mentions it if there is one. */
     fun checkForUpdate(quiet: Boolean = false) {
         if (!online || update.checking || update.downloading != null) return
+        val channel = updateChannel
+        val generation = ++updateCheckGeneration
         update = update.copy(checking = true, error = null)
         viewModelScope.launch {
-            runCatching { withContext(Dispatchers.IO) { io.github.alamo3.openblue.update.Updater.check() } }
+            runCatching { withContext(Dispatchers.IO) { io.github.alamo3.openblue.update.Updater.check(channel) } }
                 .onSuccess { r ->
-                    update = UpdateUi(release = r.takeIf { it.isNewer }, upToDate = !r.isNewer)
+                    if (generation != updateCheckGeneration) return@onSuccess
+                    update = UpdateUi(release = r.takeIf { it.isNewer }, upToDate = r.versionCode == BuildConfig.VERSION_CODE, channelOlder = r.versionCode < BuildConfig.VERSION_CODE)
                     if (quiet && r.isNewer) message = "Open Blue ${r.versionName} is available. Settings has it."
                 }
-                .onFailure { update = UpdateUi(error = if (quiet) null else "Couldn't check: ${it.message}") }
+                .onFailure { if (generation == updateCheckGeneration) update = UpdateUi(error = if (quiet) null else "Couldn't check: ${it.message}") }
         }
     }
 

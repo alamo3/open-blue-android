@@ -44,6 +44,11 @@ Outputs live in `app/src/main/assets/models/car_<kind>.glb` with their anchors; 
 top-down orthographic render (`res/drawable-nodpi/car_still_<kind>.webp`, `car_top_<kind>.webp`).
 `ui/CarBody.kt` picks one from the Bluelink model name (or Settings > Your car in 3D).
 
+The widget recolors the still using `car_paintmask_<kind>.webp`. Regenerate it alongside a new
+still with `CAR_ANCHORS=<anchors> blender -b --python tools/model/paintmask.py -- car.glb mask.png`,
+then downsample to 550 × 374 and save as a lossless WebP. For the original IONIQ 5 N omit
+`CAR_ANCHORS` and use `car_paintmask.webp`. The mask and still must use the same model and camera.
+
 ## Supplied vehicle models
 
 `import_ev.py` converts the supplied GLBs into the app's named hinge nodes, a charging cable,

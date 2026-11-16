@@ -19,7 +19,8 @@ android {
         minSdk = 26
         targetSdk = 34
         versionCode = (System.getenv("GITHUB_RUN_NUMBER") ?: "1").toInt()
-        versionName = "0.1.${System.getenv("GITHUB_RUN_NUMBER") ?: "0"}"
+        versionName = "0.1.${System.getenv("GITHUB_RUN_NUMBER") ?: "0"}${if (System.getenv("OPENBLUE_UPDATE_CHANNEL") == "staging-changes") "-staging" else ""}"
+        buildConfigField("String", "DEFAULT_UPDATE_CHANNEL", "\"${if (System.getenv("OPENBLUE_UPDATE_CHANNEL") == "staging-changes") "staging-changes" else "public"}\"")
         // Filament ships native libraries; modern phones only need arm64.
         ndk { abiFilters += listOf("arm64-v8a") }
     }

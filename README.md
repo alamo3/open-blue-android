@@ -39,6 +39,10 @@ CI renders every screen with made-up demo data (light and dark) using Paparazzi 
 
 Every push to `main` builds an APK and publishes it to the [**latest** release](../../releases/tag/latest). Open that page on your phone, download `OpenBlue.apk`, and allow installs from your browser when Android asks.
 
+Pushes to `staging-changes` publish a separate [**staging release**](../../releases/tag/staging-changes), signed with the same repository signing key and using the same app ID. They do not replace the public release or screenshots. Staging fails to build if the signing secrets are missing, rather than publishing an incompatible APK.
+
+To start testing on an existing installation, install the signed staging APK once from that release. It defaults to the staging update channel; **Settings → App updates → Update channel** lets you choose Public or Staging changes. That choice persists across updates and controls both manual and automatic checks. Android will not downgrade an installed app: after testing a newer staging build, switching to Public waits until the public release has a higher version code. A first switch from an older app without the channel selector also requires installing the staging APK once.
+
 ### Build and test locally
 
 Install a JDK (Java 17 is used by CI; Java 21 also works) and the Android SDK with the Android 34 platform and build tools. Set `JAVA_HOME` to the JDK and `ANDROID_HOME` to the SDK; the screenshot tests need `ANDROID_HOME` even if `sdk.dir` is set in an untracked `local.properties` file. The Gradle wrapper downloads the same Gradle version used by CI on its first run.

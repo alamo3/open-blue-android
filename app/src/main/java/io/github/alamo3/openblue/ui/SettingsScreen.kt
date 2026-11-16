@@ -170,6 +170,19 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, open: (Route) -> Unit 
 
             HorizontalDivider(color = app.hairline, modifier = Modifier.padding(top = 8.dp))
             SectionTitle("App updates")
+            if (vm.update.downloading == null) {
+                Picker(
+                    label = "Update channel",
+                    options = io.github.alamo3.openblue.update.UpdateChannel.entries,
+                    selected = vm.updateChannel,
+                    optionLabel = { it.label },
+                    onSelect = { vm.changeUpdateChannel(it) },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            } else {
+                ClickRow("Update channel", "${vm.updateChannel.label} · downloading", enabled = false) {}
+            }
+            Text("Staging builds are for testing. Switching to an older public build requires waiting for a newer public release.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             SettingSwitch(
                 "Update automatically",
                 "Every few hours on Wi-Fi, installs the newest build from GitHub while you're not using the app (never during the engine sound). Android asks you to confirm the first one.",
@@ -206,7 +219,11 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, open: (Route) -> Unit 
                     if (canInstall()) vm.installUpdate() else requestInstallPermission(thenInstall = true)
                 }
                 u.checking -> ClickRow("Checking…", null, enabled = false) {}
-                else -> ClickRow("Check for updates", if (u.upToDate) "You have the newest build (${BuildConfig.VERSION_NAME})" else "This is ${BuildConfig.VERSION_NAME}") { vm.checkForUpdate() }
+                else -> ClickRow("Check for updates", when {
+                    u.channelOlder -> "The installed build is newer than this channel; Android won't downgrade it."
+                    u.upToDate -> "You have the newest build (${BuildConfig.VERSION_NAME})"
+                    else -> "This is ${BuildConfig.VERSION_NAME}"
+                }) { vm.checkForUpdate() }
             }
             (u.error ?: io.github.alamo3.openblue.update.UpdateState.lastError)?.let {
                 Text(it, style = MaterialTheme.typography.bodySmall, color = app.alert)
