@@ -362,9 +362,20 @@ bpy.ops.object.select_all(action='SELECT')
 bpy.ops.export_scene.gltf(filepath=OUT,export_format='GLB',export_yup=True,export_apply=True,export_animations=False)
 # The shadow must be unlit even under the app's studio lighting.
 data=open(OUT,'rb').read(); jlen=struct.unpack_from('<I',data,12)[0]; doc=json.loads(data[20:20+jlen])
+# Blender can export -1 for textures with an unnamed UV map. glTF texture
+# coordinate indices are non-negative; Filament aborts on the invalid index.
+def fix_uv_indices(value):
+    if isinstance(value, dict):
+        if isinstance(value.get('texCoord'), int) and value['texCoord'] < 0:
+            del value['texCoord']  # glTF defaults to TEXCOORD_0
+        for child in value.values(): fix_uv_indices(child)
+    elif isinstance(value, list):
+        for child in value: fix_uv_indices(child)
+
 for m in doc['materials']:
     if m.get('name')=='ground_shadow': m.setdefault('extensions',{})['KHR_materials_unlit']={}; m['alphaMode']='BLEND'
     m['doubleSided']=True
+    fix_uv_indices(m)
 doc.setdefault('extensionsUsed',[])
 if 'KHR_materials_unlit' not in doc['extensionsUsed']: doc['extensionsUsed'].append('KHR_materials_unlit')
 js=json.dumps(doc,separators=(',',':')).encode(); js+=b' '*(-len(js)%4); rest=data[20+jlen:]
