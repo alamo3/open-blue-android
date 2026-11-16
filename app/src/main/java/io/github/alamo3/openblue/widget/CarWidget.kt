@@ -2,6 +2,7 @@ package io.github.alamo3.openblue.widget
 
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
@@ -55,6 +56,8 @@ import io.github.alamo3.openblue.R
 import io.github.alamo3.openblue.api.TempTables
 import io.github.alamo3.openblue.data.SecureStore
 import io.github.alamo3.openblue.ui.CarStatus
+import io.github.alamo3.openblue.ui.CarBody
+import io.github.alamo3.openblue.ui.CarPaint
 import io.github.alamo3.openblue.ui.formatMinutes
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -83,14 +86,21 @@ data class WidgetData(
     val details: List<Detail> = emptyList(),
     /** Picture of the car (its model, or the stand-in for its body type). */
     val still: Int = R.drawable.car_still,
+    /** Precolored widget-sized image, or null for the bundled white still. */
+    val carImage: Bitmap? = null,
 ) {
     companion object {
         /** A command still waiting after this long is shown as done; the notification says how it went. */
         private const val PENDING_MS = 3 * 60_000L
 
-        fun load(context: Context, now: Long = System.currentTimeMillis()): WidgetData = fromStore(
-            SecureStore(context), io.github.alamo3.openblue.ui.CarBody.current(context).still, now,
-        )
+        fun load(context: Context, now: Long = System.currentTimeMillis()): WidgetData {
+            val body = CarBody.current(context)
+            val data = fromStore(SecureStore(context), body.still, now)
+            val paint = CarPaint.current(context)
+            return data.copy(carImage = runCatching { WidgetCarImage.render(context, body, paint) }
+                .onFailure { android.util.Log.w("OpenBlue", "Couldn't color the widget car", it) }
+                .getOrNull())
+        }
 
         internal fun fromStore(store: SecureStore, still: Int, now: Long): WidgetData {
             val v = store.vehicle
@@ -294,7 +304,7 @@ private fun Full(context: Context, d: WidgetData, tall: Boolean) {
                     }
                 }
                 Image(
-                    ImageProvider(d.still), d.name,
+                    d.carImage?.let { ImageProvider(it) } ?: ImageProvider(d.still), d.name,
                     GlanceModifier.defaultWeight().fillMaxHeight(),
                     contentScale = ContentScale.Fit,
                 )

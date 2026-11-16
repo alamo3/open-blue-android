@@ -7,6 +7,7 @@ import android.content.pm.PackageInstaller
 import android.os.Build
 import io.github.alamo3.openblue.BuildConfig
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -25,58 +26,63 @@ data class Release(
     val message: String = "",
     val sha256: String = "",
     val size: Long = 0,
+    @Transient val channel: UpdateChannel = UpdateChannel.PUBLIC,
 ) {
     val isNewer: Boolean get() = versionCode > BuildConfig.VERSION_CODE
 }
 
 /**
- * Updates the app from the rolling "latest" GitHub release: check, download, verify, install.
+ * Updates the app from the selected rolling GitHub release: check, download, verify, install.
  * Android only installs it if it's signed with the same key as the installed app, so a
  * tampered download can't replace it. The first update asks you to confirm (and to allow
  * installs from Open Blue); after that Android lets the app update itself without asking.
  */
 object Updater {
-    private const val BASE = "https://github.com/alamo3/open-blue-android/releases/download/latest/"
     const val ACTION_STATUS = "io.github.alamo3.openblue.UPDATE_STATUS"
 
     private val http = OkHttpClient.Builder().followRedirects(true).readTimeout(60, TimeUnit.SECONDS).build()
     private val json = Json { ignoreUnknownKeys = true }
 
-    fun check(): Release {
-        http.newCall(Request.Builder().url(BASE + "version.json").header("Cache-Control", "no-cache").build()).execute().use { r ->
+    fun check(channel: UpdateChannel): Release {
+        http.newCall(Request.Builder().url(channel.baseUrl + "version.json").header("Cache-Control", "no-cache").build()).execute().use { r ->
             if (!r.isSuccessful) throw IOException("GitHub answered ${r.code}")
-            return json.decodeFromString(Release.serializer(), r.body?.string() ?: throw IOException("Empty answer"))
+            return json.decodeFromString(Release.serializer(), r.body?.string() ?: throw IOException("Empty answer")).copy(channel = channel)
         }
     }
 
     /** Downloads the APK (or reuses an already-downloaded, verified one). [progress] gets 0..1. */
+    @Synchronized
     fun download(context: Context, release: Release, progress: (Float) -> Unit = {}): File {
         val dir = File(context.cacheDir, "updates").apply { mkdirs() }
-        val apk = File(dir, "OpenBlue-${release.versionCode}.apk")
+        val apk = File(dir, "OpenBlue-${release.channel.key}-${release.versionCode}.apk")
         if (apk.exists() && verified(apk, release)) return apk
-        dir.listFiles()?.forEach { it.delete() }
-        val tmp = File(dir, "download.part")
-        http.newCall(Request.Builder().url(BASE + "OpenBlue.apk").build()).execute().use { r ->
-            if (!r.isSuccessful) throw IOException("Download failed (${r.code})")
-            val body = r.body ?: throw IOException("Empty download")
-            val total = body.contentLength().takeIf { it > 0 } ?: release.size
-            tmp.outputStream().use { out ->
-                body.byteStream().use { input ->
-                    val buf = ByteArray(1 shl 16)
-                    var got = 0L
-                    while (true) {
-                        val n = input.read(buf)
-                        if (n < 0) break
-                        out.write(buf, 0, n)
-                        got += n
-                        if (total > 0) progress((got.toFloat() / total).coerceIn(0f, 1f))
+        dir.listFiles()?.filter { it.name.startsWith("OpenBlue-${release.channel.key}-") && it != apk }?.forEach { it.delete() }
+        val tmp = File.createTempFile("download-${release.channel.key}-", ".part", dir)
+        try {
+            http.newCall(Request.Builder().url(release.channel.baseUrl + "OpenBlue.apk").build()).execute().use { r ->
+                if (!r.isSuccessful) throw IOException("Download failed (${r.code})")
+                val body = r.body ?: throw IOException("Empty download")
+                val total = body.contentLength().takeIf { it > 0 } ?: release.size
+                tmp.outputStream().use { out ->
+                    body.byteStream().use { input ->
+                        val buf = ByteArray(1 shl 16)
+                        var got = 0L
+                        while (true) {
+                            val n = input.read(buf)
+                            if (n < 0) break
+                            out.write(buf, 0, n)
+                            got += n
+                            if (total > 0) progress((got.toFloat() / total).coerceIn(0f, 1f))
+                        }
                     }
                 }
             }
+            if (!verified(tmp, release)) throw IOException("The download didn't match the published checksum")
+            if (!tmp.renameTo(apk)) throw IOException("Couldn't save the download")
+            return apk
+        } finally {
+            tmp.delete()
         }
-        if (!verified(tmp, release)) { tmp.delete(); throw IOException("The download didn't match the published checksum") }
-        if (!tmp.renameTo(apk)) throw IOException("Couldn't save the download")
-        return apk
     }
 
     private fun verified(f: File, release: Release): Boolean {
@@ -94,6 +100,7 @@ object Updater {
 
     /** Hands the APK to Android's installer. The app closes when it's replaced. */
     fun install(context: Context, apk: File, release: Release) {
+        if (UpdateState.channel(context) != release.channel) throw IOException("Update channel changed; check for updates again")
         UpdateState.noteInstalling(context, release)
         val installer = context.packageManager.packageInstaller
         val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL).apply {

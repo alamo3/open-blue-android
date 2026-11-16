@@ -2,7 +2,7 @@ name: Build APK
 
 on:
   push:
-    branches: [main]
+    branches: [main, staging-changes]
   workflow_dispatch:
 
 permissions:
@@ -14,6 +14,7 @@ concurrency:
 
 jobs:
   build:
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/staging-changes'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -33,7 +34,12 @@ jobs:
       - name: Decode signing key
         env:
           KEYSTORE_B64: ${{ secrets.OPENBLUE_KEYSTORE_B64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.OPENBLUE_KEYSTORE_PASSWORD }}
         run: |
+          if [ "$GITHUB_REF_NAME" = staging-changes ] && { [ -z "$KEYSTORE_B64" ] || [ -z "$KEYSTORE_PASSWORD" ]; }; then
+            echo "::error::Staging builds require the existing release signing key and password."
+            exit 1
+          fi
           if [ -n "$KEYSTORE_B64" ]; then
             echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/openblue.jks"
             echo "OPENBLUE_KEYSTORE=$RUNNER_TEMP/openblue.jks" >> "$GITHUB_ENV"
@@ -45,13 +51,22 @@ jobs:
       - name: Build
         env:
           OPENBLUE_KEYSTORE_PASSWORD: ${{ secrets.OPENBLUE_KEYSTORE_PASSWORD }}
+          OPENBLUE_UPDATE_CHANNEL: ${{ github.ref_name == 'staging-changes' && 'staging-changes' || 'public' }}
         run: .github/scripts/gradle.sh assembleRelease
+
+      - name: Test staging build
+        if: github.ref == 'refs/heads/staging-changes'
+        env:
+          OPENBLUE_UPDATE_CHANNEL: staging-changes
+        run: .github/scripts/gradle.sh :app:testDebugUnitTest
 
       - name: Collect APK
         run: |
           cp app/build/outputs/apk/release/app-release.apk OpenBlue.apk
           # What the app's updater reads to decide whether there's something newer.
-          jq -n --argjson code "$GITHUB_RUN_NUMBER" --arg name "0.1.$GITHUB_RUN_NUMBER" --arg commit "$GITHUB_SHA" \
+          version="0.1.$GITHUB_RUN_NUMBER"
+          if [ "$GITHUB_REF_NAME" = staging-changes ]; then version="$version-staging"; fi
+          jq -n --argjson code "$GITHUB_RUN_NUMBER" --arg name "$version" --arg commit "$GITHUB_SHA" \
             --arg message "$(git log -1 --format=%s)" --arg sha "$(sha256sum OpenBlue.apk | cut -d' ' -f1)" \
             --argjson size "$(stat -c %s OpenBlue.apk)" \
             '{versionCode: $code, versionName: $name, commit: $commit, message: $message, sha256: $sha, size: $size}' > version.json
@@ -62,20 +77,28 @@ jobs:
           name: OpenBlue-apk
           path: OpenBlue.apk
 
-      # Publish to a rolling "latest" release so the APK can be downloaded on the phone directly.
-      - name: Publish "latest" release
+      # Staging uses its own tag and never touches the public latest release.
+      - name: Publish channel release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release delete latest --cleanup-tag -y || true
-          gh release create latest OpenBlue.apk version.json \
+          if [ "$GITHUB_REF_NAME" = staging-changes ]; then
+            tag=staging-changes
+            title="Staging build (${GITHUB_SHA::7})"
+          else
+            tag=latest
+            title="Latest build (${GITHUB_SHA::7})"
+          fi
+          gh release delete "$tag" --cleanup-tag -y || true
+          gh release create "$tag" OpenBlue.apk version.json \
             --prerelease \
             --target "$GITHUB_SHA" \
-            --title "Latest build (${GITHUB_SHA::7})" \
-            --notes "Built from ${GITHUB_SHA} by run #${GITHUB_RUN_NUMBER}. Download OpenBlue.apk on your phone to install."
+            --title "$title" \
+            --notes "Built from ${GITHUB_REF_NAME} at ${GITHUB_SHA} by run #${GITHUB_RUN_NUMBER}. Download OpenBlue.apk on your phone to install."
 
   # Renders every screen with demo data and publishes the PNGs to the `screenshots` branch.
   screenshots:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5

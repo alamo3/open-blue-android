@@ -22,10 +22,11 @@ class UpdateWorker(context: Context, params: WorkerParameters) : CoroutineWorker
     override suspend fun doWork(): Result {
         val ctx = applicationContext
         if (!UpdateState.autoUpdate(ctx)) return Result.success()
-        val release = try { Updater.check() } catch (e: IOException) { return Result.retry() }
+        val channel = UpdateState.channel(ctx)
+        val release = try { Updater.check(channel) } catch (e: IOException) { return Result.retry() }
         if (!release.isNewer) return Result.success()
         val apk = try { Updater.download(ctx, release) } catch (e: IOException) { return Result.retry() }
-        if (Notifier.appInForeground() || EngineSoundService.current != null) return Result.success()
+        if (UpdateState.channel(ctx) != channel || Notifier.appInForeground() || EngineSoundService.current != null) return Result.success()
         runCatching { Updater.install(ctx, apk, release) }
             .onFailure { UpdateState.lastError = "Couldn't install the update: ${it.message}" }
         return Result.success()
