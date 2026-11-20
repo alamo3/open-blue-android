@@ -362,6 +362,7 @@ class LoopVoice(
     }
 
     private var afterburner = 0f
+    private var bakedLoad = 0f
 
     /** True when the playing set is spool-keyed (a jet). */
     val isJet: Boolean get() = loaded?.spool != null
@@ -369,7 +370,10 @@ class LoopVoice(
     private fun renderBaked(s: LoopSet, speeds: FloatArray, out: FloatArray, frames: Int) {
         val dt = frames / sampleRate.toFloat()
         bakedSpeed = if (bakedSpeed < 0f) tSpeed else bakedSpeed + (tSpeed - bakedSpeed) * min(1f, dt / 0.08f)
-        val pedalNow = if (tEngaged) tLoad.coerceIn(0f, 1f) else 0f
+        // the load as it falls (not the on/off "engaged" flag), glided: lifting or pressing
+        // crossfades cruise <-> accelerating loops instead of switching
+        bakedLoad += (tLoad.coerceIn(0f, 1f) - bakedLoad) * min(1f, dt / 0.1f)
+        val pedalNow = bakedLoad
         // the grid position: road speed, or for a jet its spool
         val v = s.spool?.step(pedalNow, dt) ?: bakedSpeed
         // where the speed sits on the grid
@@ -383,7 +387,7 @@ class LoopVoice(
         val wa = cos(u * PI.toFloat() / 2)
         val wb = sin(u * PI.toFloat() / 2)
         // coasting counts as cruise; the pedal brings in the full-power series
-        val load = if (tEngaged) tLoad.coerceIn(0f, 1f) else 0f
+        val load = pedalNow
         val gOn = if (s.light.isEmpty()) 1f else sin(load * PI.toFloat() / 2)
         // a jet's loops are the engine at that spool, whatever the pedal
         val gLight = if (s.spool != null && s.on.isEmpty()) 1f else cos(load * PI.toFloat() / 2)

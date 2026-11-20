@@ -24,13 +24,19 @@ class DriveEffects(private val sampleRate: Int, private val open: ((String) -> I
         const val LAUNCH_MIN_PEDAL = 0.65f
         const val LAUNCH_MAX_KMH = 50f
         const val LAUNCH_COOLDOWN_SEC = 4f
+        // EV launch: the build plays on hard acceleration from low speed, to completion; the
+        // bang at its end only with the pedal (nearly) floored
+        const val LAUNCH_BUILD_PEDAL = 0.75f
+        const val LAUNCH_BANG_PEDAL = 0.9f
+        const val EV_LAUNCH_COOLDOWN_SEC = 5f
         val GEAR_SHIFT_KMH = floatArrayOf(30f, 60f, 90f, 120f)
         const val GEAR_HYSTERESIS_KMH = 2.5f
         const val GEAR_PITCH_DEPTH = 0.08f
-        const val SHIFT_DUCK = 0.55f
-        const val SHIFT_DUCK_SEC = 0.13f
+        const val SHIFT_DUCK = 0.75f          // a gentle dip under the shift sound, not a cut
+        const val SHIFT_DUCK_SEC = 0.18f
         const val REVERSE_DUCK = 0.2f
         const val SHIFT_GAIN = 2.5f           // the gearshift sound sits over the engine, not under it
+        const val LAUNCH_GAIN = 1.8f          // launches (build, bang, boom): over the engine too
         const val SHIFT_UP = "shift_cin_up"
         const val SHIFT_DOWN = "shift_cin_down"
         private const val ASSET_RATE = 48000
@@ -55,13 +61,15 @@ class DriveEffects(private val sampleRate: Int, private val open: ((String) -> I
     private var prevPedal = -1f
     private var pedalRate = 0f
     private var cooldown = 0f
+    private var lastPedal = 1f                  // (starts high: no launch from the first block)
+    private var buildLeft = 0f
     private var duckT = 0f
     private var reverseLevel = 0f
     private var duckNow = 1f
 
     private fun load(): Map<String, Clip>? {
         val opener = open ?: return null
-        return listOf("launch_ev", "boom", SHIFT_UP, SHIFT_DOWN, "reverse", "chime").mapNotNull { n ->
+        return listOf("launch_build", "launch_bang", "boom", SHIFT_UP, SHIFT_DOWN, "reverse", "chime").mapNotNull { n ->
             opener("effects/$n.wav")?.use { readWav16(it.readBytes()) }?.let { n to Clip(it) }
         }.toMap().takeIf { it.isNotEmpty() }
     }
@@ -72,8 +80,9 @@ class DriveEffects(private val sampleRate: Int, private val open: ((String) -> I
      */
     /**
      * Once per audio block. [pedal] 0..1 (the car's own, else the estimated load); [launch] is
-     * the sound a launch plays ("launch_ev", "boom") or null for none; [virtualGears] whether
-     * this sound gets the virtual gears.
+     * the kind of launch this sound makes ("ev": build, then a bang if floored; "boom": the
+     * sonic boom on a pedal stab) or null for none; [virtualGears] whether this sound gets the
+     * virtual gears.
      */
     fun step(dt: Float, speedKmh: Float, pedal: Float, reversing: Boolean, launch: String?, virtualGears: Boolean) {
         if (!loadTried) { loadTried = true; clips = runCatching { load() }.getOrNull() }
@@ -86,11 +95,25 @@ class DriveEffects(private val sampleRate: Int, private val open: ((String) -> I
         }
         prevPedal = pedal
         cooldown = max(0f, cooldown - dt)
-        if (pedalRate > LAUNCH_PEDAL_RATE && pedal > LAUNCH_MIN_PEDAL && speedKmh < LAUNCH_MAX_KMH &&
-            cooldown == 0f && !reverse
+        val wasBelow = lastPedal < LAUNCH_BUILD_PEDAL
+        lastPedal = pedal
+        if (launch == "ev") {
+            // hard acceleration from low speed: the build, played to the end...
+            if (wasBelow && pedal >= LAUNCH_BUILD_PEDAL && speedKmh < LAUNCH_MAX_KMH && cooldown == 0f && !reverse) {
+                cooldown = EV_LAUNCH_COOLDOWN_SEC
+                fire("launch_build")
+                buildLeft = clips?.get("launch_build")?.let { it.pcm.size / ASSET_RATE.toFloat() } ?: 0f
+            }
+        } else if (pedalRate > LAUNCH_PEDAL_RATE && pedal > LAUNCH_MIN_PEDAL && speedKmh < LAUNCH_MAX_KMH &&
+            cooldown == 0f && !reverse && launch != null
         ) {
             cooldown = LAUNCH_COOLDOWN_SEC
-            launch?.let { fire(it) }
+            fire(launch)
+        }
+        // ...then the bang, only if the pedal is (nearly) floored when the build ends
+        if (buildLeft > 0f) {
+            buildLeft -= dt
+            if (buildLeft <= 0f && pedal >= LAUNCH_BANG_PEDAL && !reverse) fire("launch_bang")
         }
 
         // virtual gears
@@ -137,7 +160,7 @@ class DriveEffects(private val sampleRate: Int, private val open: ((String) -> I
         val revTarget = if (reverse) 1f else 0f
         val k = 1f / (0.15f * sampleRate)          // ~150 ms fades for the duck and the reverse loop
         for (n in 0 until frames) {
-            duckNow += (duck - duckNow) * min(1f, k * 4f)
+            duckNow += (duck - duckNow) * min(1f, k * 2.5f)     // ~60 ms: eased in and out
             reverseLevel += (revTarget - reverseLevel) * k * 3f
             var x = out[n] * duckNow
             if (c != null) {
@@ -148,7 +171,12 @@ class DriveEffects(private val sampleRate: Int, private val open: ((String) -> I
                         x += sample(clip) * reverseLevel * volume
                         clip.pos = (clip.pos + step) % clip.pcm.size
                     } else if (clip.pos >= 0) {
-                        x += sample(clip) * volume * (if (name == SHIFT_UP || name == SHIFT_DOWN) SHIFT_GAIN else 1f)
+                        val g = when (name) {
+                            SHIFT_UP, SHIFT_DOWN -> SHIFT_GAIN
+                            "launch_build", "launch_bang", "boom" -> LAUNCH_GAIN
+                            else -> 1f
+                        }
+                        x += sample(clip) * volume * g
                         clip.pos += step
                         if (clip.pos >= clip.pcm.size - 1) clip.pos = -1.0
                     }

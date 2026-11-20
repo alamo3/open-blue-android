@@ -27,6 +27,7 @@ class SoundVoice(
     @Volatile private var reversing = false
     private var limitEnv = 0f
     private var chimed = false
+    private var pitchMul = 1f
     private var shiftsSeen = -1
     private var downSeen = -1
 
@@ -78,12 +79,15 @@ class SoundVoice(
                 // jets, which boom by themselves) make their own
                 launch = when {
                     k == EngineSound.Kind.BAKED && recorded.isJet -> "boom"
-                    !sound.isEngine -> "launch_ev"
+                    !sound.isEngine -> "ev"
                     else -> null
                 },
                 virtualGears = k == EngineSound.Kind.BAKED,
             )
-            recorded.pitchMul = effects.pitchMul
+            // virtual gears: the pitch glides to the new gear (~120 ms) rather than jumping
+            val bdt = frames / sampleRate.toFloat()
+            pitchMul += (effects.pitchMul - pitchMul) * kotlin.math.min(1f, bdt / 0.12f)
+            recorded.pitchMul = pitchMul
             // every gearbox shift of an engine sound (synth, recorded, FMOD car or jet) gets the
             // shift sound; gear >= 1 means gearshifts are on
             if (sound.isEngine && st.gear >= 1) {

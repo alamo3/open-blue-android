@@ -40,7 +40,7 @@ class DriveEffectsTest {
     private fun rms(x: FloatArray) = sqrt(x.sumOf { (it * it).toDouble() } / x.size)
 
     @Test fun launchAndReversePlay() {
-        if (!File(assets, "effects/launch_ev.wav").exists()) return
+        if (!File(assets, "effects/launch_build.wav").exists()) return
         val v = SoundVoice(48000, open = opener()).apply { sound = EngineSound.STARSHIP; volume = 0f }
         val buf = FloatArray(480)
         fun block(speed: Float, pedal: Float, rev: Boolean): Double {
@@ -111,5 +111,26 @@ class DriveEffectsTest {
         val with = energyAfter(true)
         val without = energyAfter(false)
         assertTrue("shift sound heard (${"%.1f".format(10 * kotlin.math.log10(with / without))} dB)", with > without * 1.5)
+    }
+
+    /** The EV launch: the build on hard acceleration; the bang at its end only when floored. */
+    @Test fun launchBangsOnlyWhenFloored() {
+        if (!File(assets, "effects/launch_bang.wav").exists()) return
+        fun bangEnergy(pedal: Float): Double {
+            val v = SoundVoice(48000, open = opener()).apply { sound = EngineSound.STARSHIP; volume = 0.3f }
+            val buf = FloatArray(480)
+            fun block(p: Float): Double {
+                v.drive(p, false)
+                v.set(EngineState(900f, p, -1, p > 0.04f, 0, false, speedKmh = 10f))
+                v.render(buf)
+                return buf.maxOf { kotlin.math.abs(it).toDouble() }
+            }
+            repeat(1000) { block(0f) }                // past the start-up chime
+            repeat(225) { block(pedal) }               // the build (~2.2 s)...
+            return (0 until 60).maxOf { block(pedal) } // ...and the peak where the bang would be
+        }
+        val floored = bangEnergy(1f)
+        val partial = bangEnergy(0.8f)
+        assertTrue("bang when floored (peak ${"%.1f".format(20 * kotlin.math.log10(floored / partial))} dB over 80 % pedal)", floored > partial * 1.5)
     }
 }
