@@ -39,6 +39,8 @@ data class SoundReadout(
     val waitingForPi: Boolean = false,
     /** The Pi link is on but Bluetooth permission is missing. */
     val piNoPermission: Boolean = false,
+    /** FMOD: what it's playing, or why it isn't. */
+    val fmodStatus: String? = null,
 )
 
 /**
@@ -158,6 +160,8 @@ class SoundController(
         }
         if (usePi && canUseBluetooth()) pi.start()
         focus.start()
+        // FMOD's Android layer sets itself up here, on the main thread, before the audio thread uses it
+        if (sound.kind == EngineSound.Kind.FMOD || fmodSet != null) FmodNative.ensure(context)
         stopping = false
         audioThread = Thread({ audioLoop() }, "openblue-engine").apply { start() }
     }
@@ -354,6 +358,7 @@ class SoundController(
                         piCar = car,
                         waitingForPi = waitingForPi,
                         piNoPermission = usePi && pi.state == PiLink.State.OFF && !canUseBluetooth(),
+                        fmodStatus = if (s.kind == EngineSound.Kind.FMOD) (fmod.status ?: if (fmodSet == null) "No FMOD sound chosen" else "Starting FMOD…") else null,
                     )
                 }
                 if (stopping && fade <= 0f) break

@@ -200,6 +200,7 @@ fun SoundScreen(vm: MainViewModel, onBack: () -> Unit) {
                 }
             }
             vm.fmodMessage?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant) }
+            r?.fmodStatus?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = scheme.primary) }
             Text(
                 "Imported sounds play with FMOD Studio by Firelight Technologies Pty Ltd.",
                 style = MaterialTheme.typography.labelSmall,

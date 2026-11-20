@@ -7,19 +7,32 @@ import android.content.Context
  * JNI bridge in src/main/cpp/fmod_bridge.cpp. Handles are opaque longs; 0 means failure.
  */
 object FmodNative {
+    const val TAG = "OpenBlueFmod"
     @Volatile private var loaded: Boolean? = null
+    /** Why FMOD couldn't start, for the screen; null when fine or not tried. */
+    @Volatile var error: String? = null
+        private set
 
-    /** Loads the native libraries and initialises FMOD's Android layer; false if unavailable. */
+    /**
+     * Loads the native libraries and initialises FMOD's Android layer; false if unavailable.
+     * Call it on the main thread first (FMOD's Java side sets itself up with the app context
+     * there); later calls from other threads just return the result.
+     */
     @Synchronized
     fun ensure(context: Context): Boolean {
         loaded?.let { return it }
-        val ok = runCatching {
+        val ok = try {
             System.loadLibrary("fmod")
             System.loadLibrary("fmodstudio")
             System.loadLibrary("openblue_fmod")
             org.fmod.FMOD.init(context.applicationContext)
+            android.util.Log.i(TAG, "FMOD loaded")
             true
-        }.getOrElse { false }
+        } catch (t: Throwable) {
+            android.util.Log.e(TAG, "FMOD failed to load", t)
+            error = "FMOD failed to load: ${t.javaClass.simpleName}: ${t.message}"
+            false
+        }
         loaded = ok
         return ok
     }

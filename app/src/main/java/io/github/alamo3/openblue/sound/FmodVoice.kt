@@ -30,6 +30,17 @@ class FmodVoice(private val context: Context) : ExternalVoice {
     private var liftSeen = -1
     private var wasCut = false
     @Volatile private var wanted: String? = null
+    private var failedId: String? = null
+    /** What's happening, for the screen: playing, or why not. */
+    @Volatile var status: String? = null
+        private set
+
+    private fun fail(why: String): Boolean {
+        android.util.Log.e(FmodNative.TAG, why)
+        status = why
+        close()
+        return false
+    }
 
     /** Which imported set to play (an [FmodSound] id); null for none. */
     override var setId: String?
@@ -38,18 +49,22 @@ class FmodVoice(private val context: Context) : ExternalVoice {
 
     private fun open(id: String): Boolean {
         close()
-        val s = FmodLibrary.get(context, id) ?: return false
-        if (!FmodNative.ensure(context)) return false
+        val s = FmodLibrary.get(context, id) ?: return fail("FMOD sound '$id' not found (import it again)")
+        if (!FmodNative.ensure(context)) return fail(FmodNative.error ?: "FMOD failed to load")
         sys = FmodNative.create(BLOCK_FRAMES)
-        if (sys == 0L) return false
+        if (sys == 0L) return fail("FMOD couldn't start its audio output")
         val master = FmodNative.loadBank(sys, java.io.File(s.dir, s.masterBank).path)
+        if (master == 0L) return fail("FMOD couldn't load ${s.name}'s master bank")
         val car = FmodNative.loadBank(sys, java.io.File(s.dir, s.carBank).path)
-        if (master == 0L || car == 0L) { close(); return false }
+        if (car == 0L) return fail("FMOD couldn't load ${s.name}'s car bank")
         s.masterBus?.let { FmodNative.setBusVolume(sys, it, 10f.pow(s.gainDb / 20f)) }
         val engineDesc = FmodNative.event(sys, s.events.getValue("engine"))
-        engine = if (engineDesc != 0L) FmodNative.instance(engineDesc) else 0L
-        if (engine == 0L) { close(); return false }
+        if (engineDesc == 0L) return fail("${s.name}: engine event not found in the bank")
+        engine = FmodNative.instance(engineDesc)
+        if (engine == 0L) return fail("${s.name}: couldn't create the engine sound (bus missing from the master bank?)")
         FmodNative.start(engine)
+        android.util.Log.i(FmodNative.TAG, "playing ${s.name}")
+        status = "Playing ${s.name} with FMOD"
         for (k in listOf("gear", "limiter", "backfire")) {
             s.events[k]?.let { g -> FmodNative.event(sys, g).takeIf { it != 0L }?.let { shots[k] = it } }
         }
@@ -72,9 +87,10 @@ class FmodVoice(private val context: Context) : ExternalVoice {
 
     override fun update(st: EngineState, level: Float, dt: Float) {
         val id = wanted
-        if (id != loadedId) {
-            if (id == null) close() else if (!open(id)) { wanted = null; return }
+        if (id != loadedId && id != failedId) {
+            if (id == null) close() else if (!open(id)) { failedId = id; return }
         }
+        if (id != failedId) failedId = null
         if (sys == 0L) return
         val s = sound ?: return
         FmodNative.setParam(engine, "rpms", st.rpm)
