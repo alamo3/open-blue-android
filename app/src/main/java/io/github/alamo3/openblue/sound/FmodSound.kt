@@ -61,9 +61,10 @@ data class FmodSound(
 object FmodLibrary {
     private fun root(context: Context) = File(context.filesDir, "fmod")
 
-    fun list(context: Context): List<FmodSound> =
+    /** The imported sets; empty where there's no storage (e.g. a stub context in tests). */
+    fun list(context: Context): List<FmodSound> = runCatching {
         root(context).listFiles()?.filter { it.isDirectory }?.mapNotNull { FmodSound.read(it) }?.sortedBy { it.name }
-            ?: emptyList()
+    }.getOrNull() ?: emptyList()
 
     fun get(context: Context, id: String?): FmodSound? =
         id?.let { FmodSound.read(File(root(context), it)) }
