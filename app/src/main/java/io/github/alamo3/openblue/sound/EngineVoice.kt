@@ -29,6 +29,8 @@ enum class EngineSound(
     val idleRpm: Float = 900f,
     val redline: Float = 6900f,
     val piston: PistonSpec? = null,
+    /** For [Kind.RECORDED] and [Kind.BAKED]: the loop set under assets/loopsets (see [LoopVoice]). */
+    val loopSet: String? = null,
 ) {
     STARSHIP("Starship", Kind.STARSHIP),
     HYPERDRIVE("Hyperdrive", Kind.HYPERDRIVE),
@@ -54,11 +56,25 @@ enum class EngineSound(
             floatArrayOf(0f, 0.16f, -0.1f, 0.13f, 0.02f, -0.15f, 0.1f, -0.12f), 0.35f,
         ),
     ),
+    // Recorded engines (from racing-game sound sets), played like a racing game plays them.
+    BMW_GTR("BMW M3 GTR", Kind.RECORDED, 2200f, 7000f, loopSet = "bmw_m3_gtr_int"),
+    AUDI_R8("Audi R8 V10", Kind.RECORDED, 2200f, 7000f, loopSet = "audi_r8_int"),
+    IONIQ_N("IONIQ 5 N", Kind.RECORDED, 1000f, 7500f, loopSet = "ioniq5n_int"),
+    // The Raspberry Pi's cinematic voices, pre-rendered at a range of speeds (export_baked.py).
+    CINEMATIC_DRIVE("Cinematic Drive", Kind.BAKED, loopSet = "cinematic_drive"),
+    CINEMATIC_CHORD("Cinematic Chord", Kind.BAKED, loopSet = "cinematic_chord"),
+    ACTION_PULSE("Action Pulse", Kind.BAKED, loopSet = "action_pulse"),
+    TRAILER_BRASS("Trailer Brass", Kind.BAKED, loopSet = "trailer_brass"),
+    STRINGS_CHOIR("Strings & Choir", Kind.BAKED, loopSet = "strings_choir"),
+    CATHEDRAL("Cathedral", Kind.BAKED, loopSet = "cathedral"),
+    GRAND_TOURING("Grand Touring", Kind.BAKED, loopSet = "grand_touring"),
+    DREADNOUGHT("Dreadnought", Kind.BAKED, loopSet = "dreadnought"),
+    JETSONS_I3("Jetsons i3", Kind.BAKED, loopSet = "jetsons_i3_recording"),
     ;
 
-    enum class Kind { STARSHIP, HYPERDRIVE, ION, CRUISER, PISTON }
+    enum class Kind { STARSHIP, HYPERDRIVE, ION, CRUISER, PISTON, RECORDED, BAKED }
 
-    val isEngine: Boolean get() = kind == Kind.PISTON
+    val isEngine: Boolean get() = kind == Kind.PISTON || kind == Kind.RECORDED
 }
 
 /**

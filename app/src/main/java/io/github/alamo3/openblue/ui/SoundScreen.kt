@@ -125,10 +125,10 @@ fun SoundScreen(vm: MainViewModel, onBack: () -> Unit) {
                     .pressable {
                         if (vm.soundOn) {
                             vm.stopSound()
-                        } else if (granted(Manifest.permission.ACCESS_FINE_LOCATION)) {
+                        } else if (soundPermissions().all(::granted)) {
                             vm.startSound()
                         } else {
-                            askLocation.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
+                            askLocation.launch(soundPermissions())
                         }
                     }
                     .padding(vertical = 14.dp),
@@ -169,7 +169,11 @@ fun SoundScreen(vm: MainViewModel, onBack: () -> Unit) {
             SectionTitle("Sound")
             Text("Made for an EV", style = MaterialTheme.typography.labelLarge, color = scheme.onSurfaceVariant, modifier = Modifier.padding(bottom = 8.dp))
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                EngineSound.entries.filter { !it.isEngine }.forEach { s -> OptionPill(s.label, s == sound, { vm.changeEngineSound(s) }) }
+                EngineSound.entries.filter { !it.isEngine && it.kind != EngineSound.Kind.BAKED }.forEach { s -> OptionPill(s.label, s == sound, { vm.changeEngineSound(s) }) }
+            }
+            Text("Cinematic", style = MaterialTheme.typography.labelLarge, color = scheme.onSurfaceVariant, modifier = Modifier.padding(top = 14.dp, bottom = 8.dp))
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                EngineSound.entries.filter { it.kind == EngineSound.Kind.BAKED }.forEach { s -> OptionPill(s.label, s == sound, { vm.changeEngineSound(s) }) }
             }
             Text("Engines", style = MaterialTheme.typography.labelLarge, color = scheme.onSurfaceVariant, modifier = Modifier.padding(top = 14.dp, bottom = 8.dp))
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -257,6 +261,8 @@ private fun soundBlurb(s: EngineSound) = when (s.kind) {
     EngineSound.Kind.ION -> "A growling bass that throbs faster the quicker you go."
     EngineSound.Kind.CRUISER -> "A cinematic chord that swells and brightens as you push, adding a top note near full power."
     EngineSound.Kind.PISTON -> "A made-up engine, synthesized from scratch."
+    EngineSound.Kind.RECORDED -> "A real engine recorded at several revs, played back the way racing games do: it follows the revs and your pedal, with its own shifts and pops."
+    EngineSound.Kind.BAKED -> "A cinematic sound from the Raspberry Pi engine, recorded across the speed range: it glides with your speed and swells with the pedal."
 }
 
 /** How hard the car is pulling, as a glowing ring. */
@@ -277,8 +283,21 @@ private fun PowerRing(load: Float, modifier: Modifier = Modifier) {
     }
 }
 
+/** Location for GPS; on Android 12+ also Bluetooth, to reach the car's Raspberry Pi. */
+private fun soundPermissions(): Array<String> = buildList {
+    add(Manifest.permission.ACCESS_FINE_LOCATION)
+    add(Manifest.permission.ACCESS_COARSE_LOCATION)
+    if (android.os.Build.VERSION.SDK_INT >= 31) {
+        add(Manifest.permission.BLUETOOTH_SCAN)
+        add(Manifest.permission.BLUETOOTH_CONNECT)
+    }
+}.toTypedArray()
+
 private fun statusLine(r: io.github.alamo3.openblue.sound.SoundReadout?): String = when {
     r == null -> "Starting…"
+    r.carData -> "Following the car: live data from the Raspberry Pi."
+    r.piState == io.github.alamo3.openblue.sound.PiLink.State.CONNECTED ->
+        "Raspberry Pi connected, waiting for car data. Using the phone's sensors meanwhile."
     !r.hasSensors -> "This phone lacks the motion sensors the sound needs."
     !r.gpsFix -> "Waiting for GPS. Until then, revs follow acceleration alone."
     r.calibrated < 0.2f -> "Accelerate gently once so it can learn which way is forward."

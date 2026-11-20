@@ -1,0 +1,33 @@
+{
+ "name": "Audi R8 (interior)",
+ "cylinders": 10,
+ "idle_rpm": 2200,
+ "redline_rpm": 7000,
+ "on": [
+  {
+   "file": "sample_050.wav",
+   "ref_hz": 239.33333333333334
+  },
+  {
+   "file": "sample_087.wav",
+   "ref_hz": 274.93333333333334
+  },
+  {
+   "file": "sample_035.wav",
+   "ref_hz": 308.0
+  },
+  {
+   "file": "sample_074.wav",
+   "ref_hz": 377.06666666666666
+  }
+ ],
+ "light": null,
+ "off": [],
+ "shift_up": "991_gt2_clubsport_shift_up5.wav",
+ "shift_down": "gue_cayman_rsr_shiftdown1_ext.wav",
+ "pops": [
+  "991_gt2_clubsport_pop1.wav",
+  "991_gt2_clubsport_pop3.wav",
+  "991_gt2_clubsport_pop6.wav"
+ ]
+}

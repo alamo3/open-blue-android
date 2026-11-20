@@ -1,0 +1,120 @@
+{
+ "name": "Cinematic Drive",
+ "key": "speed",
+ "speeds": [
+  2,
+  8,
+  15,
+  25,
+  35,
+  50,
+  65,
+  80,
+  100,
+  125,
+  150
+ ],
+ "cylinders": 2,
+ "idle_rpm": 0,
+ "redline_rpm": 1,
+ "sample_rate": 24000,
+ "tone": false,
+ "raw_level": true,
+ "coast_is_light": true,
+ "off": [],
+ "shift_up": null,
+ "shift_down": null,
+ "pops": [],
+ "light": [
+  {
+   "file": "light_002.wav",
+   "ref_hz": 1.0
+  },
+  {
+   "file": "light_008.wav",
+   "ref_hz": 1.0442737824274138
+  },
+  {
+   "file": "light_015.wav",
+   "ref_hz": 1.0905077326652575
+  },
+  {
+   "file": "light_025.wav",
+   "ref_hz": 1.155352696872273
+  },
+  {
+   "file": "light_035.wav",
+   "ref_hz": 1.224053543304655
+  },
+  {
+   "file": "light_050.wav",
+   "ref_hz": 1.3348398541700341
+  },
+  {
+   "file": "light_065.wav",
+   "ref_hz": 1.434783772311
+  },
+  {
+   "file": "light_080.wav",
+   "ref_hz": 1.5422108254079405
+  },
+  {
+   "file": "light_100.wav",
+   "ref_hz": 1.7062550705226853
+  },
+  {
+   "file": "light_125.wav",
+   "ref_hz": 1.9152065613971472
+  },
+  {
+   "file": "light_150.wav",
+   "ref_hz": 1.9430638823072117
+  }
+ ],
+ "on": [
+  {
+   "file": "on_002.wav",
+   "ref_hz": 1.0
+  },
+  {
+   "file": "on_008.wav",
+   "ref_hz": 1.0442737824274138
+  },
+  {
+   "file": "on_015.wav",
+   "ref_hz": 1.0905077326652575
+  },
+  {
+   "file": "on_025.wav",
+   "ref_hz": 1.155352696872273
+  },
+  {
+   "file": "on_035.wav",
+   "ref_hz": 1.224053543304655
+  },
+  {
+   "file": "on_050.wav",
+   "ref_hz": 1.3348398541700341
+  },
+  {
+   "file": "on_065.wav",
+   "ref_hz": 1.434783772311
+  },
+  {
+   "file": "on_080.wav",
+   "ref_hz": 1.5422108254079405
+  },
+  {
+   "file": "on_100.wav",
+   "ref_hz": 1.7062550705226853
+  },
+  {
+   "file": "on_125.wav",
+   "ref_hz": 1.9152065613971472
+  },
+  {
+   "file": "on_150.wav",
+   "ref_hz": 1.9430638823072117
+  }
+ ]
+}

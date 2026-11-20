@@ -77,7 +77,8 @@ class EngineModelTest {
     }
 
     @Test fun evSoundsStayInRange() {
-        for (kind in EngineSound.entries.filter { !it.isEngine }) {
+        // (baked voices play from asset files: LoopVoiceTest covers them)
+        for (kind in EngineSound.entries.filter { !it.isEngine && it.kind != EngineSound.Kind.BAKED }) {
             val voice = SoundVoice(48000).apply { sound = kind }
             val m = EngineModel()
             val buf = FloatArray(480)

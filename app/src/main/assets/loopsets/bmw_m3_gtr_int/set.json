@@ -1,0 +1,42 @@
+{
+ "name": "BMW M3 GTR (interior)",
+ "cylinders": 8,
+ "idle_rpm": 2200,
+ "redline_rpm": 7000,
+ "on": [
+  {
+   "file": "m3_onidle_ex.wav",
+   "ref_hz": 143.0
+  },
+  {
+   "file": "e46_gtr_int_high.wav",
+   "ref_hz": 265.0
+  },
+  {
+   "file": "e46_gtr_int_low2.wav",
+   "ref_hz": 358.5
+  },
+  {
+   "file": "m3_onmid_ex.wav",
+   "ref_hz": 426.5
+  }
+ ],
+ "light": {
+  "file": "e46_gtr_int1.wav",
+  "ref_hz": 271.0
+ },
+ "off": [
+  {
+   "file": "e46_gtr_int_off_high.wav",
+   "ref_hz": 258.0
+  }
+ ],
+ "shift_up": "991_gt2_clubsport_shift_up5.wav",
+ "shift_down": "gue_cayman_rsr_shiftdown1_ext.wav",
+ "pops": [
+  "991_gt2_clubsport_pop1.wav",
+  "991_gt2_clubsport_pop3.wav",
+  "991_gt2_clubsport_pop6.wav",
+  "991_gt2_clubsport_pop8.wav"
+ ]
+}

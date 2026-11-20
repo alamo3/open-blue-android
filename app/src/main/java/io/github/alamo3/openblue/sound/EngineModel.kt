@@ -59,15 +59,18 @@ class EngineModel(
     /**
      * Advances the model by [dt] seconds. [accel] is forward acceleration in m/s², [speed] in m/s.
      * [revThrottle], when set (0..1), revs the engine in neutral and ignores the car.
+     * [pedal], when known (0..1, from the car itself via the Raspberry Pi), is the load
+     * directly, instead of guessing it from how hard the car accelerates.
      */
-    fun update(dt: Float, speed: Float, accel: Float, revThrottle: Float? = null): EngineState {
+    fun update(dt: Float, speed: Float, accel: Float, revThrottle: Float? = null, pedal: Float? = null): EngineState {
         if (revThrottle != null) return neutral(dt, revThrottle)
 
         val kmh = max(0f, speed) * 3.6f
-        val rawLoad = (accel / fullAccel).coerceIn(0f, 1f)
-        // Throttle "in" above ~0.3 m/s²; it needs a short calm spell to count as lifted, so
-        // bumps and gear changes don't make it flicker.
-        if (accel > 0.3f) {
+        val rawLoad = pedal?.coerceIn(0f, 1f) ?: (accel / fullAccel).coerceIn(0f, 1f)
+        // Throttle "in" above ~0.3 m/s² (or any real pedal); it needs a short calm spell to
+        // count as lifted, so bumps and gear changes don't make it flicker.
+        val throttleIn = if (pedal != null) pedal > 0.04f else accel > 0.3f
+        if (throttleIn) {
             if (!engaged) {
                 engaged = true
                 pullPeak = 0f
@@ -76,7 +79,7 @@ class EngineModel(
             quietFor = 0f
         } else if (engaged) {
             quietFor += dt
-            if (quietFor > 0.35f) {
+            if (quietFor > (if (pedal != null) 0.12f else 0.35f)) {
                 engaged = false
                 if (pullPeak > 0.45f && rpm > 2800f) liftOffs++
             }

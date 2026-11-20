@@ -29,11 +29,16 @@ data class SoundReadout(
     val calibrated: Float,
     val gpsFix: Boolean,
     val hasSensors: Boolean,
+    /** Live data from the car via the Raspberry Pi is driving the sound. */
+    val carData: Boolean = false,
+    /** The Pi link: off, searching, connecting or connected. */
+    val piState: PiLink.State = PiLink.State.OFF,
 )
 
 /**
- * Runs the engine sound: phone sensors and GPS feed [MotionFusion], which drives [EngineModel],
- * which drives [SoundVoice] on a high-priority audio thread.
+ * Runs the engine sound: the car's own data from the Raspberry Pi ([PiLink]: real speed and
+ * pedal, read over OBD) when it's there, else phone sensors and GPS through [MotionFusion],
+ * drive [EngineModel], which drives [SoundVoice] on a high-priority audio thread.
  */
 class SoundController(
     private val context: Context,
@@ -68,6 +73,7 @@ class SoundController(
     val running: Boolean get() = audioThread != null
 
     private val fusion = MotionFusion().apply { restoreMount(savedMount) }
+    private val pi = PiLink(context)
     private var sinceMountSave = 0
     @Volatile private var fusedAccel = 0f
     @Volatile private var fusedSpeed = 0f
@@ -133,11 +139,22 @@ class SoundController(
                     ?.requestLocationUpdates(LocationManager.GPS_PROVIDER, 0L, 0f, locationListener, ht.looper)
             }
         }
+        if (canUseBluetooth()) pi.start()
         stopping = false
         audioThread = Thread({ audioLoop() }, "openblue-engine").apply { start() }
     }
 
+    private fun canUseBluetooth(): Boolean {
+        val perms = if (android.os.Build.VERSION.SDK_INT >= 31) {
+            listOf(android.Manifest.permission.BLUETOOTH_SCAN, android.Manifest.permission.BLUETOOTH_CONNECT)
+        } else {
+            listOf(android.Manifest.permission.ACCESS_FINE_LOCATION)
+        }
+        return perms.all { context.checkSelfPermission(it) == android.content.pm.PackageManager.PERMISSION_GRANTED }
+    }
+
     fun stop() {
+        pi.stop()
         val t = audioThread ?: return
         fusion.exportMount()?.let(saveMount)
         stopping = true
@@ -230,7 +247,7 @@ class SoundController(
             .build()
 
         val model = EngineModel()
-        val voice = SoundVoice(rate)
+        val voice = SoundVoice(rate) { path -> runCatching { context.assets.open(path) }.getOrNull() }
         val buf = FloatArray(frames)
         val dt = frames / rate.toFloat()
         var fade = 0f
@@ -249,17 +266,22 @@ class SoundController(
                 model.holdRevs = holdRevs
                 model.gearshifts = gearshifts && s.isEngine
 
+                // The car's own data when the Pi has it; the phone's estimate otherwise.
+                val car = if (pi.fresh) pi.latest else null
+                val speedNow = car?.let { it.speedKmh / 3.6f } ?: fusedSpeed
+                // Reversing out of a spot isn't "accelerating": keep the sound at idle.
+                val pedal = car?.let { if (it.reversing) 0f else it.pedal }
                 // Look ahead: extend the current trend in acceleration by the output delay.
-                val a = fusedAccel
+                val a = if (car != null) (if (car.reversing) 0f else pi.accel) else fusedAccel
                 jerk += ((a - prevAccel) / dt - jerk) * minOf(1f, dt / 0.12f)
                 prevAccel = a
                 // Not at walking pace, where the jolt of setting off would be stretched into a spike,
                 // and never more than a modest nudge.
-                val ahead = if (fusedSpeed < 2.5f) 0f else lookaheadMs / 1000f
+                val ahead = if (speedNow < 2.5f) 0f else lookaheadMs / 1000f
                 val aPred = (a + (jerk * ahead * 0.7f).coerceIn(-0.8f, 0.8f)).coerceIn(-9f, 10f)
-                val vPred = max(0f, fusedSpeed + a * ahead)
+                val vPred = max(0f, speedNow + a * ahead)
 
-                val st = model.update(dt, vPred, aPred, revThrottle)
+                val st = model.update(dt, vPred, aPred, revThrottle, pedal)
                 voice.set(st)
                 // Fade in at the start and out at the end (or while measuring), so there's no click.
                 val target = if (stopping || muted) 0f else 1f
@@ -284,12 +306,14 @@ class SoundController(
                     readout = SoundReadout(
                         rpm = st.rpm,
                         gear = st.gear,
-                        speedKmh = fusedSpeed * 3.6f,
-                        accel = fusedAccel,
+                        speedKmh = speedNow * 3.6f,
+                        accel = a,
                         load = st.load,
                         calibrated = fusion.confidence,
                         gpsFix = System.currentTimeMillis() - lastGpsAt < 3_000,
                         hasSensors = hasSensors,
+                        carData = car != null,
+                        piState = pi.state,
                     )
                 }
                 if (stopping && fade <= 0f) break

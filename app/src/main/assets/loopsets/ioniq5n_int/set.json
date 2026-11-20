@@ -1,0 +1,52 @@
+{
+ "name": "IONIQ 5 N (mod, interior)",
+ "cylinders": 2,
+ "idle_rpm": 1000,
+ "redline_rpm": 7500,
+ "on": [
+  {
+   "file": "500ss_idle.wav",
+   "ref_hz": 16.666666666666668
+  },
+  {
+   "file": "500ss_on_3000.wav",
+   "ref_hz": 50.0
+  },
+  {
+   "file": "500ss_on_4000.wav",
+   "ref_hz": 66.66666666666667
+  },
+  {
+   "file": "500ss_on_5500.wav",
+   "ref_hz": 91.66666666666667
+  },
+  {
+   "file": "500ss_on_7500.wav",
+   "ref_hz": 125.0
+  }
+ ],
+ "light": null,
+ "off": [
+  {
+   "file": "500ss_off_2500.wav",
+   "ref_hz": 41.666666666666664
+  },
+  {
+   "file": "500ss_off_4000.wav",
+   "ref_hz": 66.66666666666667
+  },
+  {
+   "file": "500ss_off_7500.wav",
+   "ref_hz": 125.0
+  }
+ ],
+ "shift_up": "gearup.wav",
+ "shift_down": "geardnEXT.wav",
+ "pops": [
+  "500_backfire3.wav",
+  "500_backfire4.wav",
+  "500_backfire5.wav",
+  "500_backfire6.wav",
+  "500_backfire7.wav"
+ ]
+}

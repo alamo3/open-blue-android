@@ -1,0 +1,120 @@
+{
+ "name": "Cathedral",
+ "key": "speed",
+ "speeds": [
+  2,
+  8,
+  15,
+  25,
+  35,
+  50,
+  65,
+  80,
+  100,
+  125,
+  150
+ ],
+ "cylinders": 2,
+ "idle_rpm": 0,
+ "redline_rpm": 1,
+ "sample_rate": 24000,
+ "tone": false,
+ "raw_level": true,
+ "coast_is_light": true,
+ "off": [],
+ "shift_up": null,
+ "shift_down": null,
+ "pops": [],
+ "light": [
+  {
+   "file": "light_002.wav",
+   "ref_hz": 1.0
+  },
+  {
+   "file": "light_008.wav",
+   "ref_hz": 1.0594630943592953
+  },
+  {
+   "file": "light_015.wav",
+   "ref_hz": 1.122462048309373
+  },
+  {
+   "file": "light_025.wav",
+   "ref_hz": 1.206504530800522
+  },
+  {
+   "file": "light_035.wav",
+   "ref_hz": 1.2782470235604309
+  },
+  {
+   "file": "light_050.wav",
+   "ref_hz": 1.4142135623730956
+  },
+  {
+   "file": "light_065.wav",
+   "ref_hz": 1.5422108254079414
+  },
+  {
+   "file": "light_080.wav",
+   "ref_hz": 1.6817928305074297
+  },
+  {
+   "file": "light_100.wav",
+   "ref_hz": 1.8877486253633877
+  },
+  {
+   "file": "light_125.wav",
+   "ref_hz": 2.1497466798413933
+  },
+  {
+   "file": "light_150.wav",
+   "ref_hz": 2.2127390657776673
+  }
+ ],
+ "on": [
+  {
+   "file": "on_002.wav",
+   "ref_hz": 1.0
+  },
+  {
+   "file": "on_008.wav",
+   "ref_hz": 1.0594630943592953
+  },
+  {
+   "file": "on_015.wav",
+   "ref_hz": 1.122462048309373
+  },
+  {
+   "file": "on_025.wav",
+   "ref_hz": 1.206504530800522
+  },
+  {
+   "file": "on_035.wav",
+   "ref_hz": 1.2968395546510099
+  },
+  {
+   "file": "on_050.wav",
+   "ref_hz": 1.4347837723110006
+  },
+  {
+   "file": "on_065.wav",
+   "ref_hz": 1.5646427984077746
+  },
+  {
+   "file": "on_080.wav",
+   "ref_hz": 1.7062550705226862
+  },
+  {
+   "file": "on_100.wav",
+   "ref_hz": 1.915206561397148
+  },
+  {
+   "file": "on_125.wav",
+   "ref_hz": 2.181015465330516
+  },
+  {
+   "file": "on_150.wav",
+   "ref_hz": 2.2449240966187465
+  }
+ ]
+}
