@@ -94,6 +94,7 @@ class SoundController(
     @Volatile private var lastGpsAt = 0L
 
     private var audioThread: Thread? = null
+    private val focus = FocusKeeper(context)
     @Volatile private var stopping = false
     private var sensorThread: HandlerThread? = null
     private val gravity = floatArrayOf(0f, 0f, 9.81f)
@@ -154,6 +155,7 @@ class SoundController(
             }
         }
         if (usePi && canUseBluetooth()) pi.start()
+        focus.start()
         stopping = false
         audioThread = Thread({ audioLoop() }, "openblue-engine").apply { start() }
     }
@@ -169,6 +171,7 @@ class SoundController(
 
     fun stop() {
         pi.stop()
+        focus.stop()
         val t = audioThread ?: return
         fusion.exportMount()?.let(saveMount)
         stopping = true
@@ -246,6 +249,11 @@ class SoundController(
                 AudioAttributes.Builder()
                     .setUsage(AudioAttributes.USAGE_MEDIA)
                     .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                    .apply {
+                        // keep it out of other apps' playback capture (an EQ app replaying all
+                        // media would play the engine twice, once late)
+                        if (android.os.Build.VERSION.SDK_INT >= 29) setAllowedCapturePolicy(AudioAttributes.ALLOW_CAPTURE_BY_SYSTEM)
+                    }
                     .build(),
             )
             .setAudioFormat(
