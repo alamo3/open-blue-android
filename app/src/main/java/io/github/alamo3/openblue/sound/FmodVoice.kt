@@ -22,7 +22,7 @@ import kotlin.math.pow
 class FmodVoice(private val context: Context) : ExternalVoice {
     companion object {
         private const val BLOCK_FRAMES = 256
-        private const val UPDATE_SEC = 0.015f        // Studio updates at most this often
+        private const val UPDATE_SEC = 0f            // Studio updates every audio block (~5 ms)
         private const val JET_IDLE_RPM = 1000f       // jets with gearshifts: the drivetrain's range
         private const val JET_REDLINE_RPM = 7000f
         private const val GEARED_UP_PER_SEC = 1.5f   // ...and the spool follows it quickly

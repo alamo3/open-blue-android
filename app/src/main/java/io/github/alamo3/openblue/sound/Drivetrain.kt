@@ -34,7 +34,8 @@ class Drivetrain(var idleRpm: Float = 2200f, var redline: Float = 7000f) {
         const val SHIFT_SEC_LIGHT = 0.45f
         const val MIN_GEAR_SEC = 1.0f
         const val INERTIA_SEC = 0.07f
-        const val PEDAL_SMOOTH_SEC = 0.25f
+        const val PEDAL_SMOOTH_SEC = 0.25f   // how the gearbox reads the pedal (shift decisions)
+        const val TORQUE_SMOOTH_SEC = 0.04f  // how the sound follows it (load): barely smoothed
         const val OVERRUN_KMH = 6f
         const val LIMITER_HZ = 12f
         const val LIMITER_PEDAL = 0.85f
@@ -47,6 +48,7 @@ class Drivetrain(var idleRpm: Float = 2200f, var redline: Float = 7000f) {
         private set
     private var rpm = idleRpm
     private var pedalS = 0f
+    private var pedalT = 0f
     private var pedalSlow = 0f
     private var sinceShift = 1e9f
     private var shiftT = 0f
@@ -69,6 +71,7 @@ class Drivetrain(var idleRpm: Float = 2200f, var redline: Float = 7000f) {
     fun step(dt: Float, kmh: Float, pedalIn: Float): EngineState {
         val pedal = pedalIn.coerceIn(0f, 1f)
         pedalS += (pedal - pedalS) * min(1f, dt / PEDAL_SMOOTH_SEC)
+        pedalT += (pedal - pedalT) * min(1f, dt / TORQUE_SMOOTH_SEC)
         pedalSlow += (pedal - pedalSlow) * min(1f, dt / 0.25f)
         sinceShift += dt
 
@@ -131,7 +134,7 @@ class Drivetrain(var idleRpm: Float = 2200f, var redline: Float = 7000f) {
         }
         if (cut) shifting = 1f
         val rpmNorm = ((rpm - idleRpm) / (redline - idleRpm)).coerceIn(0f, 1f)
-        var load = if (pedalS > 0.04f || kmh < OVERRUN_KMH) pedalS * (1f - shifting)
+        var load = if (pedalT > 0.04f || kmh < OVERRUN_KMH) pedalT * (1f - shifting)
             else -min(1f, (rpm - idleRpm) / (redline - idleRpm) + 0.2f)
         if (blip > 0f) load = max(load, 0.4f * blip)       // the blip is a throttle stab
 
@@ -143,7 +146,7 @@ class Drivetrain(var idleRpm: Float = 2200f, var redline: Float = 7000f) {
             rpm = rpm, load = max(0f, load), gear = gear, engaged = load > 0f, shifts = shifts,
             limiter = limiter, liftOffs = liftOffs, speedKmh = kmh,
             overrun = max(0f, -load), shifting = shifting, cut = cut, downshifts = downshifts,
-            throttle = pedalS,
+            throttle = pedalT,
         )
     }
 

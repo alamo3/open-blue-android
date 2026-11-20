@@ -113,7 +113,10 @@ JNI() jlong JNICALL FN(create)(JNIEnv *, jobject, jint blockFrames) {
     FMOD_SYSTEM *core = nullptr;
     FMOD_Studio_System_GetCoreSystem(sys, &core);
     ok(FMOD_System_SetDSPBufferSize(core, (unsigned int) blockFrames, 4), "dsp buffer");
-    if (!ok(FMOD_Studio_System_Initialize(sys, 64, 0, 0, nullptr), "initialize")) {
+    // synchronous: Studio processes commands right in update() (called every audio block),
+    // instead of queueing them for its own thread ~20 ms later
+    constexpr unsigned int STUDIO_INIT_SYNCHRONOUS_UPDATE = 0x2;
+    if (!ok(FMOD_Studio_System_Initialize(sys, 64, STUDIO_INIT_SYNCHRONOUS_UPDATE, 0, nullptr), "initialize")) {
         FMOD_Studio_System_Release(sys);
         return 0;
     }
@@ -184,7 +187,9 @@ JNI() void JNICALL FN(releaseInstance)(JNIEnv *, jobject, jlong inst) {
 
 JNI() void JNICALL FN(setParam)(JNIEnv *env, jobject, jlong inst, jstring name, jfloat value) {
     const char *n = env->GetStringUTFChars(name, nullptr);
-    FMOD_Studio_EventInstance_SetParameterByName(ptr<FMOD_STUDIO_EVENTINSTANCE>(inst), n, value, 0);
+    // ignore seek speed: game banks smooth rpms/throttle themselves; we already have the car's
+    // own data (and smoothing), so take values straight away
+    FMOD_Studio_EventInstance_SetParameterByName(ptr<FMOD_STUDIO_EVENTINSTANCE>(inst), n, value, 1);
     env->ReleaseStringUTFChars(name, n);
 }
 

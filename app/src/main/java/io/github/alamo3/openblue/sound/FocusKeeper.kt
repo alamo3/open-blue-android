@@ -16,9 +16,11 @@ import android.os.Looper
  * on the music app holding it -- and players that give focus up on pause (or a phone with no
  * music at all) leave the car's media channel closed, silencing the engine with them.
  *
- * So: while no other media is playing, hold a transient "may duck" focus (there is nothing to
- * duck). When music starts, its app takes focus as usual and this lets it go -- the engine
- * keeps playing, and the music is never paused or ducked by us.
+ * So: while no other media is playing, hold ordinary media focus (AUDIOFOCUS_GAIN; with no
+ * other media playing there's nobody to pause). When music starts, its app takes focus as
+ * usual and this lets it go -- the engine keeps playing, and the music is never paused or
+ * ducked by us. Not a transient "may duck" request: Android Auto treats that as a navigation
+ * prompt and moves the sound to its narrow, bass-less guidance channel.
  */
 class FocusKeeper(context: Context) {
     private val am = context.getSystemService(AudioManager::class.java)
@@ -26,7 +28,7 @@ class FocusKeeper(context: Context) {
     private var running = false
     private var held = false
 
-    private val request: AudioFocusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
+    private val request: AudioFocusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
         .setAudioAttributes(
             AudioAttributes.Builder()
                 .setUsage(AudioAttributes.USAGE_MEDIA)
