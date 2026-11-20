@@ -23,6 +23,10 @@ class FmodVoice(private val context: Context) : ExternalVoice {
     companion object {
         private const val BLOCK_FRAMES = 256
         private const val UPDATE_SEC = 0.015f        // Studio updates at most this often
+        private const val JET_IDLE_RPM = 1000f       // jets with gearshifts: the drivetrain's range
+        private const val JET_REDLINE_RPM = 7000f
+        private const val GEARED_UP_PER_SEC = 1.5f   // ...and the spool follows it quickly
+        private const val GEARED_DOWN_PER_SEC = 2.5f
     }
 
     private var sys = 0L
@@ -117,8 +121,11 @@ class FmodVoice(private val context: Context) : ExternalVoice {
         sys = 0L; engine = 0L; boom = 0L; shots.clear(); layers.clear(); sound = null; loadedId = null
     }
 
-    /** The playing car's rev range, for the drivetrain; null for jets (no gearbox). */
-    fun revRange(): Pair<Float, Float>? = sound?.takeIf { !it.isJet }?.let { it.idleRpm to it.redline }
+    /**
+     * The playing set's rev range, for the drivetrain. Jets use a nominal range: with
+     * gearshifts on, their engine speed follows the gearbox's revs across it.
+     */
+    fun revRange(): Pair<Float, Float>? = sound?.let { if (it.isJet) JET_IDLE_RPM to JET_REDLINE_RPM else it.idleRpm to it.redline }
 
     override fun update(st: EngineState, level: Float, dt: Float) {
         val id = wanted
@@ -158,10 +165,15 @@ class FmodVoice(private val context: Context) : ExternalVoice {
     private fun updateJet(s: FmodSound, st: EngineState, dt: Float) {
         val j = s.jet ?: return
         val pedal = (if (st.engaged) st.load else 0f).coerceIn(0f, 1f)
-        // spool: the pedal sets the target, approached exponentially but rate-limited
-        val target = j.idleFrac + (1f - j.idleFrac) * pedal
-        val cap = (if (target > spool) j.upPerSec else j.downPerSec) * dt
-        spool += ((target - spool) * min(1f, dt * 2.5f)).coerceIn(-cap, cap)
+        // spool: the target is the pedal -- or, with gearshifts (a drivetrain state, gear >= 1),
+        // the gearbox's revs, so it climbs through each gear and drops on the shift -- approached
+        // exponentially but rate-limited
+        val geared = st.gear >= 1
+        val drive = if (geared) ((st.rpm - JET_IDLE_RPM) / (JET_REDLINE_RPM - JET_IDLE_RPM)).coerceIn(0f, 1f) else pedal
+        val target = j.idleFrac + (1f - j.idleFrac) * drive
+        val rate = if (target > spool) (if (geared) GEARED_UP_PER_SEC else j.upPerSec) else (if (geared) GEARED_DOWN_PER_SEC else j.downPerSec)
+        val cap = rate * dt
+        spool += ((target - spool) * min(1f, dt * (if (geared) 8f else 2.5f))).coerceIn(-cap, cap)
         // afterburner: lights near full pedal once spooled up, fades in and out
         val lit = pedal >= j.afterburnerPedal && spool > 0.9f
         afterburner += ((if (lit) 1f else 0f) - afterburner) * min(1f, dt / (if (lit) 0.4f else 0.8f))

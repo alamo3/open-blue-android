@@ -87,7 +87,7 @@ class LoopVoice(
         private const val TRIM = 1.0f            // the Pi's level (SoundVoice limits the peaks)
         private const val BODY_HZ = 160f         // recorded engines: low shelf for weight...
         private const val BODY_DB = 4f           // ...this much below BODY_HZ
-        private const val SHIFT_DIP = 0.2f       // level dip through a shift's torque cut
+        private const val SHIFT_DIP = 0.1f       // level dip through a shift's torque cut (the shift sound carries it)
         private const val BAKED_TRIM = 0.9f      // (SoundVoice limits the peaks)
         /**
          * Every set is scaled so its full-load loops sit at this rms: recordings and renders

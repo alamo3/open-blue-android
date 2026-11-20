@@ -26,6 +26,8 @@ class SoundVoice(
     @Volatile private var pedal: Float? = null
     @Volatile private var reversing = false
     private var limitEnv = 0f
+    private var shiftsSeen = -1
+    private var downSeen = -1
 
     /**
      * The car's own pedal (0..1) and whether it's reversing, from the Raspberry Pi; null pedal
@@ -39,6 +41,8 @@ class SoundVoice(
     var sound: EngineSound = EngineSound.STARSHIP
         set(v) {
             field = v
+            shiftsSeen = -1      // a different sound's gearbox: don't hear its count change as a shift
+            downSeen = -1
             when (v.kind) {
                 EngineSound.Kind.PISTON -> engine.sound = v
                 EngineSound.Kind.RECORDED, EngineSound.Kind.BAKED -> recorded.setId = v.loopSet
@@ -71,6 +75,14 @@ class SoundVoice(
                 launch = !sound.isEngine, virtualGears = k == EngineSound.Kind.BAKED,
             )
             recorded.pitchMul = effects.pitchMul
+            // every gearbox shift of an engine sound (synth, recorded, FMOD car or jet) gets the
+            // hydraulic shift sound; gear >= 1 means gearshifts are on
+            if (sound.isEngine && st.gear >= 1) {
+                if (shiftsSeen >= 0 && st.shifts != shiftsSeen) effects.shift(up = true)
+                if (downSeen >= 0 && st.downshifts != downSeen) effects.shift(up = false)
+            }
+            shiftsSeen = st.shifts
+            downSeen = st.downshifts
         }
         when (k) {
             EngineSound.Kind.PISTON -> engine.render(out, frames)

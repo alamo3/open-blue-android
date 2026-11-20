@@ -55,6 +55,7 @@ class EngineModel(
     private var engaged = false
     private var quietFor = 0f
     private var shifts = 0
+    private var downshifts = 0
     private var liftOffs = 0
     /** Hardest the current pull has been (load), to tell a big lift-off from easing off. */
     private var pullPeak = 0f
@@ -125,6 +126,7 @@ class EngineModel(
             } else if (shiftHold == 0f && load > 0.55f && gear > 1 && gearRpm(gear - 1, kmh) < shiftPoint(load) * 0.8f) {
                 // Pushing harder mid-pull: drop a gear, like a kickdown.
                 gear--
+                downshifts++
                 shiftHold = 0.6f
             }
             // Pulling away: the clutch slips, so revs sit above what first gear's speed gives
@@ -138,12 +140,14 @@ class EngineModel(
             target = t
         } else {
             // Keep a sensible gear for the speed, so getting back on it starts from the right revs.
+            val was = gear
             while (gear > 1 && gearRpm(gear, kmh) < 1300f) gear--
+            if (gear < was) downshifts++
             while (gear < 6 && gearRpm(gear, kmh) > 3000f) gear++
             target = if (holdRevs && kmh > 10f) max(idleRpm, gearRpm(gear, kmh)) else idleRpm
         }
         rpm = slew(rpm, target, dt, up = 9000f, down = if (engaged) 7000f else 2600f)
-        return EngineState(rpm, load, if (gearshifts) gear else -1, engaged, shifts, limiter, liftOffs, kmh)
+        return EngineState(rpm, load, if (gearshifts) gear else -1, engaged, shifts, limiter, liftOffs, kmh, downshifts = downshifts)
     }
 
     /** Lowest gear that stays under the shift point: flooring it at speed drops a gear or two. */

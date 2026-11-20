@@ -92,4 +92,24 @@ class DriveEffectsTest {
             assertTrue("$s too quiet: $l vs V8 $v8", l > v8 * 0.4)
         }
     }
+
+    /** Every gearbox shift of an engine sound plays the hydraulic shift sound. */
+    @Test fun gearshiftsPlayTheHydraulicSound() {
+        if (!File(assets, "effects/shift_hyd_up.wav").exists()) return
+        fun energyAfter(shift: Boolean): Double {
+            val v = SoundVoice(48000, open = opener()).apply { sound = EngineSound.V8; volume = 0.3f }
+            val buf = FloatArray(480)
+            fun block(shifts: Int): Double {
+                v.drive(0.5f, false)
+                v.set(EngineState(3000f, 0.5f, 2, true, shifts, false, speedKmh = 40f))
+                v.render(buf)
+                return buf.sumOf { (it * it).toDouble() }
+            }
+            repeat(50) { block(0) }
+            return (0 until 30).sumOf { block(if (shift) 1 else 0) }   // the next 0.3 s
+        }
+        val with = energyAfter(true)
+        val without = energyAfter(false)
+        assertTrue("shift sound heard (${"%.1f".format(10 * kotlin.math.log10(with / without))} dB)", with > without * 1.5)
+    }
 }

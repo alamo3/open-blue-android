@@ -152,7 +152,7 @@ class EngineVoice(private val sampleRate: Int, seed: Int = 7) {
         val cyl = s.cylinders
         if (targetShifts != shiftsSeen) {
             if (targetShifts > shiftsSeen) {
-                cut = 0.075f // ignition cut on the upshift
+                cut = 0.05f  // ignition cut on the upshift (a dip: the shift sound carries it)
                 popEnv = 0.7f
             }
             shiftsSeen = targetShifts
@@ -180,7 +180,7 @@ class EngineVoice(private val sampleRate: Int, seed: Int = 7) {
                 nextFire = fired + 1 + s.pulseTiming[(fired % cyl).toInt()].toDouble()
                 var a = s.pulseGain[c] * (1f + (rnd.nextFloat() - 0.5f) * s.roughness * (0.6f + load))
                 a *= 0.32f + 0.68f * load
-                if (cut > 0f) a *= 0.06f
+                if (cut > 0f) a *= 0.35f
                 if (targetLimiter && limiterPhase < 0.35f) a *= 0.05f
                 pulseAmp = a
                 pulseT = 0f
