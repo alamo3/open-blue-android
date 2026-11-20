@@ -41,7 +41,7 @@ class DriveEffectsTest {
 
     @Test fun launchAndReversePlay() {
         if (!File(assets, "effects/launch.wav").exists()) return
-        val v = SoundVoice(48000, opener()).apply { sound = EngineSound.STARSHIP; volume = 0f }
+        val v = SoundVoice(48000, open = opener()).apply { sound = EngineSound.STARSHIP; volume = 0f }
         val buf = FloatArray(480)
         fun block(speed: Float, pedal: Float, rev: Boolean): Double {
             v.drive(pedal, rev)
@@ -71,7 +71,7 @@ class DriveEffectsTest {
     @Test fun recordedEnginesAsLoudAsTheV8() {
         if (!File(assets, "loopsets/bmw_m3_gtr_int/set.json").exists()) return
         fun loudness(sound: EngineSound): Double {
-            val v = SoundVoice(48000, opener()).apply { this.sound = sound; volume = 0.8f }
+            val v = SoundVoice(48000, open = opener()).apply { this.sound = sound; volume = 0.8f }
             val m = EngineModel(idleRpm = sound.idleRpm, redline = sound.redline, gearshifts = true)
             val d = Drivetrain(sound.idleRpm, sound.redline)
             val buf = FloatArray(480)

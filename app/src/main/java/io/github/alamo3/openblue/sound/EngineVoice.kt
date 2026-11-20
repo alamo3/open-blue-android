@@ -70,11 +70,13 @@ enum class EngineSound(
     GRAND_TOURING("Grand Touring", Kind.BAKED, loopSet = "grand_touring"),
     DREADNOUGHT("Dreadnought", Kind.BAKED, loopSet = "dreadnought"),
     JETSONS_I3("Jetsons i3", Kind.BAKED, loopSet = "jetsons_i3_recording"),
+    // An imported FMOD sound set (which one: the fmodSet setting); see FmodVoice.
+    FMOD("FMOD sound", Kind.FMOD, 1100f, 8500f),
     ;
 
-    enum class Kind { STARSHIP, HYPERDRIVE, ION, CRUISER, PISTON, RECORDED, BAKED }
+    enum class Kind { STARSHIP, HYPERDRIVE, ION, CRUISER, PISTON, RECORDED, BAKED, FMOD }
 
-    val isEngine: Boolean get() = kind == Kind.PISTON || kind == Kind.RECORDED
+    val isEngine: Boolean get() = kind == Kind.PISTON || kind == Kind.RECORDED || kind == Kind.FMOD
 }
 
 /**

@@ -25,6 +25,13 @@ android {
         ndk { abiFilters += listOf("arm64-v8a") }
     }
 
+    // FMOD bridge (src/main/cpp): links the FMOD runtime in jniLibs. CI picks the NDK it has
+    // installed through OPENBLUE_NDK_VERSION; locally the default below.
+    ndkVersion = System.getenv("OPENBLUE_NDK_VERSION") ?: "27.0.12077973"
+    externalNativeBuild {
+        cmake { path = file("src/main/cpp/CMakeLists.txt") }
+    }
+
     signingConfigs {
         if (signingStore != null) {
             create("stable") {
@@ -98,6 +105,9 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.2")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+
+    // FMOD Engine's Android glue (FMOD Studio by Firelight Technologies Pty Ltd.)
+    implementation(files("libs/fmod.jar"))
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")   // real org.json for JVM unit tests

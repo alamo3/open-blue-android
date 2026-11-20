@@ -200,6 +200,10 @@ class SecureStore(private val prefs: SharedPreferences) {
     var holdRevs: Boolean
         get() = prefs.getBoolean("holdRevs", false)
         set(v) = prefs.edit().putBoolean("holdRevs", v).apply()
+    /** Engine sound: the imported FMOD sound set chosen (see FmodLibrary). */
+    var fmodSet: String?
+        get() = prefs.getString("fmodSet", null)
+        set(v) = prefs.edit().putString("fmodSet", v).apply()
     /** Engine sound: follow the car's own data from the virtual-car-sound Raspberry Pi. */
     var usePi: Boolean
         get() = prefs.getBoolean("usePi", true)

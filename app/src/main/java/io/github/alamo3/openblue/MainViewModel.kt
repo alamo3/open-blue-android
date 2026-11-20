@@ -1924,6 +1924,13 @@ class MainViewModel(
         private set
     var usePi by mutableStateOf(store.usePi)
         private set
+    /** Imported FMOD sound sets, and which one is chosen. */
+    var fmodSounds by mutableStateOf(io.github.alamo3.openblue.sound.FmodLibrary.list(getApplication()))
+        private set
+    var fmodSet by mutableStateOf(store.fmodSet)
+        private set
+    var fmodMessage by mutableStateOf<String?>(null)
+        private set
     var piOnly by mutableStateOf(store.piOnly)
         private set
     var soundLookaheadMs by mutableStateOf(store.soundLookaheadMs)
@@ -2000,6 +2007,39 @@ class MainViewModel(
         holdRevs = on
         store.holdRevs = on
         soundCtl?.holdRevs = on
+    }
+
+    fun changeFmodSound(id: String) {
+        fmodSet = id
+        store.fmodSet = id
+        soundCtl?.fmodSet = id
+        changeEngineSound(EngineSound.FMOD)
+    }
+
+    /** Imports FMOD sound sets from a folder picked by the user (see FmodLibrary.import). */
+    fun importFmod(tree: android.net.Uri) {
+        fmodMessage = "Importing…"
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val app = getApplication<Application>()
+            val names = runCatching { io.github.alamo3.openblue.sound.FmodLibrary.import(app, tree) }.getOrElse { emptyList() }
+            val list = io.github.alamo3.openblue.sound.FmodLibrary.list(app)
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                fmodSounds = list
+                fmodMessage = if (names.isEmpty()) "No FMOD sound found there: pick a folder made by fmod_bank.py export (with sound.json)."
+                    else "Imported ${names.joinToString()}."
+            }
+        }
+    }
+
+    fun removeFmod(id: String) {
+        io.github.alamo3.openblue.sound.FmodLibrary.remove(getApplication(), id)
+        fmodSounds = io.github.alamo3.openblue.sound.FmodLibrary.list(getApplication())
+        if (fmodSet == id) {
+            fmodSet = null
+            store.fmodSet = null
+            soundCtl?.fmodSet = null
+            if (engineSound == EngineSound.FMOD) changeEngineSound(EngineSound.V8)
+        }
     }
 
     fun changeUsePi(on: Boolean) {

@@ -55,6 +55,8 @@ class SoundController(
     @Volatile var sound: EngineSound = EngineSound.STARSHIP
     @Volatile var volume = 0.8f
     @Volatile var holdRevs = false
+    /** Which imported FMOD sound set plays when [sound] is [EngineSound.FMOD]. */
+    @Volatile var fmodSet: String? = null
     /** Follow the car's own data from the Raspberry Pi when it's there. */
     @Volatile var usePi = true
         set(v) {
@@ -270,7 +272,8 @@ class SoundController(
 
         val model = EngineModel()
         val drivetrain = Drivetrain()
-        val voice = SoundVoice(rate) { path -> runCatching { context.assets.open(path) }.getOrNull() }
+        val fmod = FmodVoice(context)
+        val voice = SoundVoice(rate, fmod) { path -> runCatching { context.assets.open(path) }.getOrNull() }
         val buf = FloatArray(frames)
         val dt = frames / rate.toFloat()
         var fade = 0f
@@ -307,9 +310,12 @@ class SoundController(
 
                 var st = model.update(dt, vPred, aPred, revThrottle, pedal)
                 // recorded engines with gearshifts: the Pi's drivetrain (shift cut, blip, limiter)
-                if (s.kind == EngineSound.Kind.RECORDED && model.gearshifts && revThrottle == null) {
-                    drivetrain.idleRpm = s.idleRpm
-                    drivetrain.redline = s.redline
+                fmod.setId = if (s.kind == EngineSound.Kind.FMOD) fmodSet else null
+                val drivetrainSound = s.kind == EngineSound.Kind.RECORDED || s.kind == EngineSound.Kind.FMOD
+                if (drivetrainSound && model.gearshifts && revThrottle == null) {
+                    val (idle, red) = (if (s.kind == EngineSound.Kind.FMOD) fmod.revRange() else null) ?: (s.idleRpm to s.redline)
+                    drivetrain.idleRpm = idle
+                    drivetrain.redline = red
                     st = drivetrain.step(dt, vPred * 3.6f, pedal ?: st.load)
                 }
                 voice.drive(pedal, car?.reversing == true)
@@ -355,6 +361,7 @@ class SoundController(
         } finally {
             runCatching { track.stop() }
             track.release()
+            runCatching { fmod.stop() }
         }
     }
 }

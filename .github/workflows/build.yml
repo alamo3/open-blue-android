@@ -24,6 +24,10 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+      # the FMOD bridge (app/src/main/cpp) builds with whichever NDK the runner has
+      - name: Pick the installed NDK
+        run: echo "OPENBLUE_NDK_VERSION=$(ls "$ANDROID_HOME/ndk" | sort -V | tail -1)" >> "$GITHUB_ENV"
+
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.9"
@@ -107,6 +111,10 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
+
+      # the FMOD bridge (app/src/main/cpp) builds with whichever NDK the runner has
+      - name: Pick the installed NDK
+        run: echo "OPENBLUE_NDK_VERSION=$(ls "$ANDROID_HOME/ndk" | sort -V | tail -1)" >> "$GITHUB_ENV"
 
       - uses: gradle/actions/setup-gradle@v4
         with:

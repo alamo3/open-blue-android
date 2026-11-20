@@ -60,6 +60,7 @@ class EngineSoundService : Service() {
                 volume = store.soundVolume
                 holdRevs = store.holdRevs
                 usePi = store.usePi
+                fmodSet = store.fmodSet
                 piOnly = store.piOnly
                 gearshifts = store.gearshifts
                 lookaheadMs = store.soundLookaheadMs.toFloat()

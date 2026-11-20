@@ -7,7 +7,12 @@ import java.io.InputStream
  * ([FutureVoice]) or a recorded engine / baked cinematic sound ([LoopVoice], whose sound files
  * [open] reads), plus the drive effects ([DriveEffects]) and a peak limiter on the way out.
  */
-class SoundVoice(private val sampleRate: Int, open: ((String) -> InputStream?)? = null) {
+class SoundVoice(
+    private val sampleRate: Int,
+    /** Plays FMOD sound sets (its own output); null where FMOD isn't available (tests). */
+    private val external: ExternalVoice? = null,
+    open: ((String) -> InputStream?)? = null,
+) {
     companion object {
         private const val CEILING = 0.95f          // output peaks never go above this
         private const val LIMIT_RELEASE_SEC = 0.15f
@@ -37,6 +42,7 @@ class SoundVoice(private val sampleRate: Int, open: ((String) -> InputStream?)? 
             when (v.kind) {
                 EngineSound.Kind.PISTON -> engine.sound = v
                 EngineSound.Kind.RECORDED, EngineSound.Kind.BAKED -> recorded.setId = v.loopSet
+                EngineSound.Kind.FMOD -> {}
                 else -> future.kind = v.kind
             }
         }
@@ -69,7 +75,13 @@ class SoundVoice(private val sampleRate: Int, open: ((String) -> InputStream?)? 
         when (k) {
             EngineSound.Kind.PISTON -> engine.render(out, frames)
             EngineSound.Kind.RECORDED, EngineSound.Kind.BAKED -> recorded.render(out, frames)
+            EngineSound.Kind.FMOD -> out.fill(0f, 0, frames)    // FMOD plays through its own output
             else -> future.render(out, frames)
+        }
+        if (external != null && st != null) {
+            // FMOD: same level, fades and ducking as the rest; silent when another sound is chosen
+            val level = if (k == EngineSound.Kind.FMOD) volume * effects.duck else 0f
+            external.update(st, level, frames / sampleRate.toFloat())
         }
         effects.mix(out, frames, volume)
         limit(out, frames)

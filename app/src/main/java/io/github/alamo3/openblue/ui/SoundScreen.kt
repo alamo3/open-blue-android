@@ -74,6 +74,9 @@ fun SoundScreen(vm: MainViewModel, onBack: () -> Unit) {
     val askBluetooth = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
         vm.changeUsePi(vm.usePi)               // starts the link now that it may search
     }
+    val pickFmod = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri != null) vm.importFmod(uri)
+    }
     val askMic = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
         if (ok) vm.measureSoundDelay()
     }
@@ -184,8 +187,24 @@ fun SoundScreen(vm: MainViewModel, onBack: () -> Unit) {
             }
             Text("Engines", style = MaterialTheme.typography.labelLarge, color = scheme.onSurfaceVariant, modifier = Modifier.padding(top = 14.dp, bottom = 8.dp))
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                EngineSound.entries.filter { it.isEngine }.forEach { s -> OptionPill(s.label, s == sound, { vm.changeEngineSound(s) }) }
+                EngineSound.entries.filter { it.isEngine && it.kind != EngineSound.Kind.FMOD }.forEach { s -> OptionPill(s.label, s == sound, { vm.changeEngineSound(s) }) }
+                vm.fmodSounds.forEach { f ->
+                    OptionPill(f.name, sound == EngineSound.FMOD && vm.fmodSet == f.id, { vm.changeFmodSound(f.id) })
+                }
             }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = { pickFmod.launch(null) }) { Text("Import FMOD sound…") }
+                val chosen = vm.fmodSounds.firstOrNull { it.id == vm.fmodSet }
+                if (sound == EngineSound.FMOD && chosen != null) {
+                    TextButton(onClick = { vm.removeFmod(chosen.id) }) { Text("Remove ${chosen.name}") }
+                }
+            }
+            vm.fmodMessage?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant) }
+            Text(
+                "Imported sounds play with FMOD Studio by Firelight Technologies Pty Ltd.",
+                style = MaterialTheme.typography.labelSmall,
+                color = scheme.onSurfaceVariant,
+            )
             Text(
                 soundBlurb(sound),
                 style = MaterialTheme.typography.bodySmall,
@@ -302,6 +321,8 @@ private fun soundBlurb(s: EngineSound) = when (s.kind) {
     EngineSound.Kind.CRUISER -> "A cinematic chord that swells and brightens as you push, adding a top note near full power."
     EngineSound.Kind.PISTON -> "A made-up engine, synthesized from scratch."
     EngineSound.Kind.RECORDED -> "A real engine recorded at several revs, played back the way racing games do: it follows the revs and your pedal, with its own shifts and pops."
+    EngineSound.Kind.FMOD -> "A game's own FMOD sound design (imported from your phone), played by FMOD Studio by Firelight Technologies Pty Ltd., " +
+        "following a virtual gearbox: its engine, shifts, limiter and backfires."
     EngineSound.Kind.BAKED -> "A cinematic sound from the Raspberry Pi engine, recorded across the speed range: it glides with your speed and swells with the pedal."
 }
 
