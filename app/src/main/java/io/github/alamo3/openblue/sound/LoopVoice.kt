@@ -100,13 +100,14 @@ class LoopVoice(
         private const val STANDSTILL_FADE = 2.5f
     }
 
-    private class Loop(val pcm: FloatArray, val ref: Float) {
+    /** A loop's samples: [pcm] left, [pcmR] right (the same array for a mono file). */
+    private class Loop(val pcm: FloatArray, val pcmR: FloatArray, val ref: Float) {
         var pos = 0.0
         var gain = 0f
         var rate = 1.0                           // playback speed relative to the file
     }
 
-    private class Shot(val pcm: FloatArray) {
+    private class Shot(val pcm: FloatArray, val pcmR: FloatArray) {
         var pos = -1                              // -1: not playing
     }
 
@@ -144,20 +145,28 @@ class LoopVoice(
     private var downshiftsSeen = -1
     private val popQueue = ArrayList<Float>()     // seconds until each queued pop
     private var stoppedFor = 0f
+    // tone filters, one per channel
     private val lp = Biquad()
     private val bite = Biquad()
     private val body = Biquad()
+    private val lpR = Biquad()
+    private val biteR = Biquad()
+    private val bodyR = Biquad()
+    // the current output sample of mixLoops, left and right
+    private var mixL = 0f
+    private var mixR = 0f
 
     // --- loading ----------------------------------------------------------------------
     private fun load(id: String): LoopSet? {
         val opener = open ?: return null
         val json = opener("loopsets/$id/set.json")?.use { String(it.readBytes()) } ?: return null
         val o = org.json.JSONObject(json)
-        fun wav(name: String) = opener("loopsets/$id/$name")?.use { readWav(it.readBytes()) }
-        fun loop(j: org.json.JSONObject?) = j?.let { e -> wav(e.getString("file"))?.let { Loop(it, e.getDouble("ref_hz").toFloat()) } }
+        fun wav(name: String) = opener("loopsets/$id/$name")?.use { readWavStereo(it.readBytes()) }
+        fun loop(j: org.json.JSONObject?) = j?.let { e -> wav(e.getString("file"))?.let { (l, r) -> Loop(l, r, e.getDouble("ref_hz").toFloat()) } }
         fun loops(key: String) = o.optJSONArray(key)?.let { a -> (0 until a.length()).mapNotNull { loop(a.optJSONObject(it)) } } ?: emptyList()
-        fun shot(key: String) = o.optString(key, "").takeIf { it.isNotEmpty() && it != "null" }?.let { wav(it)?.let(::Shot) }
-        val pops = o.optJSONArray("pops")?.let { a -> (0 until a.length()).mapNotNull { a.optString(it).takeIf { s -> s.isNotEmpty() }?.let { wav(it)?.let(::Shot) } } } ?: emptyList()
+        fun shotFile(name: String?) = name?.let { wav(it)?.let { (l, r) -> Shot(l, r) } }
+        fun shot(key: String) = shotFile(o.optString(key, "").takeIf { it.isNotEmpty() && it != "null" })
+        val pops = o.optJSONArray("pops")?.let { a -> (0 until a.length()).mapNotNull { shotFile(a.optString(it).takeIf { s -> s.isNotEmpty() }) } } ?: emptyList()
         val on = loops("on")
         // "light" is one loop for an rpm-keyed set, a series (one per speed) for a baked one
         val light = if (o.optJSONArray("light") != null) loops("light") else listOfNotNull(loop(o.optJSONObject("light")))
@@ -182,36 +191,6 @@ class LoopVoice(
         )
     }
 
-    /** 16-bit PCM WAV (mono or stereo, mixed down) as floats. */
-    private fun readWav(bytes: ByteArray): FloatArray? {
-        val b = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
-        if (bytes.size < 44 || String(bytes, 0, 4) != "RIFF" || String(bytes, 8, 4) != "WAVE") return null
-        var p = 12
-        var channels = 1
-        var bits = 16
-        while (p + 8 <= bytes.size) {
-            val tag = String(bytes, p, 4)
-            val len = b.getInt(p + 4)
-            if (tag == "fmt ") {
-                channels = b.getShort(p + 10).toInt()
-                bits = b.getShort(p + 22).toInt()
-            } else if (tag == "data") {
-                if (bits != 16) return null
-                val n = min(len, bytes.size - p - 8) / (2 * channels)
-                val out = FloatArray(n)
-                var q = p + 8
-                for (i in 0 until n) {
-                    var s = 0f
-                    for (c in 0 until channels) { s += b.getShort(q) / 32768f; q += 2 }
-                    out[i] = s / channels
-                }
-                return out
-            }
-            p += 8 + len + (len and 1)
-        }
-        return null
-    }
-
     // --- playing ----------------------------------------------------------------------
     /** Equal-power weights for the two loops either side of log-frequency [lf]. */
     private fun xfade(lf: Float, refs: List<Loop>, w: FloatArray) {
@@ -232,7 +211,8 @@ class LoopVoice(
     private val wOn = FloatArray(16)
     private val wOff = FloatArray(16)
 
-    fun render(out: FloatArray, frames: Int = out.size) {
+    /** Renders [frames] samples into [out] (left) and [outR] (right). */
+    fun render(out: FloatArray, outR: FloatArray, frames: Int = out.size) {
         val id = setId
         if (loaded?.id != id && failed != id) {
             loaded = id?.let { runCatching { load(it) }.getOrNull() }
@@ -244,8 +224,8 @@ class LoopVoice(
             stoppedFor = 0f
         }
         val s = loaded
-        if (s == null) { out.fill(0f, 0, frames); return }
-        if (s.speeds != null) { renderBaked(s, s.speeds, out, frames); return }
+        if (s == null) { out.fill(0f, 0, frames); outR.fill(0f, 0, frames); return }
+        if (s.speeds != null) { renderBaked(s, s.speeds, out, outR, frames); return }
         val dt = frames / sampleRate.toFloat()
 
         // control, once per block
@@ -270,10 +250,10 @@ class LoopVoice(
         // tone: load drives it harder, opens it up and adds presence
         val toneOn = if (overrun > 0f) 0f else on
         val cutoff = if (overrun > 0f) TONE_OVERRUN_HZ else TONE_LIGHT_HZ * (TONE_FULL_HZ / TONE_LIGHT_HZ).pow(toneOn)
-        lp.lowPass(min(cutoff, sampleRate * 0.45f), sampleRate.toFloat())
-        bite.peak(BITE_HZ, sampleRate.toFloat(), BITE_DB * toneOn, 1f)
+        for (f2 in listOf(lp, lpR)) f2.lowPass(min(cutoff, sampleRate * 0.45f), sampleRate.toFloat())
+        for (f2 in listOf(bite, biteR)) f2.peak(BITE_HZ, sampleRate.toFloat(), BITE_DB * toneOn, 1f)
         val drive = 1f + DRIVE * toneOn
-        body.lowShelf(BODY_HZ, sampleRate.toFloat(), BODY_DB)
+        for (f2 in listOf(body, bodyR)) f2.lowShelf(BODY_HZ, sampleRate.toFloat(), BODY_DB)
 
         // limiter: the fuel cut chops the sound ~12 times a second (the drivetrain says when)
         limiterT = if (tLimiter) limiterT + dt else 0f
@@ -306,39 +286,56 @@ class LoopVoice(
         val m0 = master
         for (l in s.all) l.rate = f / l.ref.toDouble()
         for (n in 0 until frames) {
-            var x = mixLoops(s)
-            x = tanh(x * drive) / drive
-            x = body.process(bite.process(lp.process(x)))
-            var y = x
-            s.shiftUp?.let { sh -> if (sh.pos >= 0) { y += sh.pcm[sh.pos] * SHIFT_LEVEL; if (++sh.pos >= sh.pcm.size) sh.pos = -1 } }
-            s.shiftDown?.let { sh -> if (sh.pos >= 0) { y += sh.pcm[sh.pos] * SHIFT_LEVEL; if (++sh.pos >= sh.pcm.size) sh.pos = -1 } }
-            for (p in s.pops) if (p.pos >= 0) { y += p.pcm[p.pos] * POP_LEVEL; if (++p.pos >= p.pcm.size) p.pos = -1 }
+            mixLoops(s)
+            var y = body.process(bite.process(lp.process(tanh(mixL * drive) / drive)))
+            var yR = bodyR.process(biteR.process(lpR.process(tanh(mixR * drive) / drive)))
+            for ((sh, level) in shotsNow(s)) {
+                y += sh.pcm[sh.pos] * level
+                yR += sh.pcmR[sh.pos] * level
+                if (++sh.pos >= sh.pcm.size) sh.pos = -1
+            }
             val g = m0 + (targetMaster - m0) * (n + 1) / frames
             out[n] = y * g
+            outR[n] = yR * g
         }
         master = targetMaster
     }
 
+    private val playing = ArrayList<Pair<Shot, Float>>()
+
+    /** The one-shots sounding right now, with their levels. */
+    private fun shotsNow(s: LoopSet): List<Pair<Shot, Float>> {
+        playing.clear()
+        s.shiftUp?.takeIf { it.pos >= 0 }?.let { playing += it to SHIFT_LEVEL }
+        s.shiftDown?.takeIf { it.pos >= 0 }?.let { playing += it to SHIFT_LEVEL }
+        for (p in s.pops) if (p.pos >= 0) playing += p to POP_LEVEL
+        return playing
+    }
+
     /**
-     * One output sample of the loops at their current gains (linear interpolation), then every
-     * loop moves on by one output sample -- silent ones too, so they come in at a natural point.
+     * One output sample of the loops at their current gains (linear interpolation) into
+     * [mixL] / [mixR], then every loop moves on by one output sample -- silent ones too, so they
+     * come in at a natural point.
      */
-    private fun mixLoops(s: LoopSet): Float {
+    private fun mixLoops(s: LoopSet) {
         val step = s.assetRate / sampleRate.toDouble()
         var x = 0f
+        var xr = 0f
         for (l in s.all) {
             val len = l.pcm.size
             if (l.gain >= 1e-4f) {
                 val i = l.pos.toInt()
                 val frac = (l.pos - i).toFloat()
-                val a = l.pcm[i % len]
-                val b2 = l.pcm[(i + 1) % len]
-                x += (a + (b2 - a) * frac) * l.gain
+                val i0 = i % len
+                val i1 = (i + 1) % len
+                x += (l.pcm[i0] + (l.pcm[i1] - l.pcm[i0]) * frac) * l.gain
+                xr += (l.pcmR[i0] + (l.pcmR[i1] - l.pcmR[i0]) * frac) * l.gain
             }
             l.pos += l.rate * step
             if (l.pos >= len) l.pos -= len
         }
-        return x
+        mixL = x
+        mixR = xr
     }
 
     private var bakedSpeed = -1f
@@ -367,7 +364,7 @@ class LoopVoice(
     /** True when the playing set is spool-keyed (a jet). */
     val isJet: Boolean get() = loaded?.spool != null
 
-    private fun renderBaked(s: LoopSet, speeds: FloatArray, out: FloatArray, frames: Int) {
+    private fun renderBaked(s: LoopSet, speeds: FloatArray, out: FloatArray, outR: FloatArray, frames: Int) {
         val dt = frames / sampleRate.toFloat()
         bakedSpeed = if (bakedSpeed < 0f) tSpeed else bakedSpeed + (tSpeed - bakedSpeed) * min(1f, dt / 0.08f)
         // the load as it falls (not the on/off "engaged" flag), glided: lifting or pressing
@@ -386,6 +383,15 @@ class LoopVoice(
         }
         val wa = cos(u * PI.toFloat() / 2)
         val wb = sin(u * PI.toFloat() / 2)
+        // keep gliding past the ends of the grid: lower below the first speed point (down to
+        // x0.85 at a standstill), higher above the last (up to x1.1 another 40 km/h on)
+        val beyond = when {
+            s.spool != null -> 1f
+            v < speeds.first() -> 0.85f + 0.15f * (v / speeds.first()).coerceIn(0f, 1f)
+            v > speeds.last() -> 1f + 0.1f * ((v - speeds.last()) / 40f).coerceIn(0f, 1f)
+            else -> 1f
+        }
+        val pm = pitchMul * beyond
         // coasting counts as cruise; the pedal brings in the full-power series
         val load = pedalNow
         val gOn = if (s.light.isEmpty()) 1f else sin(load * PI.toFloat() / 2)
@@ -393,12 +399,12 @@ class LoopVoice(
         val gLight = if (s.spool != null && s.on.isEmpty()) 1f else cos(load * PI.toFloat() / 2)
         fun place(series: List<Loop>, g: Float) {
             for (l in series) l.gain = 0f
-            if (series.size < 2) { series.firstOrNull()?.let { it.gain = g; it.rate = pitchMul.toDouble() }; return }
+            if (series.size < 2) { series.firstOrNull()?.let { it.gain = g; it.rate = pm.toDouble() }; return }
             val a = series[i]
             val b = series[i + 1]
             val ref = kotlin.math.exp(ln(a.ref) * (1f - u) + ln(b.ref) * u).toDouble()
-            a.gain = g * wa; a.rate = ref * pitchMul / a.ref
-            b.gain = g * wb; b.rate = ref * pitchMul / b.ref
+            a.gain = g * wa; a.rate = ref * pm / a.ref
+            b.gain = g * wb; b.rate = ref * pm / b.ref
         }
         place(s.on, gOn)
         place(s.light, gLight)
@@ -415,7 +421,10 @@ class LoopVoice(
         val targetMaster = volume * BAKED_TRIM * s.norm * (1f - still)
         val m0 = master
         for (n in 0 until frames) {
-            out[n] = mixLoops(s) * (m0 + (targetMaster - m0) * (n + 1) / frames)
+            mixLoops(s)
+            val g = m0 + (targetMaster - m0) * (n + 1) / frames
+            out[n] = mixL * g
+            outR[n] = mixR * g
         }
         master = targetMaster
     }

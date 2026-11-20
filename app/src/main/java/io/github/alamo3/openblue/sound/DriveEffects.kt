@@ -35,14 +35,15 @@ class DriveEffects(private val sampleRate: Int, private val open: ((String) -> I
         const val SHIFT_DUCK = 0.75f          // a gentle dip under the shift sound, not a cut
         const val SHIFT_DUCK_SEC = 0.18f
         const val REVERSE_DUCK = 0.2f
-        const val SHIFT_GAIN = 2.5f           // the gearshift sound sits over the engine, not under it
+        const val SHIFT_GAIN = 3f             // the gearshift sound sits over the engine, not under it
         const val LAUNCH_GAIN = 1.8f          // launches (build, bang, boom): over the engine too
         const val SHIFT_UP = "shift_cin_up"
         const val SHIFT_DOWN = "shift_cin_down"
         private const val ASSET_RATE = 48000
     }
 
-    private class Clip(val pcm: FloatArray) { var pos = -1.0 }
+    /** A sound: [pcm] left, [pcmR] right (the same array for a mono file). */
+    private class Clip(val pcm: FloatArray, val pcmR: FloatArray) { var pos = -1.0 }
 
     private var clips: Map<String, Clip>? = null
     private var loadTried = false
@@ -70,7 +71,7 @@ class DriveEffects(private val sampleRate: Int, private val open: ((String) -> I
     private fun load(): Map<String, Clip>? {
         val opener = open ?: return null
         return listOf("launch_build", "launch_bang", "boom", SHIFT_UP, SHIFT_DOWN, "reverse", "chime").mapNotNull { n ->
-            opener("effects/$n.wav")?.use { readWav16(it.readBytes()) }?.let { n to Clip(it) }
+            opener("effects/$n.wav")?.use { readWavStereo(it.readBytes()) }?.let { (l, r) -> n to Clip(l, r) }
         }.toMap().takeIf { it.isNotEmpty() }
     }
 
@@ -154,7 +155,8 @@ class DriveEffects(private val sampleRate: Int, private val open: ((String) -> I
     /**
      * Ducks [out] (the main sound, already rendered) and mixes the effects in at [volume].
      */
-    fun mix(out: FloatArray, frames: Int, volume: Float) {
+    /** Ducks [out] / [outR] (the main sound, already rendered) and mixes the effects in at [volume]. */
+    fun mix(out: FloatArray, outR: FloatArray, frames: Int, volume: Float) {
         val c = clips
         val step = ASSET_RATE / sampleRate.toDouble()
         val revTarget = if (reverse) 1f else 0f
@@ -163,41 +165,49 @@ class DriveEffects(private val sampleRate: Int, private val open: ((String) -> I
             duckNow += (duck - duckNow) * min(1f, k * 2.5f)     // ~60 ms: eased in and out
             reverseLevel += (revTarget - reverseLevel) * k * 3f
             var x = out[n] * duckNow
+            var xr = outR[n] * duckNow
             if (c != null) {
                 for ((name, clip) in c) {
                     if (name == "reverse") {
                         if (reverseLevel < 1e-4f) continue
                         if (clip.pos < 0) clip.pos = 0.0
-                        x += sample(clip) * reverseLevel * volume
+                        val g = reverseLevel * volume
+                        x += sample(clip.pcm, clip.pos) * g
+                        xr += sample(clip.pcmR, clip.pos) * g
                         clip.pos = (clip.pos + step) % clip.pcm.size
                     } else if (clip.pos >= 0) {
-                        val g = when (name) {
+                        val g = volume * when (name) {
                             SHIFT_UP, SHIFT_DOWN -> SHIFT_GAIN
                             "launch_build", "launch_bang", "boom" -> LAUNCH_GAIN
                             else -> 1f
                         }
-                        x += sample(clip) * volume * g
+                        x += sample(clip.pcm, clip.pos) * g
+                        xr += sample(clip.pcmR, clip.pos) * g
                         clip.pos += step
                         if (clip.pos >= clip.pcm.size - 1) clip.pos = -1.0
                     }
                 }
             }
             out[n] = x
+            outR[n] = xr
         }
         if (reverseLevel < 1e-4f) c?.get("reverse")?.pos = -1.0   // start the loop afresh next time
     }
 
-    private fun sample(c: Clip): Float {
-        val i = c.pos.toInt()
-        val f = (c.pos - i).toFloat()
-        val a = c.pcm[i % c.pcm.size]
-        val b = c.pcm[(i + 1) % c.pcm.size]
+    private fun sample(pcm: FloatArray, pos: Double): Float {
+        val i = pos.toInt()
+        val f = (pos - i).toFloat()
+        val a = pcm[i % pcm.size]
+        val b = pcm[(i + 1) % pcm.size]
         return a + (b - a) * f
     }
 }
 
-/** 16-bit PCM WAV (mono or stereo, mixed down) as floats; null if it isn't one. */
-internal fun readWav16(bytes: ByteArray): FloatArray? {
+/**
+ * A 16-bit PCM WAV as (left, right) floats -- for a mono file both are the same array; extra
+ * channels beyond two are ignored. Null if it isn't one.
+ */
+internal fun readWavStereo(bytes: ByteArray): Pair<FloatArray, FloatArray>? {
     val b = java.nio.ByteBuffer.wrap(bytes).order(java.nio.ByteOrder.LITTLE_ENDIAN)
     if (bytes.size < 44 || String(bytes, 0, 4) != "RIFF" || String(bytes, 8, 4) != "WAVE") return null
     var p = 12
@@ -210,16 +220,17 @@ internal fun readWav16(bytes: ByteArray): FloatArray? {
             channels = b.getShort(p + 10).toInt()
             bits = b.getShort(p + 22).toInt()
         } else if (tag == "data") {
-            if (bits != 16) return null
+            if (bits != 16 || channels < 1) return null
             val n = min(len, bytes.size - p - 8) / (2 * channels)
-            val out = FloatArray(n)
+            val left = FloatArray(n)
+            val right = if (channels >= 2) FloatArray(n) else left
             var q = p + 8
             for (i in 0 until n) {
-                var s = 0f
-                for (ch in 0 until channels) { s += b.getShort(q) / 32768f; q += 2 }
-                out[i] = s / channels
+                left[i] = b.getShort(q) / 32768f
+                if (channels >= 2) right[i] = b.getShort(q + 2) / 32768f
+                q += 2 * channels
             }
-            return out
+            return left to right
         }
         p += 8 + len + (len and 1)
     }

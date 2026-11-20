@@ -98,11 +98,11 @@ class DriveEffectsTest {
         if (!File(assets, "effects/shift_cin_up.wav").exists()) return
         fun energyAfter(shift: Boolean): Double {
             val v = SoundVoice(48000, open = opener()).apply { sound = EngineSound.V8; volume = 0.3f }
-            val buf = FloatArray(480)
+            val buf = FloatArray(960)                  // 480 stereo frames, as the app plays them
             fun block(shifts: Int): Double {
                 v.drive(0.5f, false)
                 v.set(EngineState(3000f, 0.5f, 2, true, shifts, false, speedKmh = 40f))
-                v.render(buf)
+                v.renderStereo(buf)
                 return buf.sumOf { (it * it).toDouble() }
             }
             repeat(1000) { block(0) }                // past the start-up chime

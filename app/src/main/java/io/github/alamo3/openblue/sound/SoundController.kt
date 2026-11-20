@@ -249,7 +249,7 @@ class SoundController(
         Process.setThreadPriority(Process.THREAD_PRIORITY_URGENT_AUDIO)
         val rate = AudioTrack.getNativeOutputSampleRate(AudioManager.STREAM_MUSIC).takeIf { it > 0 } ?: 48000
         val frames = 256
-        val minBytes = AudioTrack.getMinBufferSize(rate, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_FLOAT)
+        val minBytes = AudioTrack.getMinBufferSize(rate, AudioFormat.CHANNEL_OUT_STEREO, AudioFormat.ENCODING_PCM_FLOAT)
         val track = AudioTrack.Builder()
             .setAudioAttributes(
                 AudioAttributes.Builder()
@@ -266,10 +266,10 @@ class SoundController(
                 AudioFormat.Builder()
                     .setSampleRate(rate)
                     .setEncoding(AudioFormat.ENCODING_PCM_FLOAT)
-                    .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+                    .setChannelMask(AudioFormat.CHANNEL_OUT_STEREO)
                     .build(),
             )
-            .setBufferSizeInBytes(max(minBytes, frames * 4 * 2))   // two blocks: as little delay as is safe
+            .setBufferSizeInBytes(max(minBytes, frames * 2 * 4 * 2))   // two stereo float blocks: as little delay as is safe
             .setPerformanceMode(AudioTrack.PERFORMANCE_MODE_LOW_LATENCY)
             .setTransferMode(AudioTrack.MODE_STREAM)
             .build()
@@ -278,7 +278,7 @@ class SoundController(
         val drivetrain = Drivetrain()
         val fmod = FmodVoice(context)
         val voice = SoundVoice(rate, fmod) { path -> runCatching { context.assets.open(path) }.getOrNull() }
-        val buf = FloatArray(frames)
+        val buf = FloatArray(frames * 2)                 // stereo, interleaved
         val dt = frames / rate.toFloat()
         var fade = 0f
         var sinceReadout = 0f
@@ -329,18 +329,20 @@ class SoundController(
                 val target = if (stopping || muted || waitingForPi) 0f else 1f
                 fade = if (fade < target) minOf(target, fade + dt * 3f) else maxOf(target, fade - dt * 5f)
                 voice.volume = volume * fade
-                voice.render(buf, frames)
+                voice.renderStereo(buf, frames)
                 if (clickRequested) {
                     clickRequested = false
                     // 6 ms of a bright tone: easy for the microphone to pick out.
                     val n = minOf(frames, (rate * 0.006f).toInt())
                     for (i in 0 until n) {
                         val env = kotlin.math.sin(Math.PI * i / n).toFloat()
-                        buf[i] = 0.9f * env * kotlin.math.sin(2.0 * Math.PI * 2400.0 * i / rate).toFloat()
+                        val v = 0.9f * env * kotlin.math.sin(2.0 * Math.PI * 2400.0 * i / rate).toFloat()
+                        buf[2 * i] = v
+                        buf[2 * i + 1] = v
                     }
                     clickTimes += System.nanoTime()
                 }
-                track.write(buf, 0, frames, AudioTrack.WRITE_BLOCKING)
+                track.write(buf, 0, frames * 2, AudioTrack.WRITE_BLOCKING)
 
                 sinceReadout += dt
                 if (sinceReadout > 0.05f) {

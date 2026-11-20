@@ -12,7 +12,7 @@
  "light": [
   {
    "file": "idle.wav",
-   "ref_hz": 1.0
+   "ref_hz": 0.85
   },
   {
    "file": "mid.wav",
@@ -20,7 +20,7 @@
   },
   {
    "file": "high.wav",
-   "ref_hz": 1.0
+   "ref_hz": 1.18
   }
  ],
  "on": [],

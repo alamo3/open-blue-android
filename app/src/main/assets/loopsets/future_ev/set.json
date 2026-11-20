@@ -20,15 +20,15 @@
   },
   {
    "file": "cruise_050.wav",
-   "ref_hz": 1.08
+   "ref_hz": 1.2
   },
   {
    "file": "cruise_090.wav",
-   "ref_hz": 1.1664
+   "ref_hz": 1.44
   },
   {
    "file": "cruise_130.wav",
-   "ref_hz": 1.2597120000000002
+   "ref_hz": 1.7279999999999998
   }
  ],
  "on": [
@@ -38,15 +38,15 @@
   },
   {
    "file": "accel_050.wav",
-   "ref_hz": 1.08
+   "ref_hz": 1.2
   },
   {
    "file": "accel_090.wav",
-   "ref_hz": 1.1664
+   "ref_hz": 1.44
   },
   {
    "file": "accel_130.wav",
-   "ref_hz": 1.2597120000000002
+   "ref_hz": 1.7279999999999998
   }
  ]
 }
