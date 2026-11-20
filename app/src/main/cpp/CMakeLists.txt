@@ -10,6 +10,6 @@ add_library(fmodstudio SHARED IMPORTED)
 set_target_properties(fmodstudio PROPERTIES IMPORTED_LOCATION ${FMOD_LIBS}/libfmodstudio.so)
 
 add_library(openblue_fmod SHARED fmod_bridge.cpp)
-target_link_libraries(openblue_fmod fmodstudio fmod log)
+target_link_libraries(openblue_fmod fmodstudio fmod log m)
 # 16 KB pages (Android 15+ devices): align like the FMOD libraries are
 target_link_options(openblue_fmod PRIVATE "-Wl,-z,max-page-size=16384")

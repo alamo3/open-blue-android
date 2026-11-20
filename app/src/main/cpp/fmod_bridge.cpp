@@ -11,6 +11,8 @@
 #include <cstdio>
 #include <cstring>
 
+#include "fmod_legacy_plugins.h"
+
 #define TAG "OpenBlueFmod"
 
 extern "C" {
@@ -57,6 +59,7 @@ FMOD_RESULT FMOD_System_GetMasterChannelGroup(FMOD_SYSTEM *system, FMOD_CHANNELG
 FMOD_RESULT FMOD_ChannelGroup_AddDSP(FMOD_CHANNELGROUP *group, int index, FMOD_DSP *dsp);
 FMOD_RESULT FMOD_ChannelGroup_SetVolume(FMOD_CHANNELGROUP *group, float volume);
 FMOD_RESULT FMOD_DSP_SetParameterFloat(FMOD_DSP *dsp, int index, float value);
+FMOD_RESULT FMOD_System_RegisterDSP(FMOD_SYSTEM *system, const void *description, unsigned int *handle);
 }
 
 namespace {
@@ -103,6 +106,17 @@ JNI() jlong JNICALL FN(create)(JNIEnv *, jobject, jint blockFrames) {
     if (!ok(FMOD_Studio_System_Initialize(sys, 64, 0, 0, nullptr), "initialize")) {
         FMOD_Studio_System_Release(sys);
         return 0;
+    }
+    // effects that FMOD 1.x banks (game mods) reference but FMOD 2.x dropped: without them,
+    // FMOD on Android won't load the bank at all (see fmod_legacy_plugins.h)
+    int n = 0;
+    LpDspDesc **plugins = legacy_plugins(&n);
+    for (int k = 0; k < n; k++) {
+        unsigned int handle = 0;
+        FMOD_RESULT r = FMOD_System_RegisterDSP(core, plugins[k], &handle);
+        __android_log_print(r == 0 ? ANDROID_LOG_INFO : ANDROID_LOG_DEBUG, TAG,
+                            "plugin '%s': %s (%d)", plugins[k]->name,
+                            r == 0 ? "registered" : "FMOD has its own", r);
     }
     FMOD_CHANNELGROUP *master = nullptr;
     FMOD_DSP *limiter = nullptr;
