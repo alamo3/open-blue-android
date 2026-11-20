@@ -40,7 +40,7 @@ class DriveEffectsTest {
     private fun rms(x: FloatArray) = sqrt(x.sumOf { (it * it).toDouble() } / x.size)
 
     @Test fun launchAndReversePlay() {
-        if (!File(assets, "effects/launch.wav").exists()) return
+        if (!File(assets, "effects/launch_ev.wav").exists()) return
         val v = SoundVoice(48000, open = opener()).apply { sound = EngineSound.STARSHIP; volume = 0f }
         val buf = FloatArray(480)
         fun block(speed: Float, pedal: Float, rev: Boolean): Double {
@@ -51,7 +51,7 @@ class DriveEffectsTest {
         }
         // volume 0 silences the main sound and the effects, so check with the effects' own level
         v.volume = 1f
-        repeat(50) { block(0f, 0f, false) }
+        repeat(1000) { block(0f, 0f, false) }      // past the start-up chime
         val quiet = (0 until 20).maxOf { block(0f, 0f, false) }
         // stab the pedal from rest: launch
         var launch = 0.0
@@ -93,9 +93,9 @@ class DriveEffectsTest {
         }
     }
 
-    /** Every gearbox shift of an engine sound plays the hydraulic shift sound. */
-    @Test fun gearshiftsPlayTheHydraulicSound() {
-        if (!File(assets, "effects/shift_hyd_up.wav").exists()) return
+    /** Every gearbox shift of an engine sound plays the shift sound. */
+    @Test fun gearshiftsPlayTheShiftSound() {
+        if (!File(assets, "effects/shift_cin_up.wav").exists()) return
         fun energyAfter(shift: Boolean): Double {
             val v = SoundVoice(48000, open = opener()).apply { sound = EngineSound.V8; volume = 0.3f }
             val buf = FloatArray(480)
@@ -105,8 +105,8 @@ class DriveEffectsTest {
                 v.render(buf)
                 return buf.sumOf { (it * it).toDouble() }
             }
-            repeat(50) { block(0) }
-            return (0 until 30).sumOf { block(if (shift) 1 else 0) }   // the next 0.3 s
+            repeat(1000) { block(0) }                // past the start-up chime
+            return (0 until 50).sumOf { block(if (shift) 1 else 0) }   // the next 0.5 s (the hit lands ~0.12 s in)
         }
         val with = energyAfter(true)
         val without = energyAfter(false)

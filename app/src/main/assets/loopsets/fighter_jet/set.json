@@ -1,0 +1,39 @@
+{
+ "name": "Fighter Jet",
+ "key": "spool",
+ "speeds": [
+  0.0,
+  0.5,
+  1.0
+ ],
+ "sample_rate": 48000,
+ "tone": false,
+ "raw_level": true,
+ "light": [
+  {
+   "file": "idle.wav",
+   "ref_hz": 1.0
+  },
+  {
+   "file": "mid.wav",
+   "ref_hz": 1.0
+  },
+  {
+   "file": "high.wav",
+   "ref_hz": 1.0
+  }
+ ],
+ "on": [],
+ "off": [],
+ "pops": [],
+ "spool": {
+  "idle_frac": 0.0,
+  "up_per_sec": 0.9,
+  "down_per_sec": 1.1
+ },
+ "boost": {
+  "file": "afterburner.wav",
+  "ref_hz": 1.0,
+  "pedal": 0.9
+ }
+}

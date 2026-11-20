@@ -118,11 +118,16 @@ class LoopVoice(
         val assetRate: Int,
         /** Baked sets: the road speed (km/h) of each on / light loop; null for rpm-keyed sets. */
         val speeds: FloatArray?,
+        /** Spool-keyed sets (a jet): the loops are placed by engine spool 0..1, not speed. */
+        val spool: Spool? = null,
+        /** Spool-keyed sets: an afterburner layer, lit near full pedal once spooled up. */
+        val boost: Loop? = null,
+        val boostPedal: Float = 2f,
     ) {
-        val all = on + light + off
+        val all = on + light + off + listOfNotNull(boost)
         /** Gain that brings this set to the common loudness. */
         val norm: Float = run {
-            val rms = on.map { l -> sqrt(l.pcm.fold(0.0) { a, x -> a + x * x } / l.pcm.size).toFloat() }.sorted()
+            val rms = on.ifEmpty { light }.map { l -> sqrt(l.pcm.fold(0.0) { a, x -> a + x * x } / l.pcm.size).toFloat() }.sorted()
             val median = rms[rms.size / 2]
             ((if (speeds != null) TARGET_RMS_BAKED else TARGET_RMS_RECORDED) / max(median, 1e-3f)).coerceIn(0.5f, 4f)
         }
@@ -154,16 +159,26 @@ class LoopVoice(
         fun shot(key: String) = o.optString(key, "").takeIf { it.isNotEmpty() && it != "null" }?.let { wav(it)?.let(::Shot) }
         val pops = o.optJSONArray("pops")?.let { a -> (0 until a.length()).mapNotNull { a.optString(it).takeIf { s -> s.isNotEmpty() }?.let { wav(it)?.let(::Shot) } } } ?: emptyList()
         val on = loops("on")
-        if (on.isEmpty()) return null
         // "light" is one loop for an rpm-keyed set, a series (one per speed) for a baked one
         val light = if (o.optJSONArray("light") != null) loops("light") else listOfNotNull(loop(o.optJSONObject("light")))
-        val speeds = if (o.optString("key") == "speed") {
+        if (on.isEmpty() && light.isEmpty()) return null
+        val key = o.optString("key")
+        val speeds = if (key == "speed" || key == "spool") {
             o.getJSONArray("speeds").let { a -> FloatArray(a.length()) { a.getDouble(it).toFloat() } }
-                .takeIf { it.size == on.size && (light.isEmpty() || light.size == on.size) } ?: return null
+                .takeIf { g -> (on.isEmpty() || on.size == g.size) && (light.isEmpty() || light.size == g.size) } ?: return null
+        } else {
+            if (on.isEmpty()) return null
+            null
+        }
+        val spool = if (key == "spool") o.optJSONObject("spool").let { j ->
+            Spool(j?.optDouble("idle_frac", 0.0)?.toFloat() ?: 0f, j?.optDouble("up_per_sec", 0.9)?.toFloat() ?: 0.9f,
+                  j?.optDouble("down_per_sec", 1.1)?.toFloat() ?: 1.1f)
         } else null
+        val boostJson = o.optJSONObject("boost")
         return LoopSet(
             id, o.optInt("cylinders", 2), o.optDouble("idle_rpm", 0.0).toFloat(), o.optDouble("redline_rpm", 1.0).toFloat(),
             on, light, loops("off"), shot("shift_up"), pops, shot("shift_down"), o.optInt("sample_rate", ASSET_RATE), speeds,
+            spool, loop(boostJson), boostJson?.optDouble("pedal", 2.0)?.toFloat() ?: 2f,
         )
     }
 
@@ -334,10 +349,29 @@ class LoopVoice(
      * and full-pedal series blended by the pedal. Fades out after a few seconds at a standstill,
      * like the Pi does.
      */
+    /** A jet's spool: the pedal sets the target, approached exponentially but rate-limited. */
+    private class Spool(val idle: Float, val up: Float, val down: Float) {
+        var n = -1f
+        fun step(pedal: Float, dt: Float): Float {
+            val target = idle + (1f - idle) * pedal
+            if (n < 0f) n = target
+            val cap = (if (target > n) up else down) * dt
+            n += ((target - n) * min(1f, dt * 4f)).coerceIn(-cap, cap)
+            return n
+        }
+    }
+
+    private var afterburner = 0f
+
+    /** True when the playing set is spool-keyed (a jet). */
+    val isJet: Boolean get() = loaded?.spool != null
+
     private fun renderBaked(s: LoopSet, speeds: FloatArray, out: FloatArray, frames: Int) {
         val dt = frames / sampleRate.toFloat()
         bakedSpeed = if (bakedSpeed < 0f) tSpeed else bakedSpeed + (tSpeed - bakedSpeed) * min(1f, dt / 0.08f)
-        val v = bakedSpeed
+        val pedalNow = if (tEngaged) tLoad.coerceIn(0f, 1f) else 0f
+        // the grid position: road speed, or for a jet its spool
+        val v = s.spool?.step(pedalNow, dt) ?: bakedSpeed
         // where the speed sits on the grid
         val i: Int
         val u: Float
@@ -351,7 +385,8 @@ class LoopVoice(
         // coasting counts as cruise; the pedal brings in the full-power series
         val load = if (tEngaged) tLoad.coerceIn(0f, 1f) else 0f
         val gOn = if (s.light.isEmpty()) 1f else sin(load * PI.toFloat() / 2)
-        val gLight = cos(load * PI.toFloat() / 2)
+        // a jet's loops are the engine at that spool, whatever the pedal
+        val gLight = if (s.spool != null && s.on.isEmpty()) 1f else cos(load * PI.toFloat() / 2)
         fun place(series: List<Loop>, g: Float) {
             for (l in series) l.gain = 0f
             if (series.size < 2) { series.firstOrNull()?.let { it.gain = g; it.rate = pitchMul.toDouble() }; return }
@@ -363,9 +398,15 @@ class LoopVoice(
         }
         place(s.on, gOn)
         place(s.light, gLight)
+        s.boost?.let { b ->
+            val lit = pedalNow >= s.boostPedal && v > 0.9f
+            afterburner += ((if (lit) 1f else 0f) - afterburner) * min(1f, dt / (if (lit) 0.4f else 0.8f))
+            b.gain = afterburner
+            b.rate = pitchMul.toDouble()
+        }
 
         // standstill: hold a moment, then fade away; any movement or pedal brings it straight back
-        stoppedFor = if (v < 0.5f && load < 0.05f) stoppedFor + dt else 0f
+        stoppedFor = if (bakedSpeed < 0.5f && load < 0.05f) stoppedFor + dt else 0f
         val still = ((stoppedFor - STANDSTILL_HOLD) / STANDSTILL_FADE).coerceIn(0f, 1f)
         val targetMaster = volume * BAKED_TRIM * s.norm * (1f - still)
         val m0 = master

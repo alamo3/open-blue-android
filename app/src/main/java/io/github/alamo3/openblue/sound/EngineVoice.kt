@@ -70,6 +70,9 @@ enum class EngineSound(
     GRAND_TOURING("Grand Touring", Kind.BAKED, loopSet = "grand_touring"),
     DREADNOUGHT("Dreadnought", Kind.BAKED, loopSet = "dreadnought"),
     JETSONS_I3("Jetsons i3", Kind.BAKED, loopSet = "jetsons_i3_recording"),
+    // Made with ElevenLabs sound effects (elevenlabs_sets.py in virtual-car-sound).
+    FUTURE_EV("Future EV", Kind.BAKED, loopSet = "future_ev"),
+    FIGHTER_JET("Fighter Jet", Kind.BAKED, loopSet = "fighter_jet"),
     // An imported FMOD sound set (which one: the fmodSet setting); see FmodVoice.
     FMOD("FMOD sound", Kind.FMOD, 1100f, 8500f),
     ;

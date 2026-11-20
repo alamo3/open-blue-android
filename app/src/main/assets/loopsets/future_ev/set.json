@@ -1,0 +1,52 @@
+{
+ "name": "Future EV",
+ "key": "speed",
+ "speeds": [
+  15,
+  50,
+  90,
+  130
+ ],
+ "sample_rate": 48000,
+ "tone": false,
+ "raw_level": true,
+ "coast_is_light": true,
+ "off": [],
+ "pops": [],
+ "light": [
+  {
+   "file": "cruise_015.wav",
+   "ref_hz": 1.0
+  },
+  {
+   "file": "cruise_050.wav",
+   "ref_hz": 1.08
+  },
+  {
+   "file": "cruise_090.wav",
+   "ref_hz": 1.1664
+  },
+  {
+   "file": "cruise_130.wav",
+   "ref_hz": 1.2597120000000002
+  }
+ ],
+ "on": [
+  {
+   "file": "accel_015.wav",
+   "ref_hz": 1.0
+  },
+  {
+   "file": "accel_050.wav",
+   "ref_hz": 1.08
+  },
+  {
+   "file": "accel_090.wav",
+   "ref_hz": 1.1664
+  },
+  {
+   "file": "accel_130.wav",
+   "ref_hz": 1.2597120000000002
+  }
+ ]
+}

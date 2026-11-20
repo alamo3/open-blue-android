@@ -30,7 +30,9 @@ class DriveEffects(private val sampleRate: Int, private val open: ((String) -> I
         const val SHIFT_DUCK = 0.55f
         const val SHIFT_DUCK_SEC = 0.13f
         const val REVERSE_DUCK = 0.2f
-        const val SHIFT_GAIN = 2f             // the gearshift sound sits over the engine, not under it
+        const val SHIFT_GAIN = 2.5f           // the gearshift sound sits over the engine, not under it
+        const val SHIFT_UP = "shift_cin_up"
+        const val SHIFT_DOWN = "shift_cin_down"
         private const val ASSET_RATE = 48000
     }
 
@@ -59,7 +61,7 @@ class DriveEffects(private val sampleRate: Int, private val open: ((String) -> I
 
     private fun load(): Map<String, Clip>? {
         val opener = open ?: return null
-        return listOf("launch", "shift_hyd_up", "shift_hyd_down", "reverse").mapNotNull { n ->
+        return listOf("launch_ev", "boom", SHIFT_UP, SHIFT_DOWN, "reverse", "chime").mapNotNull { n ->
             opener("effects/$n.wav")?.use { readWav16(it.readBytes()) }?.let { n to Clip(it) }
         }.toMap().takeIf { it.isNotEmpty() }
     }
@@ -68,7 +70,12 @@ class DriveEffects(private val sampleRate: Int, private val open: ((String) -> I
      * Once per audio block. [pedal] 0..1 (the car's own, else the estimated load); [launch]
      * and [virtualGears] say which effects this sound uses.
      */
-    fun step(dt: Float, speedKmh: Float, pedal: Float, reversing: Boolean, launch: Boolean, virtualGears: Boolean) {
+    /**
+     * Once per audio block. [pedal] 0..1 (the car's own, else the estimated load); [launch] is
+     * the sound a launch plays ("launch_ev", "boom") or null for none; [virtualGears] whether
+     * this sound gets the virtual gears.
+     */
+    fun step(dt: Float, speedKmh: Float, pedal: Float, reversing: Boolean, launch: String?, virtualGears: Boolean) {
         if (!loadTried) { loadTried = true; clips = runCatching { load() }.getOrNull() }
         reverse = reversing
 
@@ -83,7 +90,7 @@ class DriveEffects(private val sampleRate: Int, private val open: ((String) -> I
             cooldown == 0f && !reverse
         ) {
             cooldown = LAUNCH_COOLDOWN_SEC
-            if (launch) fire("launch")
+            launch?.let { fire(it) }
         }
 
         // virtual gears
@@ -93,10 +100,10 @@ class DriveEffects(private val sampleRate: Int, private val open: ((String) -> I
             if (speedKmh > upAt) {
                 gear++
                 duckT = SHIFT_DUCK_SEC
-                fire("shift_hyd_up")
+                fire(SHIFT_UP)
             } else if (speedKmh < downAt) {
                 gear--
-                fire("shift_hyd_down")
+                fire(SHIFT_DOWN)
             }
             val lo = if (gear > 1) GEAR_SHIFT_KMH[gear - 2] else 0f
             val hi = if (gear <= GEAR_SHIFT_KMH.size) GEAR_SHIFT_KMH[gear - 1] else lo + 40f
@@ -116,7 +123,10 @@ class DriveEffects(private val sampleRate: Int, private val open: ((String) -> I
     }
 
     /** The hydraulic gearshift sound, for a sound's own gearbox shifting. */
-    fun shift(up: Boolean) = fire(if (up) "shift_hyd_up" else "shift_hyd_down")
+    fun shift(up: Boolean) = fire(if (up) SHIFT_UP else SHIFT_DOWN)
+
+    /** The start-up chime. */
+    fun chime() = fire("chime")
 
     /**
      * Ducks [out] (the main sound, already rendered) and mixes the effects in at [volume].
@@ -138,7 +148,7 @@ class DriveEffects(private val sampleRate: Int, private val open: ((String) -> I
                         x += sample(clip) * reverseLevel * volume
                         clip.pos = (clip.pos + step) % clip.pcm.size
                     } else if (clip.pos >= 0) {
-                        x += sample(clip) * volume * (if (name.startsWith("shift_hyd")) SHIFT_GAIN else 1f)
+                        x += sample(clip) * volume * (if (name == SHIFT_UP || name == SHIFT_DOWN) SHIFT_GAIN else 1f)
                         clip.pos += step
                         if (clip.pos >= clip.pcm.size - 1) clip.pos = -1.0
                     }

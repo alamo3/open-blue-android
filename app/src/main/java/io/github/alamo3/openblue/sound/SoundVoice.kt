@@ -26,6 +26,7 @@ class SoundVoice(
     @Volatile private var pedal: Float? = null
     @Volatile private var reversing = false
     private var limitEnv = 0f
+    private var chimed = false
     private var shiftsSeen = -1
     private var downSeen = -1
 
@@ -69,14 +70,22 @@ class SoundVoice(
     fun render(out: FloatArray, frames: Int = out.size) {
         val st = state
         val k = sound.kind
+        if (!chimed && st != null) { chimed = true; effects.chime() }    // the sound starting up
         if (st != null) {
             effects.step(
                 frames / sampleRate.toFloat(), st.speedKmh, pedal ?: st.load, reversing,
-                launch = !sound.isEngine, virtualGears = k == EngineSound.Kind.BAKED,
+                // launches: the jet booms, the EV and cinematic sounds whoosh; engines (and FMOD
+                // jets, which boom by themselves) make their own
+                launch = when {
+                    k == EngineSound.Kind.BAKED && recorded.isJet -> "boom"
+                    !sound.isEngine -> "launch_ev"
+                    else -> null
+                },
+                virtualGears = k == EngineSound.Kind.BAKED,
             )
             recorded.pitchMul = effects.pitchMul
             // every gearbox shift of an engine sound (synth, recorded, FMOD car or jet) gets the
-            // hydraulic shift sound; gear >= 1 means gearshifts are on
+            // shift sound; gear >= 1 means gearshifts are on
             if (sound.isEngine && st.gear >= 1) {
                 if (shiftsSeen >= 0 && st.shifts != shiftsSeen) effects.shift(up = true)
                 if (downSeen >= 0 && st.downshifts != downSeen) effects.shift(up = false)
