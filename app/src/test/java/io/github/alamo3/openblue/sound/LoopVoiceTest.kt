@@ -60,4 +60,46 @@ class LoopVoiceTest {
         assertTrue("silent when stopped", level(50, 0f, 0f) < 1e-3f)
         assertTrue("back on the pedal", level(100, 0f, 0.5f) > 0.05f)
     }
+
+    /**
+     * The loops must actually play through within a block: a player that only moves on once per
+     * block holds one sample value for the whole block, which sounds like static. Also writes each
+     * render to build/loopvoice/ so it can be listened to or analysed.
+     */
+    @Test fun loopsPlayThroughEachBlock() {
+        val outDir = File("build/loopvoice").apply { mkdirs() }
+        val kinds = setOf(EngineSound.Kind.RECORDED, EngineSound.Kind.BAKED)
+        for (sound in EngineSound.entries.filter { it.kind in kinds }) {
+            if (!File(assets, "loopsets/${sound.loopSet}/set.json").exists()) continue
+            val voice = SoundVoice(48000) { p -> File(assets, p).takeIf { it.exists() }?.inputStream() }
+                .apply { this.sound = sound }
+            val m = EngineModel(idleRpm = sound.idleRpm, redline = sound.redline)
+            val buf = FloatArray(480)
+            val all = FloatArray(480 * 600)
+            for (i in 0 until 600) {             // 6 s: a steady pull from 20 to ~80 km/h
+                voice.set(m.update(dt, 6f + i * 0.03f, 2f, null, 0.7f))
+                voice.render(buf)
+                buf.copyInto(all, i * 480)
+            }
+            var held = 0
+            var live = 0
+            for (n in 1 until all.size) {
+                if (abs(all[n]) < 1e-4f) continue
+                live++
+                if (all[n] == all[n - 1]) held++
+            }
+            writeWav(File(outDir, "${sound.name.lowercase()}.wav"), all)
+            assertTrue("$sound is silent", live > all.size / 2)
+            assertTrue("$sound holds samples (${held * 100 / live}% repeated): playback not advancing", held < live / 20)
+        }
+    }
+
+    private fun writeWav(f: File, x: FloatArray) {
+        val b = java.nio.ByteBuffer.allocate(44 + x.size * 2).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+        b.put("RIFF".toByteArray()).putInt(36 + x.size * 2).put("WAVE".toByteArray())
+        b.put("fmt ".toByteArray()).putInt(16).putShort(1).putShort(1).putInt(48000).putInt(96000).putShort(2).putShort(16)
+        b.put("data".toByteArray()).putInt(x.size * 2)
+        for (v in x) b.putShort((v.coerceIn(-1f, 1f) * 32767).toInt().toShort())
+        f.writeBytes(b.array())
+    }
 }

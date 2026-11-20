@@ -263,32 +263,28 @@ class LoopVoice(
             out[n] = y * g
         }
         master = targetMaster
-        advance(s, frames)
     }
 
-    /** One output sample of the loops at their current gains (linear interpolation). */
+    /**
+     * One output sample of the loops at their current gains (linear interpolation), then every
+     * loop moves on by one output sample -- silent ones too, so they come in at a natural point.
+     */
     private fun mixLoops(s: LoopSet): Float {
+        val step = s.assetRate / sampleRate.toDouble()
         var x = 0f
         for (l in s.all) {
-            if (l.gain < 1e-4f) continue
             val len = l.pcm.size
-            val i = l.pos.toInt()
-            val frac = (l.pos - i).toFloat()
-            val a = l.pcm[i % len]
-            val b2 = l.pcm[(i + 1) % len]
-            x += (a + (b2 - a) * frac) * l.gain
+            if (l.gain >= 1e-4f) {
+                val i = l.pos.toInt()
+                val frac = (l.pos - i).toFloat()
+                val a = l.pcm[i % len]
+                val b2 = l.pcm[(i + 1) % len]
+                x += (a + (b2 - a) * frac) * l.gain
+            }
+            l.pos += l.rate * step
+            if (l.pos >= len) l.pos -= len
         }
         return x
-    }
-
-    /** Moves every loop on by one block (silent ones too, so they come in at a natural point). */
-    private fun advance(s: LoopSet, frames: Int) {
-        val step = s.assetRate / sampleRate.toDouble()
-        for (l in s.all) {
-            l.pos += l.rate * step * frames
-            val len = l.pcm.size.toDouble()
-            if (l.pos >= len) l.pos %= len
-        }
     }
 
     private var bakedSpeed = -1f
@@ -338,7 +334,6 @@ class LoopVoice(
             out[n] = mixLoops(s) * (m0 + (targetMaster - m0) * (n + 1) / frames)
         }
         master = targetMaster
-        advance(s, frames)
     }
 }
 
