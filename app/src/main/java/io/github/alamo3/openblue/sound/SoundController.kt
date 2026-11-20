@@ -255,7 +255,7 @@ class SoundController(
                     .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
                     .build(),
             )
-            .setBufferSizeInBytes(max(minBytes, frames * 4 * 4))
+            .setBufferSizeInBytes(max(minBytes, frames * 4 * 2))   // two blocks: as little delay as is safe
             .setPerformanceMode(AudioTrack.PERFORMANCE_MODE_LOW_LATENCY)
             .setTransferMode(AudioTrack.MODE_STREAM)
             .build()

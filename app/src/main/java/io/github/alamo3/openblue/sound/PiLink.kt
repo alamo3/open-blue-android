@@ -51,6 +51,11 @@ class PiLink(private val context: Context) {
         private val CCCD: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
         /** Older than this, the data no longer counts as live. */
         const val STALE_MS = 500L
+        /**
+         * The car reports speed in whole km/h, which would make the pitch step; it's smoothed
+         * over this long, and the lag that adds is taken back out using the acceleration.
+         */
+        private const val SPEED_SMOOTH_SEC = 0.15f
     }
 
     enum class State { OFF, SEARCHING, CONNECTING, CONNECTED }
@@ -77,6 +82,7 @@ class PiLink(private val context: Context) {
     private var running = false
     private var lastSpeed = -1f
     private var lastAt = 0L
+    private var smoothSpeed = -1f
 
     fun start() {
         if (running) return
@@ -191,14 +197,19 @@ class PiLink(private val context: Context) {
         val amps = b.short / 10f
         val now = SystemClock.elapsedRealtime()
         piFresh = flags and 1 != 0
-        // acceleration from successive speeds, smoothed over ~0.3 s (OBD speed is coarse)
+        // acceleration from successive speeds, smoothed over ~0.3 s (OBD speed is coarse);
+        // the speed itself smoothed, plus what the smoothing lags behind at this acceleration
         if (lastSpeed >= 0f && now > lastAt) {
             val dt = (now - lastAt) / 1000f
             val a = (speed - lastSpeed) / 3.6f / dt
             accel += (a - accel) * minOf(1f, dt / 0.3f)
+            smoothSpeed += (speed - smoothSpeed) * minOf(1f, dt / SPEED_SMOOTH_SEC)
+        } else {
+            smoothSpeed = speed
         }
         lastSpeed = speed
         lastAt = now
-        latest = CarData(speed, pedal.coerceIn(0f, 1f), rpm, amps, flags and 2 != 0, now)
+        val shown = if (speed < 0.5f) 0f else maxOf(0f, smoothSpeed + accel * 3.6f * SPEED_SMOOTH_SEC)
+        latest = CarData(shown, pedal.coerceIn(0f, 1f), rpm, amps, flags and 2 != 0, now)
     }
 }

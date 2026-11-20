@@ -84,9 +84,12 @@ class EngineModel(
                 if (pullPeak > 0.45f && rpm > 2800f) liftOffs++
             }
         }
-        // Load follows quickly going up, more gently going down.
+        // Load follows quickly going up, more gently going down; faster still with the car's own
+        // pedal reading, which is already clean (no sensor noise to hide).
         val targetLoad = if (engaged) max(rawLoad, 0.12f) else 0f
-        load += (targetLoad - load) * min(1f, dt * if (targetLoad > load) 12f else 5f)
+        val rise = if (pedal != null) 30f else 12f
+        val fall = if (pedal != null) 8f else 5f
+        load += (targetLoad - load) * min(1f, dt * if (targetLoad > load) rise else fall)
         if (engaged) pullPeak = max(pullPeak, load)
 
         var limiter = false
