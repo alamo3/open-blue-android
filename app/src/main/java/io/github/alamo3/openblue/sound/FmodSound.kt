@@ -6,52 +6,101 @@ import android.provider.DocumentsContract
 import java.io.File
 
 /**
- * An FMOD sound set imported onto the phone: a folder made by `fmod_bank.py export` in the
- * virtual-car-sound project -- the car's bank (e.g. an Assetto Corsa car mod), a master bank
- * for it, and sound.json saying which events to play and how loud.
+ * An FMOD sound set imported onto the phone: a folder made by `fmod_bank.py export` /
+ * `export-jet` in the virtual-car-sound project, with its banks and sound.json saying which
+ * events to play, what drives them and how loud.
  *
- * These are never bundled with the app: game mods, and FMOD's example media that the master
- * bank is made from, may not be redistributed. You copy them to the phone and import them.
+ *  - kind "car" (format 1): a game car's bank (e.g. an Assetto Corsa mod) plus a master bank
+ *    made for it; its engine event follows the virtual drivetrain (rpms, throttle), with gear,
+ *    limiter and backfire one-shots
+ *  - kind "jet" (format 2): an aircraft's own bank (e.g. X-Plane); looping layers whose
+ *    parameters follow a turbofan spool model, an afterburner near full pedal, and a launch
+ *    boom sample
+ *
+ * These are never bundled with the app: game mods, and FMOD's example media that a car's
+ * master bank is made from, may not be redistributed. You copy them to the phone and import.
  */
 data class FmodSound(
     val id: String,
     val name: String,
     val dir: File,
-    val carBank: String,
-    val masterBank: String,
+    val kind: String,
+    /** Banks to load, in order (master first). */
+    val banks: List<String>,
     val masterBus: String?,
     val idleRpm: Float,
     val redline: Float,
     val gainDb: Float,
-    /** "engine" (looping, rpms + throttle), "gear", "limiter", "backfire": event GUIDs. */
+    /** Cars: "engine" (looping, rpms + throttle), "gear", "limiter", "backfire": event GUIDs. */
     val events: Map<String, String>,
-    /** Parameter names each event has. */
+    /** Cars: parameter names each event has. */
     val params: Map<String, List<String>>,
+    /** Jets: the looping layers. */
+    val loops: List<Loop> = emptyList(),
+    val jet: Jet? = null,
+    /** Jets: a launch sound file and its level. */
+    val boomFile: String? = null,
+    val boomGainDb: Float = 0f,
 ) {
+    /** A looping layer: its event, level, and each parameter's source (see [FmodVoice]). */
+    data class Loop(val name: String, val guid: String, val gainDb: Float, val params: Map<String, String>)
+
+    data class Jet(val idleFrac: Float, val maxRad: Float, val upPerSec: Float, val downPerSec: Float, val afterburnerPedal: Float)
+
+    val isJet: Boolean get() = kind == "jet"
+
+    /** Every file the set needs. */
+    val files: List<String> get() = banks + listOfNotNull(boomFile)
+
     companion object {
         fun read(dir: File): FmodSound? = runCatching {
             val o = org.json.JSONObject(File(dir, "sound.json").readText())
-            val ev = o.getJSONObject("events")
+            val kind = o.optString("kind", "car")
             val events = HashMap<String, String>()
             val params = HashMap<String, List<String>>()
-            for (k in ev.keys()) {
-                val e = ev.getJSONObject(k)
-                events[k] = e.getString("guid")
-                params[k] = e.optJSONArray("params")?.let { a -> (0 until a.length()).map { a.getString(it) } } ?: emptyList()
+            o.optJSONObject("events")?.let { ev ->
+                for (k in ev.keys()) {
+                    val e = ev.getJSONObject(k)
+                    events[k] = e.getString("guid")
+                    params[k] = e.optJSONArray("params")?.let { a -> (0 until a.length()).map { a.getString(it) } } ?: emptyList()
+                }
             }
-            if ("engine" !in events) return null
+            val loops = o.optJSONArray("loops")?.let { a ->
+                (0 until a.length()).map { i ->
+                    val l = a.getJSONObject(i)
+                    val ps = l.optJSONObject("params")
+                    Loop(
+                        l.optString("name"), l.getString("guid"), l.optDouble("gain_db", 0.0).toFloat(),
+                        ps?.keys()?.asSequence()?.associateWith { ps.getString(it) } ?: emptyMap(),
+                    )
+                }
+            } ?: emptyList()
+            val banks = o.optJSONArray("banks")?.let { a -> (0 until a.length()).map { a.getString(it) } }
+                ?: listOf(o.optString("master_bank", "master.bank"), o.optString("car_bank", "car.bank"))
+            if (kind == "jet" && loops.isEmpty()) return null
+            if (kind != "jet" && "engine" !in events) return null
             FmodSound(
                 id = dir.name,
                 name = o.optString("name", dir.name),
                 dir = dir,
-                carBank = o.optString("car_bank", "car.bank"),
-                masterBank = o.optString("master_bank", "master.bank"),
-                masterBus = o.optString("master_bus").takeIf { it.isNotEmpty() },
+                kind = kind,
+                banks = banks,
+                masterBus = o.optString("master_bus").takeIf { it.isNotEmpty() && it != "null" },
                 idleRpm = o.optDouble("idle_rpm", 1100.0).toFloat(),
                 redline = o.optDouble("redline_rpm", 8500.0).toFloat(),
                 gainDb = o.optDouble("gain_db", 0.0).toFloat(),
                 events = events,
                 params = params,
+                loops = loops,
+                jet = o.optJSONObject("jet")?.let { j ->
+                    Jet(
+                        j.optDouble("idle_frac", 0.6).toFloat(), j.optDouble("max_rad", 1.0).toFloat(),
+                        j.optDouble("up_per_sec", 0.15).toFloat(), j.optDouble("down_per_sec", 0.2).toFloat(),
+                        j.optDouble("afterburner_pedal", 2.0).toFloat(),
+                    )
+                },
+                boomFile = o.optJSONObject("boom")?.optString("file")?.takeIf { it.isNotEmpty() },
+                boomGainDb = o.optJSONObject("boom")?.optDouble("gain_db", 0.0)?.toFloat() ?: 0f,
             )
         }.getOrNull()
     }
@@ -112,7 +161,7 @@ object FmodLibrary {
             if (info == null) { tmp.deleteRecursively(); return null }
             val sid = runCatching { org.json.JSONObject(File(tmp, "sound.json").readText()).optString("id") }
                 .getOrNull()?.takeIf { it.isNotBlank() && !it.contains('/') } ?: name
-            for (f in listOf(info.carBank, info.masterBank)) {
+            for (f in info.files) {
                 val d = files[f]
                 if (d == null) { tmp.deleteRecursively(); return null }
                 copy(d)

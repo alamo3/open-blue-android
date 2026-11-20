@@ -26,6 +26,8 @@ typedef struct FMOD_STUDIO_BANK FMOD_STUDIO_BANK;
 typedef struct FMOD_STUDIO_BUS FMOD_STUDIO_BUS;
 typedef struct FMOD_STUDIO_EVENTDESCRIPTION FMOD_STUDIO_EVENTDESCRIPTION;
 typedef struct FMOD_STUDIO_EVENTINSTANCE FMOD_STUDIO_EVENTINSTANCE;
+typedef struct FMOD_SOUND FMOD_SOUND;
+typedef struct FMOD_CHANNEL FMOD_CHANNEL;
 typedef struct {
     unsigned int Data1;
     unsigned short Data2, Data3;
@@ -60,6 +62,13 @@ FMOD_RESULT FMOD_ChannelGroup_AddDSP(FMOD_CHANNELGROUP *group, int index, FMOD_D
 FMOD_RESULT FMOD_ChannelGroup_SetVolume(FMOD_CHANNELGROUP *group, float volume);
 FMOD_RESULT FMOD_DSP_SetParameterFloat(FMOD_DSP *dsp, int index, float value);
 FMOD_RESULT FMOD_System_RegisterDSP(FMOD_SYSTEM *system, const void *description, unsigned int *handle);
+FMOD_RESULT FMOD_Studio_EventInstance_SetVolume(FMOD_STUDIO_EVENTINSTANCE *instance, float volume);
+FMOD_RESULT FMOD_System_CreateSound(FMOD_SYSTEM *system, const char *name, unsigned int mode, void *exinfo,
+                                    FMOD_SOUND **sound);
+FMOD_RESULT FMOD_System_PlaySound(FMOD_SYSTEM *system, FMOD_SOUND *sound, FMOD_CHANNELGROUP *group,
+                                  FMOD_BOOL paused, FMOD_CHANNEL **channel);
+FMOD_RESULT FMOD_Channel_SetVolume(FMOD_CHANNEL *channel, float volume);
+FMOD_RESULT FMOD_Channel_SetPaused(FMOD_CHANNEL *channel, FMOD_BOOL paused);
 }
 
 namespace {
@@ -69,6 +78,7 @@ constexpr int LIMITER_RELEASETIME = 0;        // ms
 constexpr int LIMITER_CEILING = 1;            // dB
 constexpr int STOP_ALLOWFADEOUT = 0;
 constexpr int STOP_IMMEDIATE = 1;
+constexpr unsigned int MODE_LOOP_OFF = 0x1, MODE_2D = 0x8, MODE_CREATESAMPLE = 0x100;
 
 bool ok(FMOD_RESULT r, const char *what) {
     if (r != 0) __android_log_print(ANDROID_LOG_WARN, TAG, "%s failed: FMOD error %d", what, r);
@@ -206,4 +216,30 @@ JNI() void JNICALL FN(setMasterVolume)(JNIEnv *, jobject, jlong sys, jfloat volu
     if (FMOD_Studio_System_GetCoreSystem(ptr<FMOD_STUDIO_SYSTEM>(sys), &core) == 0 &&
         FMOD_System_GetMasterChannelGroup(core, &master) == 0)
         FMOD_ChannelGroup_SetVolume(master, volume);
+}
+
+JNI() void JNICALL FN(setVolume)(JNIEnv *, jobject, jlong inst, jfloat volume) {
+    FMOD_Studio_EventInstance_SetVolume(ptr<FMOD_STUDIO_EVENTINSTANCE>(inst), volume);
+}
+
+// A sound file (e.g. a one-shot WAV) loaded into memory for instant playback; 0 on failure.
+JNI() jlong JNICALL FN(loadSound)(JNIEnv *env, jobject, jlong sys, jstring path) {
+    FMOD_SYSTEM *core = nullptr;
+    if (FMOD_Studio_System_GetCoreSystem(ptr<FMOD_STUDIO_SYSTEM>(sys), &core) != 0) return 0;
+    const char *p = env->GetStringUTFChars(path, nullptr);
+    FMOD_SOUND *sound = nullptr;
+    bool good = ok(FMOD_System_CreateSound(core, p, MODE_LOOP_OFF | MODE_2D | MODE_CREATESAMPLE, nullptr, &sound), p);
+    env->ReleaseStringUTFChars(path, p);
+    return good ? reinterpret_cast<jlong>(sound) : 0;
+}
+
+// Plays a loaded sound once, through the master group (so the overall level applies).
+JNI() void JNICALL FN(playSound)(JNIEnv *, jobject, jlong sys, jlong sound, jfloat volume) {
+    FMOD_SYSTEM *core = nullptr;
+    FMOD_CHANNEL *ch = nullptr;
+    if (FMOD_Studio_System_GetCoreSystem(ptr<FMOD_STUDIO_SYSTEM>(sys), &core) != 0) return;
+    if (ok(FMOD_System_PlaySound(core, ptr<FMOD_SOUND>(sound), nullptr, 1, &ch), "play sound")) {
+        FMOD_Channel_SetVolume(ch, volume);
+        FMOD_Channel_SetPaused(ch, 0);
+    }
 }

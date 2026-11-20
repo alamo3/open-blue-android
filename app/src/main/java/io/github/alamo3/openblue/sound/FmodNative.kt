@@ -50,4 +50,7 @@ object FmodNative {
     external fun oneShot(desc: Long, name: String?, value: Float)
     external fun setBusVolume(sys: Long, guid: String, volume: Float)
     external fun setMasterVolume(sys: Long, volume: Float)
+    external fun setVolume(inst: Long, volume: Float)
+    external fun loadSound(sys: Long, path: String): Long
+    external fun playSound(sys: Long, sound: Long, volume: Float)
 }

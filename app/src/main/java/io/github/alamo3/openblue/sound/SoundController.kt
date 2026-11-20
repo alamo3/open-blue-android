@@ -315,7 +315,8 @@ class SoundController(
                 var st = model.update(dt, vPred, aPred, revThrottle, pedal)
                 // recorded engines with gearshifts: the Pi's drivetrain (shift cut, blip, limiter)
                 fmod.setId = if (s.kind == EngineSound.Kind.FMOD) fmodSet else null
-                val drivetrainSound = s.kind == EngineSound.Kind.RECORDED || s.kind == EngineSound.Kind.FMOD
+                // jets have no gearbox: they follow the pedal (FmodVoice spools them)
+                val drivetrainSound = s.kind == EngineSound.Kind.RECORDED || (s.kind == EngineSound.Kind.FMOD && !fmod.isJet)
                 if (drivetrainSound && model.gearshifts && revThrottle == null) {
                     val (idle, red) = (if (s.kind == EngineSound.Kind.FMOD) fmod.revRange() else null) ?: (s.idleRpm to s.redline)
                     drivetrain.idleRpm = idle
