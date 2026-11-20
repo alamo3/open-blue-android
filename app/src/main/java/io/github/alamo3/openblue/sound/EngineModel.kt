@@ -19,6 +19,17 @@ data class EngineState(
     val liftOffs: Int = 0,
     /** Road speed, or for revving in place a stand-in that rises with the revs. */
     val speedKmh: Float = 0f,
+    // From [Drivetrain] (recorded engines with gearshifts); the defaults mean "not modelled".
+    /** 0..1: engine braking off the pedal; null = work it out from [engaged] and speed. */
+    val overrun: Float? = null,
+    /** 0..1: how deep into a shift's torque cut. */
+    val shifting: Float = 0f,
+    /** The limiter has the fuel cut on right now. */
+    val cut: Boolean? = null,
+    /** Increments on every downshift. */
+    val downshifts: Int = 0,
+    /** The smoothed pedal the gearbox reads. */
+    val throttle: Float = load,
 )
 
 /**

@@ -261,6 +261,7 @@ class SoundController(
             .build()
 
         val model = EngineModel()
+        val drivetrain = Drivetrain()
         val voice = SoundVoice(rate) { path -> runCatching { context.assets.open(path) }.getOrNull() }
         val buf = FloatArray(frames)
         val dt = frames / rate.toFloat()
@@ -296,7 +297,14 @@ class SoundController(
                 val aPred = (a + (jerk * ahead * 0.7f).coerceIn(-0.8f, 0.8f)).coerceIn(-9f, 10f)
                 val vPred = max(0f, speedNow + a * ahead)
 
-                val st = model.update(dt, vPred, aPred, revThrottle, pedal)
+                var st = model.update(dt, vPred, aPred, revThrottle, pedal)
+                // recorded engines with gearshifts: the Pi's drivetrain (shift cut, blip, limiter)
+                if (s.kind == EngineSound.Kind.RECORDED && model.gearshifts && revThrottle == null) {
+                    drivetrain.idleRpm = s.idleRpm
+                    drivetrain.redline = s.redline
+                    st = drivetrain.step(dt, vPred * 3.6f, pedal ?: st.load)
+                }
+                voice.drive(pedal, car?.reversing == true)
                 voice.set(st)
                 // Fade in at the start and out at the end (or while measuring), so there's no click.
                 val target = if (stopping || muted || waitingForPi) 0f else 1f

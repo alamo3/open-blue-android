@@ -46,6 +46,13 @@ class LoopVoice(
     @Volatile private var tLimiter = false
     @Volatile private var tLiftOffs = 0
     @Volatile private var tSpeed = 0f
+    @Volatile private var tOverrun: Float? = null
+    @Volatile private var tShifting = 0f
+    @Volatile private var tCut: Boolean? = null
+    @Volatile private var tDownshifts = 0
+    @Volatile private var tThrottle = 0f
+    /** Baked voices: pitch multiplier from the virtual gears (see [DriveEffects]). */
+    @Volatile var pitchMul = 1f
 
     fun set(st: EngineState) {
         tRpm = st.rpm
@@ -55,6 +62,11 @@ class LoopVoice(
         tLimiter = st.limiter
         tLiftOffs = st.liftOffs
         tSpeed = st.speedKmh
+        tOverrun = st.overrun
+        tShifting = st.shifting
+        tCut = st.cut
+        tDownshifts = st.downshifts
+        tThrottle = st.throttle
     }
 
     companion object {
@@ -72,8 +84,18 @@ class LoopVoice(
         private const val SHIFT_LEVEL = 0.7f
         private const val POP_LEVEL = 0.6f
         private const val CRACKLE_RATE = 5f      // overrun pops per second at the redline
-        private const val TRIM = 0.6f            // sits with the synthesized sounds' level
-        private const val BAKED_TRIM = 0.45f     // baked voices are mixed hot: level with the recorded engines
+        private const val TRIM = 1.0f            // the Pi's level (SoundVoice limits the peaks)
+        private const val BODY_HZ = 160f         // recorded engines: low shelf for weight...
+        private const val BODY_DB = 4f           // ...this much below BODY_HZ
+        private const val SHIFT_DIP = 0.2f       // level dip through a shift's torque cut
+        private const val BAKED_TRIM = 0.9f      // (SoundVoice limits the peaks)
+        /**
+         * Every set is scaled so its full-load loops sit at this rms: recordings and renders
+         * arrive at very different levels (0.15-0.64). Recorded engines aim higher: their peaks
+         * stand far above their average, so they need more gain to sound as loud.
+         */
+        private const val TARGET_RMS_RECORDED = 0.6f
+        private const val TARGET_RMS_BAKED = 0.55f
         private const val STANDSTILL_HOLD = 3f   // baked voices: fade out after this long stopped
         private const val STANDSTILL_FADE = 2.5f
     }
@@ -91,13 +113,19 @@ class LoopVoice(
     private class LoopSet(
         val id: String, val cylinders: Int, val idleRpm: Float, val redline: Float,
         val on: List<Loop>, val light: List<Loop>, val off: List<Loop>,
-        val shiftUp: Shot?, val pops: List<Shot>,
+        val shiftUp: Shot?, val pops: List<Shot>, val shiftDown: Shot?,
         /** The files' sample rate. */
         val assetRate: Int,
         /** Baked sets: the road speed (km/h) of each on / light loop; null for rpm-keyed sets. */
         val speeds: FloatArray?,
     ) {
         val all = on + light + off
+        /** Gain that brings this set to the common loudness. */
+        val norm: Float = run {
+            val rms = on.map { l -> sqrt(l.pcm.fold(0.0) { a, x -> a + x * x } / l.pcm.size).toFloat() }.sorted()
+            val median = rms[rms.size / 2]
+            ((if (speeds != null) TARGET_RMS_BAKED else TARGET_RMS_RECORDED) / max(median, 1e-3f)).coerceIn(0.5f, 4f)
+        }
     }
 
     private val rnd = Random(seed)
@@ -108,10 +136,12 @@ class LoopVoice(
     private var limiterT = 0f
     private var shiftsSeen = -1
     private var liftOffsSeen = -1
+    private var downshiftsSeen = -1
     private val popQueue = ArrayList<Float>()     // seconds until each queued pop
     private var stoppedFor = 0f
     private val lp = Biquad()
     private val bite = Biquad()
+    private val body = Biquad()
 
     // --- loading ----------------------------------------------------------------------
     private fun load(id: String): LoopSet? {
@@ -133,7 +163,7 @@ class LoopVoice(
         } else null
         return LoopSet(
             id, o.optInt("cylinders", 2), o.optDouble("idle_rpm", 0.0).toFloat(), o.optDouble("redline_rpm", 1.0).toFloat(),
-            on, light, loops("off"), shot("shift_up"), pops, o.optInt("sample_rate", ASSET_RATE), speeds,
+            on, light, loops("off"), shot("shift_up"), pops, shot("shift_down"), o.optInt("sample_rate", ASSET_RATE), speeds,
         )
     }
 
@@ -194,6 +224,7 @@ class LoopVoice(
             failed = if (loaded == null) id else null
             shiftsSeen = -1
             liftOffsSeen = -1
+            downshiftsSeen = -1
             bakedSpeed = -1f
             stoppedFor = 0f
         }
@@ -207,9 +238,12 @@ class LoopVoice(
         val f = max(1f, rpm / 60f * s.cylinders / 2f)
         val lf = ln(f)
         val rpmNorm = ((rpm - s.idleRpm) / (s.redline - s.idleRpm)).coerceIn(0f, 1f)
-        val on = if (tEngaged) tLoad.coerceIn(0f, 1f) else 0f
-        val overrun = if (!tEngaged && tSpeed > 6f) min(1f, rpmNorm + 0.2f) else 0f
-        val onLevel = ON_MIN + (1f - ON_MIN) * on
+        // with the drivetrain: its overrun, and through a shift the pedal still shows a little
+        val shifting = tShifting
+        var on = if (tEngaged) tLoad.coerceIn(0f, 1f) else 0f
+        if (shifting > 0f) on = max(on, tThrottle * (1f - 0.3f * shifting))
+        val overrun = tOverrun ?: if (!tEngaged && tSpeed > 6f) min(1f, rpmNorm + 0.2f) else 0f
+        val onLevel = (ON_MIN + (1f - ON_MIN) * on) * (1f - SHIFT_DIP * shifting)
         xfade(lf, s.on, wOn)
         val heavyOn = if (s.light.isNotEmpty()) onLevel * sin(on * PI.toFloat() / 2) else onLevel
         for ((i, l) in s.on.withIndex()) l.gain = wOn[i] * heavyOn
@@ -224,15 +258,19 @@ class LoopVoice(
         lp.lowPass(min(cutoff, sampleRate * 0.45f), sampleRate.toFloat())
         bite.peak(BITE_HZ, sampleRate.toFloat(), BITE_DB * toneOn, 1f)
         val drive = 1f + DRIVE * toneOn
+        body.lowShelf(BODY_HZ, sampleRate.toFloat(), BODY_DB)
 
-        // limiter: the fuel cut chops the sound ~12 times a second
+        // limiter: the fuel cut chops the sound ~12 times a second (the drivetrain says when)
         limiterT = if (tLimiter) limiterT + dt else 0f
-        val chop = if (tLimiter && ((limiterT * LIMITER_HZ * 2).toInt() % 2 == 1)) 1f - LIMITER_CUT else 1f
-        val targetMaster = volume * TRIM * (0.6f + 0.4f * rpmNorm) * chop
+        val cutNow = tCut ?: (tLimiter && ((limiterT * LIMITER_HZ * 2).toInt() % 2 == 1))
+        val chop = if (cutNow) 1f - LIMITER_CUT else 1f
+        val targetMaster = volume * TRIM * s.norm * (0.6f + 0.4f * rpmNorm) * chop
 
         // events: shift sound on upshifts, pops just after a lift-off, crackle on the overrun
         if (shiftsSeen < 0) shiftsSeen = tShifts
         if (tShifts != shiftsSeen) { shiftsSeen = tShifts; s.shiftUp?.pos = 0 }
+        if (downshiftsSeen < 0) downshiftsSeen = tDownshifts
+        if (tDownshifts != downshiftsSeen) { downshiftsSeen = tDownshifts; s.shiftDown?.pos = 0 }
         if (liftOffsSeen < 0) liftOffsSeen = tLiftOffs
         if (tLiftOffs != liftOffsSeen && s.pops.isNotEmpty()) {
             liftOffsSeen = tLiftOffs
@@ -255,9 +293,10 @@ class LoopVoice(
         for (n in 0 until frames) {
             var x = mixLoops(s)
             x = tanh(x * drive) / drive
-            x = bite.process(lp.process(x))
+            x = body.process(bite.process(lp.process(x)))
             var y = x
             s.shiftUp?.let { sh -> if (sh.pos >= 0) { y += sh.pcm[sh.pos] * SHIFT_LEVEL; if (++sh.pos >= sh.pcm.size) sh.pos = -1 } }
+            s.shiftDown?.let { sh -> if (sh.pos >= 0) { y += sh.pcm[sh.pos] * SHIFT_LEVEL; if (++sh.pos >= sh.pcm.size) sh.pos = -1 } }
             for (p in s.pops) if (p.pos >= 0) { y += p.pcm[p.pos] * POP_LEVEL; if (++p.pos >= p.pcm.size) p.pos = -1 }
             val g = m0 + (targetMaster - m0) * (n + 1) / frames
             out[n] = y * g
@@ -315,12 +354,12 @@ class LoopVoice(
         val gLight = cos(load * PI.toFloat() / 2)
         fun place(series: List<Loop>, g: Float) {
             for (l in series) l.gain = 0f
-            if (series.size < 2) { series.firstOrNull()?.let { it.gain = g; it.rate = 1.0 }; return }
+            if (series.size < 2) { series.firstOrNull()?.let { it.gain = g; it.rate = pitchMul.toDouble() }; return }
             val a = series[i]
             val b = series[i + 1]
             val ref = kotlin.math.exp(ln(a.ref) * (1f - u) + ln(b.ref) * u).toDouble()
-            a.gain = g * wa; a.rate = ref / a.ref
-            b.gain = g * wb; b.rate = ref / b.ref
+            a.gain = g * wa; a.rate = ref * pitchMul / a.ref
+            b.gain = g * wb; b.rate = ref * pitchMul / b.ref
         }
         place(s.on, gOn)
         place(s.light, gLight)
@@ -328,7 +367,7 @@ class LoopVoice(
         // standstill: hold a moment, then fade away; any movement or pedal brings it straight back
         stoppedFor = if (v < 0.5f && load < 0.05f) stoppedFor + dt else 0f
         val still = ((stoppedFor - STANDSTILL_HOLD) / STANDSTILL_FADE).coerceIn(0f, 1f)
-        val targetMaster = volume * BAKED_TRIM * (1f - still)
+        val targetMaster = volume * BAKED_TRIM * s.norm * (1f - still)
         val m0 = master
         for (n in 0 until frames) {
             out[n] = mixLoops(s) * (m0 + (targetMaster - m0) * (n + 1) / frames)
@@ -349,6 +388,21 @@ private class Biquad {
         val a0 = 1 + al
         b0 = (1 - c) / 2 / a0; b1 = (1 - c) / a0; b2 = b0
         a1 = -2 * c / a0; a2 = (1 - al) / a0
+    }
+
+    /** RBJ low shelf, slope 1. */
+    fun lowShelf(fc: Float, sr: Float, gainDb: Float) {
+        val a = 10f.pow(gainDb / 40f)
+        val w = 2 * PI.toFloat() * fc / sr
+        val c = cos(w)
+        val al = sin(w) / 2 * sqrt(2f)
+        val sa = 2 * sqrt(a) * al
+        val a0 = (a + 1) + (a - 1) * c + sa
+        b0 = a * ((a + 1) - (a - 1) * c + sa) / a0
+        b1 = 2 * a * ((a - 1) - (a + 1) * c) / a0
+        b2 = a * ((a + 1) - (a - 1) * c - sa) / a0
+        a1 = -2 * ((a - 1) + (a + 1) * c) / a0
+        a2 = ((a + 1) + (a - 1) * c - sa) / a0
     }
 
     fun peak(fc: Float, sr: Float, gainDb: Float, q: Float) {
