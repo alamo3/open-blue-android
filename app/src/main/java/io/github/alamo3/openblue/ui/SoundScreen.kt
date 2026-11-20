@@ -27,6 +27,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -48,6 +49,8 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import io.github.alamo3.openblue.MainViewModel
 import io.github.alamo3.openblue.sound.EngineSound
+import io.github.alamo3.openblue.sound.PiLink
+import io.github.alamo3.openblue.sound.SoundReadout
 import kotlin.math.cos
 import kotlin.math.roundToInt
 import kotlin.math.sin
@@ -66,6 +69,10 @@ fun SoundScreen(vm: MainViewModel, onBack: () -> Unit) {
 
     val askLocation = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
         vm.startSound()
+    }
+    // Bluetooth permission for the Pi, asked again from its section if it was refused
+    val askBluetooth = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+        vm.changeUsePi(vm.usePi)               // starts the link now that it may search
     }
     val askMic = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
         if (ok) vm.measureSoundDelay()
@@ -201,6 +208,39 @@ fun SoundScreen(vm: MainViewModel, onBack: () -> Unit) {
             ) { vm.changeHoldRevs(it) }
 
             HorizontalDivider(color = app.hairline, modifier = Modifier.padding(top = 8.dp))
+            SectionTitle("Raspberry Pi")
+            Text(
+                "With the virtual-car-sound Raspberry Pi plugged into the car's OBD port, the sound follows the " +
+                    "car's real speed and pedal instead of guessing from the phone's sensors. It connects over " +
+                    "Bluetooth by itself while the sound plays; no pairing needed.",
+                style = MaterialTheme.typography.bodySmall,
+                color = scheme.onSurfaceVariant,
+            )
+            SettingSwitch(
+                "Use car data from the Pi",
+                "Off: always use the phone's sensors and GPS.",
+                vm.usePi,
+            ) { vm.changeUsePi(it) }
+            if (vm.usePi) {
+                SettingSwitch(
+                    "Only play with car data",
+                    "Off: fall back to the phone's sensors when the Pi isn't there. On: stay quiet until it is.",
+                    vm.piOnly,
+                ) { vm.changePiOnly(it) }
+                Text(
+                    piStatus(vm.soundOn, r),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (r?.piCar != null) scheme.primary else scheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+                if (r?.piNoPermission == true && android.os.Build.VERSION.SDK_INT >= 31) {
+                    TextButton(onClick = {
+                        askBluetooth.launch(arrayOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT))
+                    }) { Text("Allow Bluetooth") }
+                }
+            }
+
+            HorizontalDivider(color = app.hairline, modifier = Modifier.padding(top = 8.dp))
             SectionTitle("Delay")
             Text(
                 "To play through the car, connect Android Auto and start the sound; it goes out with your media. " +
@@ -293,10 +333,28 @@ private fun soundPermissions(): Array<String> = buildList {
     }
 }.toTypedArray()
 
-private fun statusLine(r: io.github.alamo3.openblue.sound.SoundReadout?): String = when {
+/** The Pi link, for its own section: state, and the live reading when there is one. */
+private fun piStatus(soundOn: Boolean, r: SoundReadout?): String {
+    if (!soundOn || r == null) return "Connects when the sound starts."
+    r.piCar?.let { c ->
+        return "Live: ${c.speedKmh.roundToInt()} km/h, pedal ${(c.pedal * 100).roundToInt()}%" +
+            (if (c.motorRpm != 0) ", motor ${c.motorRpm} rpm" else "") +
+            (if (c.reversing) ", reversing" else "")
+    }
+    return when {
+        r.piNoPermission -> "Needs Bluetooth permission (Nearby devices) to find the Pi."
+        r.piState == PiLink.State.CONNECTED -> "Connected. Waiting for car data: is the car on and the OBD adapter plugged in?"
+        r.piState == PiLink.State.CONNECTING -> "Found the Pi, connecting…"
+        r.piState == PiLink.State.SEARCHING -> "Searching for the Pi…"
+        else -> "Off."
+    }
+}
+
+private fun statusLine(r: SoundReadout?): String = when {
     r == null -> "Starting…"
     r.carData -> "Following the car: live data from the Raspberry Pi."
-    r.piState == io.github.alamo3.openblue.sound.PiLink.State.CONNECTED ->
+    r.waitingForPi -> "Quiet until the Raspberry Pi has car data (\"Only play with car data\" is on)."
+    r.piState == PiLink.State.CONNECTED ->
         "Raspberry Pi connected, waiting for car data. Using the phone's sensors meanwhile."
     !r.hasSensors -> "This phone lacks the motion sensors the sound needs."
     !r.gpsFix -> "Waiting for GPS. Until then, revs follow acceleration alone."

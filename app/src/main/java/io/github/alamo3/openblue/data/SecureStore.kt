@@ -200,6 +200,14 @@ class SecureStore(private val prefs: SharedPreferences) {
     var holdRevs: Boolean
         get() = prefs.getBoolean("holdRevs", false)
         set(v) = prefs.edit().putBoolean("holdRevs", v).apply()
+    /** Engine sound: follow the car's own data from the virtual-car-sound Raspberry Pi. */
+    var usePi: Boolean
+        get() = prefs.getBoolean("usePi", true)
+        set(v) = prefs.edit().putBoolean("usePi", v).apply()
+    /** Engine sound: stay quiet without the Pi's data rather than fall back to phone sensors. */
+    var piOnly: Boolean
+        get() = prefs.getBoolean("piOnly", false)
+        set(v) = prefs.edit().putBoolean("piOnly", v).apply()
 
     var askedNotifications: Boolean
         get() = prefs.getBoolean("askedNotifications", false)

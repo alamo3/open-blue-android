@@ -59,6 +59,8 @@ class EngineSoundService : Service() {
                 sound = store.engineSound?.let { n -> EngineSound.entries.firstOrNull { it.name == n } } ?: EngineSound.STARSHIP
                 volume = store.soundVolume
                 holdRevs = store.holdRevs
+                usePi = store.usePi
+                piOnly = store.piOnly
                 gearshifts = store.gearshifts
                 lookaheadMs = store.soundLookaheadMs.toFloat()
                 padSign = store.soundPlacement.takeIf { it != 0 }

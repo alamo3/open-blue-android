@@ -33,6 +33,12 @@ data class SoundReadout(
     val carData: Boolean = false,
     /** The Pi link: off, searching, connecting or connected. */
     val piState: PiLink.State = PiLink.State.OFF,
+    /** The Pi's latest live reading, null when there isn't one. */
+    val piCar: CarData? = null,
+    /** Silent because "Pi only" is on and the Pi has no live data. */
+    val waitingForPi: Boolean = false,
+    /** The Pi link is on but Bluetooth permission is missing. */
+    val piNoPermission: Boolean = false,
 )
 
 /**
@@ -49,6 +55,14 @@ class SoundController(
     @Volatile var sound: EngineSound = EngineSound.STARSHIP
     @Volatile var volume = 0.8f
     @Volatile var holdRevs = false
+    /** Follow the car's own data from the Raspberry Pi when it's there. */
+    @Volatile var usePi = true
+        set(v) {
+            field = v
+            if (running) { if (v && canUseBluetooth()) pi.start() else if (!v) pi.stop() }
+        }
+    /** Without the Pi's live data, stay quiet instead of guessing from the phone's sensors. */
+    @Volatile var piOnly = false
     @Volatile var gearshifts = false
     /** 0..1 while the rev slider is held; null otherwise. */
     @Volatile var revThrottle: Float? = null
@@ -139,7 +153,7 @@ class SoundController(
                     ?.requestLocationUpdates(LocationManager.GPS_PROVIDER, 0L, 0f, locationListener, ht.looper)
             }
         }
-        if (canUseBluetooth()) pi.start()
+        if (usePi && canUseBluetooth()) pi.start()
         stopping = false
         audioThread = Thread({ audioLoop() }, "openblue-engine").apply { start() }
     }
@@ -267,7 +281,8 @@ class SoundController(
                 model.gearshifts = gearshifts && s.isEngine
 
                 // The car's own data when the Pi has it; the phone's estimate otherwise.
-                val car = if (pi.fresh) pi.latest else null
+                val car = if (usePi && pi.fresh) pi.latest else null
+                val waitingForPi = usePi && piOnly && car == null
                 val speedNow = car?.let { it.speedKmh / 3.6f } ?: fusedSpeed
                 // Reversing out of a spot isn't "accelerating": keep the sound at idle.
                 val pedal = car?.let { if (it.reversing) 0f else it.pedal }
@@ -284,7 +299,7 @@ class SoundController(
                 val st = model.update(dt, vPred, aPred, revThrottle, pedal)
                 voice.set(st)
                 // Fade in at the start and out at the end (or while measuring), so there's no click.
-                val target = if (stopping || muted) 0f else 1f
+                val target = if (stopping || muted || waitingForPi) 0f else 1f
                 fade = if (fade < target) minOf(target, fade + dt * 3f) else maxOf(target, fade - dt * 5f)
                 voice.volume = volume * fade
                 voice.render(buf, frames)
@@ -314,6 +329,9 @@ class SoundController(
                         hasSensors = hasSensors,
                         carData = car != null,
                         piState = pi.state,
+                        piCar = car,
+                        waitingForPi = waitingForPi,
+                        piNoPermission = usePi && pi.state == PiLink.State.OFF && !canUseBluetooth(),
                     )
                 }
                 if (stopping && fade <= 0f) break

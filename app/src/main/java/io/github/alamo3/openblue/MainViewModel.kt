@@ -1922,6 +1922,10 @@ class MainViewModel(
         private set
     var gearshifts by mutableStateOf(store.gearshifts)
         private set
+    var usePi by mutableStateOf(store.usePi)
+        private set
+    var piOnly by mutableStateOf(store.piOnly)
+        private set
     var soundLookaheadMs by mutableStateOf(store.soundLookaheadMs)
         private set
     var soundOn by mutableStateOf(online && EngineSoundService.current != null)
@@ -1996,6 +2000,18 @@ class MainViewModel(
         holdRevs = on
         store.holdRevs = on
         soundCtl?.holdRevs = on
+    }
+
+    fun changeUsePi(on: Boolean) {
+        usePi = on
+        store.usePi = on
+        soundCtl?.usePi = on
+    }
+
+    fun changePiOnly(on: Boolean) {
+        piOnly = on
+        store.piOnly = on
+        soundCtl?.piOnly = on
     }
 
     fun changeGearshifts(on: Boolean) {
