@@ -71,9 +71,32 @@ class DriveEffects(private val sampleRate: Int, private val open: ((String) -> I
 
     private fun load(): Map<String, Clip>? {
         val opener = open ?: return null
-        return listOf("launch_build", "launch_bang", "boom", SHIFT_UP, SHIFT_DOWN, "reverse", "chime").mapNotNull { n ->
+        val loaded = listOf("launch_build", "launch_bang", "boom", SHIFT_UP, SHIFT_DOWN, "reverse", "chime").mapNotNull { n ->
             opener("effects/$n.wav")?.use { readWavStereo(it.readBytes()) }?.let { (l, r) -> n to Clip(l, r) }
         }.toMap().takeIf { it.isNotEmpty() }
+        loaded?.let { levelMatch(listOfNotNull(it[SHIFT_UP], it[SHIFT_DOWN])) }
+        return loaded
+    }
+
+    /**
+     * Brings [clips] to the same loudness (rms), that of the loudest: the two shift takes were
+     * made at different levels, so which one plays for which direction mustn't change how loud
+     * a shift is.
+     */
+    private fun levelMatch(clips: List<Clip>) {
+        fun rms(c: Clip): Float {
+            var e = 0.0
+            for (i in c.pcm.indices) e += (c.pcm[i] * c.pcm[i] + c.pcmR[i] * c.pcmR[i]) / 2.0
+            return kotlin.math.sqrt(e / max(1, c.pcm.size)).toFloat()
+        }
+        val levels = clips.map { rms(it) }
+        val target = levels.maxOrNull() ?: return
+        for ((c, l) in clips.zip(levels)) {
+            if (l <= 1e-6f) continue
+            val g = target / l
+            for (i in c.pcm.indices) c.pcm[i] *= g
+            if (c.pcmR !== c.pcm) for (i in c.pcmR.indices) c.pcmR[i] *= g
+        }
     }
 
     /**
