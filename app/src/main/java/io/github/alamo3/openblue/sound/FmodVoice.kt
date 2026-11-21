@@ -148,14 +148,9 @@ class FmodVoice(private val context: Context) : ExternalVoice {
     private fun updateCar(s: FmodSound, st: EngineState) {
         FmodNative.setParam(engine, "rpms", st.rpm)
         FmodNative.setParam(engine, "throttle", max(0f, st.load))
-        // one-shots: gear on every shift ("state" 0 up / 1 down), limiter on each fuel cut,
-        // backfire on a lift-off
+        // one-shots: limiter on each fuel cut, backfire on a lift-off. The bank's own "gear"
+        // event stays silent: every sound uses the same hydraulic shift sound (DriveEffects)
         if (shiftsSeen < 0) { shiftsSeen = st.shifts; downSeen = st.downshifts; liftSeen = st.liftOffs }
-        shots["gear"]?.let { g ->
-            val state = "state".takeIf { it in s.params["gear"].orEmpty() }
-            if (st.shifts != shiftsSeen) FmodNative.oneShot(g, state, 0f)
-            if (st.downshifts != downSeen) FmodNative.oneShot(g, state, 1f)
-        }
         val cut = st.cut == true
         if (cut && !wasCut) shots["limiter"]?.let { FmodNative.oneShot(it, null, 0f) }
         if (st.liftOffs != liftSeen) shots["backfire"]?.let { FmodNative.oneShot(it, "throttle".takeIf { "throttle" in s.params["backfire"].orEmpty() }, 0f) }

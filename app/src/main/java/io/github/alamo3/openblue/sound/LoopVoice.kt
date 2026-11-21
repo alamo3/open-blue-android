@@ -261,11 +261,12 @@ class LoopVoice(
         val chop = if (cutNow) 1f - LIMITER_CUT else 1f
         val targetMaster = volume * TRIM * s.norm * (0.6f + 0.4f * rpmNorm) * chop
 
-        // events: shift sound on upshifts, pops just after a lift-off, crackle on the overrun
+        // events: pops just after a lift-off, crackle on the overrun. The sets' own shift samples
+        // stay silent: every sound uses the same hydraulic shift sound (DriveEffects) instead
         if (shiftsSeen < 0) shiftsSeen = tShifts
-        if (tShifts != shiftsSeen) { shiftsSeen = tShifts; s.shiftUp?.pos = 0 }
+        if (tShifts != shiftsSeen) shiftsSeen = tShifts
         if (downshiftsSeen < 0) downshiftsSeen = tDownshifts
-        if (tDownshifts != downshiftsSeen) { downshiftsSeen = tDownshifts; s.shiftDown?.pos = 0 }
+        if (tDownshifts != downshiftsSeen) downshiftsSeen = tDownshifts
         if (liftOffsSeen < 0) liftOffsSeen = tLiftOffs
         if (tLiftOffs != liftOffsSeen && s.pops.isNotEmpty()) {
             liftOffsSeen = tLiftOffs
