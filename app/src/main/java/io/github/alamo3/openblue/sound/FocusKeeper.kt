@@ -21,6 +21,12 @@ import android.os.Looper
  * usual and this lets it go -- the engine keeps playing, and the music is never paused or
  * ducked by us. Not a transient "may duck" request: Android Auto treats that as a navigation
  * prompt and moves the sound to its narrow, bass-less guidance channel.
+ *
+ * "Playing" means a player that has started, not one that merely exists: music apps keep their
+ * player alive while paused, and counting those kept the engine from taking focus back after a
+ * pause -- silent until the music resumed. Android has no public "is it playing" for other
+ * apps' players, but each one's description carries its state ([PlayerState]); a player whose
+ * state can't be read counts as playing, so the engine never takes focus from live music.
  */
 class FocusKeeper(context: Context) {
     private val am = context.getSystemService(AudioManager::class.java)
@@ -69,10 +75,13 @@ class FocusKeeper(context: Context) {
         }
     }
 
-    /** Players settle in bursts (pause, release, next track): look once things are quiet. */
+    /**
+     * Players settle in bursts (pause, release, next track): look once things have been quiet
+     * for a moment -- long enough that the gap between two tracks isn't taken for a pause.
+     */
     private fun scheduleCheck() {
         main.removeCallbacks(checkNow)
-        main.postDelayed(checkNow, 400)
+        main.postDelayed(checkNow, SETTLE_MS)
     }
 
     private fun check() {
@@ -82,14 +91,37 @@ class FocusKeeper(context: Context) {
         held = am.requestAudioFocus(request) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
     }
 
-    /** Media players active right now besides our own engine track. */
+    /** Media players playing right now besides our own engine track (paused ones don't count). */
     private fun otherMediaPlaying(am: AudioManager): Boolean {
-        val media = am.activePlaybackConfigurations.count {
-            when (it.audioAttributes.usage) {
+        val playing = am.activePlaybackConfigurations.count {
+            val media = when (it.audioAttributes.usage) {
                 AudioAttributes.USAGE_MEDIA, AudioAttributes.USAGE_GAME, AudioAttributes.USAGE_UNKNOWN -> true
                 else -> false
             }
+            media && PlayerState.playing(it.toString())
         }
-        return media > 1        // one of them is the engine sound itself
+        return playing > 1      // one of them is the engine sound itself
+    }
+
+    private companion object {
+        const val SETTLE_MS = 1200L
+    }
+}
+
+/**
+ * Whether another app's player is playing, from its [AudioPlaybackConfiguration.toString]
+ * ("... state:started attr:..."; also paused / stopped / idle / released). Not a documented
+ * format, so anything it can't read counts as playing: then the engine leaves focus alone, as
+ * it always did.
+ */
+internal object PlayerState {
+    fun playing(description: String): Boolean {
+        val i = description.indexOf("state:")
+        if (i < 0) return true
+        val state = description.substring(i + 6).trimStart().takeWhile { it.isLetter() }.lowercase()
+        return when (state) {
+            "paused", "stopped", "idle", "released" -> false
+            else -> true        // "started", or something unknown: assume it's playing
+        }
     }
 }
