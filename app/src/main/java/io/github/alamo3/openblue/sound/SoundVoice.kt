@@ -9,6 +9,8 @@ import kotlin.math.pow
  * Plays whichever sound is chosen: a synthesized engine ([EngineVoice]), an EV sound
  * ([FutureVoice]) or a recorded engine / baked cinematic sound ([LoopVoice], whose sound files
  * [open] reads), plus the drive effects ([DriveEffects]) and a peak limiter on the way out.
+ * The layered sounds (Flat-6, Hypercar, Turbofan, Warp bubble) aren't played here but by the
+ * native engine ([SoundCore]), which has its own of all of that.
  */
 class SoundVoice(
     private val sampleRate: Int,
@@ -55,13 +57,6 @@ class SoundVoice(
     private val tiltL = Biq()
     private val tiltR = Biq()
     private var speedMix = 0f                     // 0..1: how far into the speed-aware mix
-    // the layered voices, made once (each costs CPU only while it's the one playing)
-    private val layered = mapOf(
-        EngineSound.Kind.FLAT6 to Flat6Voice(sampleRate),
-        EngineSound.Kind.HYPERCAR to HypercarVoice(sampleRate),
-        EngineSound.Kind.JET to JetVoice(sampleRate),
-        EngineSound.Kind.WARP to WarpVoice(sampleRate),
-    )
     // look-ahead limiter state (see limit())
     private val la = max(2, (LOOKAHEAD_SEC * sampleRate).toInt())
     private val delayL = FloatArray(la - 1)
@@ -78,6 +73,8 @@ class SoundVoice(
     private var limitGain = 1f
     private var cutGain = 1f
     private var chimed = false
+    /** The start-up chime has already played (the native engine played it): don't play it again. */
+    fun skipChime() { chimed = true }
     private var pitchMul = 1f
     private var shiftsSeen = -1
     private var downSeen = -1
@@ -122,7 +119,6 @@ class SoundVoice(
             engine.volume = v
             future.volume = v
             recorded.volume = v
-            for (l in layered.values) l.volume = v
         }
 
     fun set(state: EngineState) {
@@ -164,8 +160,6 @@ class SoundVoice(
                 // jets, which boom by themselves) make their own
                 launch = when {
                     k == EngineSound.Kind.BAKED && recorded.isJet -> "boom"
-                    k == EngineSound.Kind.JET -> "boom"
-                    k == EngineSound.Kind.WARP -> null          // makes its own (inflate, punch through)
                     !sound.isEngine -> "ev"
                     else -> null
                 },
@@ -196,10 +190,9 @@ class SoundVoice(
             EngineSound.Kind.PISTON -> { engine.render(out, frames); out.copyInto(outR, 0, 0, frames) }
             EngineSound.Kind.RECORDED, EngineSound.Kind.BAKED -> recorded.render(out, outR, frames)
             EngineSound.Kind.FMOD -> { out.fill(0f, 0, frames); outR.fill(0f, 0, frames) }   // its own output
+            // the layered sounds play in the native engine (SoundCore), not here
             EngineSound.Kind.FLAT6, EngineSound.Kind.HYPERCAR, EngineSound.Kind.JET, EngineSound.Kind.WARP -> {
-                val v = layered.getValue(k)
-                if (st != null) v.set(st, pedal ?: st.throttle, accel, motorRpm)
-                v.render(out, outR, frames)
+                out.fill(0f, 0, frames); outR.fill(0f, 0, frames)
             }
             else -> { future.render(out, frames); out.copyInto(outR, 0, 0, frames) }
         }

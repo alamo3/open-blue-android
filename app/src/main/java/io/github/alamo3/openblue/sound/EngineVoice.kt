@@ -73,11 +73,12 @@ enum class EngineSound(
     // Made with ElevenLabs sound effects (elevenlabs_sets.py in virtual-car-sound).
     FUTURE_EV("Future EV", Kind.BAKED, loopSet = "future_ev"),
     FIGHTER_JET("Fighter Jet", Kind.BAKED, loopSet = "fighter_jet"),
-    // Layered voices: several layers, each following its own control (see LayerDsp.kt).
-    FLAT6("Flat-6", Kind.FLAT6, Flat6Voice.IDLE, Flat6Voice.REDLINE),
-    HYPERCAR("Hypercar", Kind.HYPERCAR, HypercarVoice.IDLE, HypercarVoice.REDLINE),
-    TURBOFAN("Turbofan", Kind.JET, JetVoice.IDLE, JetVoice.REDLINE),
-    WARP("Warp bubble", Kind.WARP),
+    // Layered voices: the shared native sound engine (src/main/cpp/soundcore, see SoundCore),
+    // which the Raspberry Pi's player runs too. Rev ranges as its sound table (voices.cpp).
+    FLAT6("Flat-6", Kind.FLAT6, 900f, 8500f),
+    HYPERCAR("Hypercar", Kind.HYPERCAR, 1000f, 9000f),
+    TURBOFAN("Turbofan", Kind.JET, 1000f, 7000f),
+    WARP("Warp bubble", Kind.WARP, 900f, 6900f),
     // An imported FMOD sound set (which one: the fmodSet setting); see FmodVoice.
     FMOD("FMOD sound", Kind.FMOD, 1100f, 8500f),
     ;
@@ -85,7 +86,7 @@ enum class EngineSound(
     enum class Kind { STARSHIP, HYPERDRIVE, ION, CRUISER, PISTON, RECORDED, BAKED, FMOD, FLAT6, HYPERCAR, JET, WARP }
 
     val isEngine: Boolean get() = kind == Kind.PISTON || kind == Kind.RECORDED || kind == Kind.FMOD || kind == Kind.FLAT6
-    /** Layered voices ([LayeredVoice]). */
+    /** Layered voices: played by the native engine ([SoundCore]), gearbox and all. */
     val isLayered: Boolean get() = kind == Kind.FLAT6 || kind == Kind.HYPERCAR || kind == Kind.JET || kind == Kind.WARP
     /** Follows the gearbox (shift sound, the limiter's stutter): all but the warp bubble, which glides. */
     val hasGears: Boolean get() = kind != Kind.WARP

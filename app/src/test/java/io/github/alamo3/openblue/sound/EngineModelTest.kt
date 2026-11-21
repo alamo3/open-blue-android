@@ -77,8 +77,9 @@ class EngineModelTest {
     }
 
     @Test fun evSoundsStayInRange() {
-        // (baked voices play from asset files: LoopVoiceTest covers them)
-        for (kind in EngineSound.entries.filter { !it.isEngine && it.kind != EngineSound.Kind.BAKED }) {
+        // (baked voices play from asset files: LoopVoiceTest covers them; the layered ones play in
+        // the native engine, which virtual-car-sound/soundcore's tests cover)
+        for (kind in EngineSound.entries.filter { !it.isEngine && it.kind != EngineSound.Kind.BAKED && !it.isLayered }) {
             val voice = SoundVoice(48000).apply { sound = kind }
             val m = EngineModel()
             val buf = FloatArray(480)

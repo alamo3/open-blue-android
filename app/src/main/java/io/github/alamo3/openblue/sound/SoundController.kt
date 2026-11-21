@@ -39,7 +39,7 @@ data class SoundReadout(
     val waitingForPi: Boolean = false,
     /** The Pi link is on but Bluetooth permission is missing. */
     val piNoPermission: Boolean = false,
-    /** FMOD: what it's playing, or why it isn't. */
+    /** FMOD: what it's playing, or why it isn't (or why the native sound engine isn't). */
     val fmodStatus: String? = null,
     /** A test drive is driving the sound: its current stage (null when it isn't). */
     val testDrive: String? = null,
@@ -48,7 +48,8 @@ data class SoundReadout(
 /**
  * Runs the engine sound: the car's own data from the Raspberry Pi ([PiLink]: real speed and
  * pedal, read over OBD) when it's there, else phone sensors and GPS through [MotionFusion],
- * drive [EngineModel], which drives [SoundVoice] on a high-priority audio thread.
+ * drive [EngineModel], which drives [SoundVoice] on a high-priority audio thread -- or, for the
+ * layered sounds, the shared native engine ([SoundCore]).
  */
 class SoundController(
     private val context: Context,
@@ -299,6 +300,10 @@ class SoundController(
         val dct = Dct()
         val fmod = FmodVoice(context)
         val voice = SoundVoice(rate, fmod) { path -> runCatching { context.assets.open(path) }.getOrNull() }
+        // the layered sounds' engine: the shared native one (SoundCore), made on first use
+        var core: SoundCore? = null
+        var coreFailed = false
+        var chimed = false                               // whichever engine played first chimed
         val buf = FloatArray(frames * 2)                 // stereo, interleaved
         val dt = frames / rate.toFloat()
         var fade = 0f
@@ -366,21 +371,45 @@ class SoundController(
                 fmod.setId = if (s.kind == EngineSound.Kind.FMOD) fmodSet else null
                 // gearshifts on: every sound runs through the virtual dual-clutch gearbox (shift
                 // schedule, kickdown, cut and blip, launch slip), over the sound's own rev range
-                if (gearshifts && revThrottle == null) {
+                // (the layered sounds' is in the native engine, below)
+                if (gearshifts && revThrottle == null && SoundCore.soundId(s) == null) {
                     val (idle, red) = (if (s.kind == EngineSound.Kind.FMOD) fmod.revRange() else null) ?: (s.idleRpm to s.redline)
                     dct.idleRpm = idle
                     dct.redline = red
                     st = dct.step(dt, vPred * 3.6f, effortPedal ?: st.load, motorRpm)
                 }
-                voice.drive(pedal, car?.reversing == true, a, motorRpm)
-                // cornering: speed x yaw rate (the test drive's own corners while it runs)
-                voice.corner(cornering.lateralAccel(speedNow, td?.yawRate ?: cornering.yawRate))
-                voice.set(st)
+                val yaw = td?.yawRate ?: cornering.yawRate
                 // Fade in at the start and out at the end (or while measuring), so there's no click.
                 val target = if (stopping || muted || waitingForPi) 0f else 1f
                 fade = if (fade < target) minOf(target, fade + dt * 3f) else maxOf(target, fade - dt * 5f)
-                voice.volume = volume * fade
-                voice.renderStereo(buf, frames)
+                // The layered sounds play in the shared native engine (the one the Pi's player runs
+                // too): it has its own gearbox, hill effort, drive effects, mix and limiter, so it
+                // takes the car's inputs as they are.
+                val coreId = SoundCore.soundId(s)
+                if (coreId != null && core == null && !coreFailed) {
+                    core = SoundCore.open(context, rate)
+                    coreFailed = core == null
+                    if (chimed) core?.skipChime()
+                }
+                val nat = if (coreId != null) core else null
+                if (nat != null) {
+                    nat.setSound(coreId!!)
+                    nat.setGearshifts(gearshifts)
+                    nat.setVolume(volume * fade)
+                    nat.render(pedal, vPred, a, motorRpm, car?.reversing == true, yaw, revThrottle, buf, frames)
+                    if (!chimed) { chimed = true; voice.skipChime() }
+                    // what the screen shows: the native gearbox's
+                    st = st.copy(rpm = nat.rpm, gear = nat.gear, load = nat.load, limiter = nat.limiter)
+                    fmod.update(st, 0f, dt)                  // FMOD, if it was playing: quiet
+                } else {
+                    voice.drive(pedal, car?.reversing == true, a, motorRpm)
+                    // cornering: speed x yaw rate (the test drive's own corners while it runs)
+                    voice.corner(cornering.lateralAccel(speedNow, yaw))
+                    voice.set(st)
+                    voice.volume = volume * fade
+                    voice.renderStereo(buf, frames)
+                    if (!chimed) { chimed = true; core?.skipChime() }
+                }
                 if (clickRequested) {
                     clickRequested = false
                     // 6 ms of a bright tone: easy for the microphone to pick out.
@@ -412,7 +441,8 @@ class SoundController(
                         piCar = car,
                         waitingForPi = waitingForPi,
                         piNoPermission = usePi && pi.state == PiLink.State.OFF && !canUseBluetooth(),
-                        fmodStatus = if (s.kind == EngineSound.Kind.FMOD) (fmod.status ?: if (fmodSet == null) "No FMOD sound chosen" else "Starting FMOD…") else null,
+                        fmodStatus = if (SoundCore.soundId(s) != null && coreFailed) "The sound engine failed to load"
+                            else if (s.kind == EngineSound.Kind.FMOD) (fmod.status ?: if (fmodSet == null) "No FMOD sound chosen" else "Starting FMOD…") else null,
                         testDrive = td?.stage?.label,
                     )
                 }
@@ -422,6 +452,7 @@ class SoundController(
             runCatching { track.stop() }
             track.release()
             runCatching { fmod.stop() }
+            core?.close()
         }
     }
 }
