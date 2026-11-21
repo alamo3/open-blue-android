@@ -96,9 +96,24 @@ class EngineModelTest {
         val m = EngineModel(idleRpm = 900f, redline = 6900f)
         var st = m.update(dt, 0f, 0f, 1f)
         repeat(200) { st = m.update(dt, 0f, 0f, 1f) }
-        assertEquals(6900f, st.rpm, 1f)
         assertTrue(st.limiter)
         assertEquals(0, st.gear)
+        // held at the top, it bounces off the rev limiter: fuel cuts, revs dipping and recovering
+        var cuts = 0
+        var wasCut = false
+        var lo = 1e9f
+        var hi = 0f
+        repeat(100) {                                   // 1 s
+            st = m.update(dt, 0f, 0f, 1f)
+            if (st.cut == true && !wasCut) cuts++
+            wasCut = st.cut == true
+            lo = minOf(lo, st.rpm); hi = maxOf(hi, st.rpm)
+        }
+        assertTrue("$cuts cuts in a second", cuts in 10..13)
+        assertTrue("revs bounce ($lo..$hi)", hi > 6850f && lo < 6800f && lo > 6500f)
+        // let go a little below the top: no limiter
+        repeat(200) { st = m.update(dt, 0f, 0f, 0.8f) }
+        assertTrue(!st.limiter && st.cut != true)
     }
 
     @Test fun voiceStaysInRange() {

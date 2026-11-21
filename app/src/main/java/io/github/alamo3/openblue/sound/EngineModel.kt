@@ -32,6 +32,9 @@ data class EngineState(
     val throttle: Float = load,
 )
 
+/** "Rev it" slider: from here up, the revs sit on the rev limiter and bounce off it. */
+private const val REV_LIMITER_FROM = 0.95f
+
 /**
  * A virtual engine driven by the car's speed and how hard it's accelerating. By default it's
  * direct drive like the car itself: revs rise smoothly with speed, plus more the harder you
@@ -61,6 +64,7 @@ class EngineModel(
     private var pullPeak = 0f
     private var shiftHold = 0f
     private var load = 0f
+    private var revLimiterT = 0f
 
     /** Revs this gear would turn at this speed. */
     private fun gearRpm(g: Int, kmh: Float) = kmh * rpmPerKmh[g - 1]
@@ -163,11 +167,22 @@ class EngineModel(
         engaged = t > 0.02f
         if (was && !engaged && load > 0.3f && rpm > 2800f) liftOffs++
         load += ((if (engaged) t else 0f) - load) * min(1f, dt * 10f)
-        val target = idleRpm + (redline - idleRpm) * t
-        rpm = slew(rpm, target, dt, up = 6000f, down = 3500f)
-        val limiter = t > 0.98f
+        // Near the top of the slider it holds the revs against the rev limiter, which bounces
+        // them off the redline with fuel cuts (as the gearbox's limiter: Dct.LIMITER_HZ, -4 %).
+        var target = if (t >= REV_LIMITER_FROM) redline else idleRpm + (redline - idleRpm) * t
+        var limiter = false
+        var cut = false
+        if (t >= REV_LIMITER_FROM && rpm >= redline * 0.95f) {
+            limiter = true
+            revLimiterT += dt
+            cut = (revLimiterT * Dct.LIMITER_HZ * 2).toInt() % 2 == 1
+            if (cut) target = redline * (1f - Dct.LIMITER_DIP)
+        } else {
+            revLimiterT = 0f
+        }
+        rpm = slew(rpm, target, dt, up = 6000f, down = if (cut) 9000f else 3500f)
         val standIn = (rpm - idleRpm) / (redline - idleRpm) * 160f
-        return EngineState(rpm, load, 0, engaged, shifts, limiter, liftOffs, standIn)
+        return EngineState(rpm, load, 0, engaged, shifts, limiter, liftOffs, standIn, cut = cut)
     }
 
     private fun slew(from: Float, to: Float, dt: Float, up: Float, down: Float): Float {
