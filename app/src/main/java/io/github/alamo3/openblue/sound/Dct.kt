@@ -168,7 +168,7 @@ class Dct(var idleRpm: Float = 900f, var redline: Float = 7000f) {
                 // upshift; otherwise it shifts at the schedule's rpm
                 val upReady = if (pedal >= LIMITER_PEDAL) limiterT >= LIMITER_HOLD_SEC else here >= upRpm(pedalAvg)
                 if (g < GEARS && hold <= 0f && !slowing && !lifting && upReady &&
-                    gearRpm(g + 1, kmh) >= lugRpm(pedalAvg) * 0.9f
+                    gearRpm(g + 1, kmh) >= lugRpm(pedalAvg) * 1.1f      // lands clear of the downshift line
                 ) {
                     target = g + 1
                 } else if (g > 1) {

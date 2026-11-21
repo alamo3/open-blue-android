@@ -76,6 +76,18 @@ class DctTest {
         assertTrue("idling at a stop", s.last().st.rpm < 1000f)
     }
 
+    /** Every sound's rev range (synth, recorded, IONIQ N, FMOD, jets): gentle driving never hunts. */
+    @Test fun neverHuntsOverAnyRevRange() {
+        for ((idle, red) in listOf(900f to 6900f, 900f to 7000f, 1000f to 7000f, 2200f to 7000f, 1000f to 7500f, 1100f to 8500f)) {
+            for (p in listOf(0.15f, 0.25f, 0.4f, 0.6f)) {
+                val s = drive(Dct(idle, red), 20f) { _ -> p to 0f }
+                val seq = gearSequence(s)
+                assertTrue("$idle-$red rpm at ${(p * 100).toInt()} % pedal hunts: $seq",
+                    (1 until seq.size).all { seq[it] > seq[it - 1] })
+            }
+        }
+    }
+
     @Test fun flooredShiftsNearTheRedlineWithACut() {
         val box = Dct(900f, 7000f)
         val s = drive(box, 14f) { t -> (if (t < 1f) 0f else 1f) to 0f }
