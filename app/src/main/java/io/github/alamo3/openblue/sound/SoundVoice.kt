@@ -28,6 +28,9 @@ class SoundVoice(
         /** Pitch of non-engine sounds across the gearbox's rev range: idle .. redline. */
         private const val GEAR_PITCH_LOW = 0.92f
         private const val GEAR_PITCH_SPAN = 0.25f
+        /** Sounds that aren't engines, on each of the rev limiter's cuts: down to this level... */
+        private const val LIMITER_CUT_LEVEL = 0.35f
+        private const val LIMITER_EASE_SEC = 0.004f   // ...eased over about this long
     }
 
     private val engine = EngineVoice(sampleRate)
@@ -51,6 +54,7 @@ class SoundVoice(
     private var avgSum = la.toDouble()
     private var sampleIdx = 0L
     private var limitGain = 1f
+    private var cutGain = 1f
     private var chimed = false
     private var pitchMul = 1f
     private var shiftsSeen = -1
@@ -156,6 +160,18 @@ class SoundVoice(
             EngineSound.Kind.RECORDED, EngineSound.Kind.BAKED -> recorded.render(out, outR, frames)
             EngineSound.Kind.FMOD -> { out.fill(0f, 0, frames); outR.fill(0f, 0, frames) }   // its own output
             else -> { future.render(out, frames); out.copyInto(outR, 0, 0, frames) }
+        }
+        // the gearbox's rev limiter: engines chop on its fuel cuts themselves; the other sounds
+        // stutter with it here (a quick dip on each cut, eased so it doesn't click)
+        val cutTarget = if (!sound.isEngine && st?.cut == true) LIMITER_CUT_LEVEL else 1f
+        if (cutTarget < 1f || cutGain < 1f) {
+            val k = 1f / (LIMITER_EASE_SEC * sampleRate)
+            for (n in 0 until frames) {
+                cutGain += (cutTarget - cutGain) * k
+                out[n] *= cutGain
+                outR[n] *= cutGain
+            }
+            if (cutTarget == 1f && cutGain > 0.999f) cutGain = 1f
         }
         if (external != null && st != null) {
             // FMOD: same level, fades and ducking as the rest; silent when another sound is chosen

@@ -84,6 +84,13 @@ class DctTest {
         assertTrue("shifted ($ups)", ups.size >= 2)
         assertTrue("near the redline ($ups)", ups.all { it > 0.9f * 7000f })
         assertTrue("torque cut through the shift", s.any { it.st.shifting > 0.6f })
+        // floored, each gear runs into the rev limiter and bounces off it before the upshift
+        val upIdx = (1 until s.size).filter { s[it].st.shifts > s[it - 1].st.shifts }
+        for (i in upIdx) {
+            val before = s.subList(max(0, i - 12), i)                     // the last ~0.5 s
+            assertTrue("bounced off the limiter before the upshift at ${s[i].t} s",
+                before.count { it.st.cut == true } >= 2 && before.any { it.st.limiter })
+        }
         assertTrue("learned it's being driven hard (${box.sport})", box.sport > 0.8f)
         // launch: the clutch slips, holding the revs well up while the car gets going
         val pullingAway = s.first { it.kmh > 5f }

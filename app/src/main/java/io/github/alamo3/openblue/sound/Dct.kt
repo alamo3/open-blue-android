@@ -26,6 +26,9 @@ import kotlin.math.sin
  *  - **Reactive.** Kickdown on a deep, fast press: straight to the lowest gear that lands in the
  *    power band (under 75 % of the redline), skipping gears. A quick lift ("fast off") holds the gear for a moment instead of
  *    upshifting, ready to pull again. Braking downshifts, earlier the sportier.
+ *  - **Rev limiter.** Floored, it holds each gear into the limiter and bounces off it for a
+ *    moment ([LIMITER_HOLD_SEC]) before the upshift, as a sporty box held flat does; in top
+ *    gear it keeps bouncing. [EngineState.limiter] / [EngineState.cut] say when.
  *  - **Shifts.** Upshifts hand over in 0.10-0.30 s with a torque dip (deep and sharp at full
  *    load, barely there when light); downshifts blip the throttle to match revs.
  *  - **Launch.** Pulling away the clutch slips: the engine sits at a launch rpm (higher the
@@ -51,6 +54,9 @@ class Dct(var idleRpm: Float = 900f, var redline: Float = 7000f) {
         const val TORQUE_SMOOTH_SEC = 0.04f
         const val OVERRUN_KMH = 6f
         const val LIMITER_HZ = 12f
+        const val LIMITER_PEDAL = 0.9f         // floored: run into the limiter before upshifting...
+        const val LIMITER_HOLD_SEC = 0.3f      // ...and bounce off it this long (~3-4 cuts)
+        const val LIMITER_DIP = 0.04f          // each cut drops the revs this much
 
         private fun lerp(a: Float, b: Float, t: Float) = a + (b - a) * t.coerceIn(0f, 1f)
         private fun smoothstep(t: Float): Float { val x = t.coerceIn(0f, 1f); return x * x * (3 - 2 * x) }
@@ -157,7 +163,11 @@ class Dct(var idleRpm: Float = 900f, var redline: Float = 7000f) {
                 for (c in 1 until g) if (gearRpm(c, kmh) < limit) { target = c; break }
             } else if (sinceShift >= MIN_GEAR_SEC) {
                 val slowing = accel < -0.5f && pedal < 0.2f
-                if (g < GEARS && hold <= 0f && !slowing && here >= upRpm(pedalAvg) &&
+                val lifting = pedalRate < -1.5f            // mid-lift: never upshift on the way off
+                // floored, it holds the gear into the rev limiter and bounces off it before the
+                // upshift; otherwise it shifts at the schedule's rpm
+                val upReady = if (pedal >= LIMITER_PEDAL) limiterT >= LIMITER_HOLD_SEC else here >= upRpm(pedalAvg)
+                if (g < GEARS && hold <= 0f && !slowing && !lifting && upReady &&
                     gearRpm(g + 1, kmh) >= lugRpm(pedalAvg) * 0.9f
                 ) {
                     target = g + 1
@@ -199,7 +209,7 @@ class Dct(var idleRpm: Float = 900f, var redline: Float = 7000f) {
         if (limiter) {
             limiterT += dt
             cut = (limiterT * LIMITER_HZ * 2).toInt() % 2 == 1
-            if (cut) target = r * 0.96f
+            if (cut) target = r * (1f - LIMITER_DIP)
         } else {
             limiterT = 0f
         }
