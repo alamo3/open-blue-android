@@ -13,8 +13,9 @@ import kotlin.math.min
  *    make their own launch)
  *  - reverse: the reversing pad and ping, looping while the car is in reverse (the car's
  *    own data from the Pi); the main sound ducks right down meanwhile
- *  - gearshifts: the hydraulic shift sound on every shift of the gearbox ([Dct]), with a
- *    brief duck of the main sound on upshifts for sounds that have no torque cut of their own
+ *  - gearshifts: the hydraulic shift sound on shifts of the gearbox ([Dct]) made while driving
+ *    hard (pedal past 55 %, full by 85 %), with a brief duck of the main sound on upshifts for
+ *    sounds that have no torque cut of their own
  *
  * Pure Kotlin apart from [open]; with no [open] it plays nothing.
  */
@@ -32,6 +33,8 @@ class DriveEffects(private val sampleRate: Int, private val open: ((String) -> I
         const val SHIFT_DUCK = 0.75f          // a gentle dip under the shift sound, not a cut
         const val SHIFT_DUCK_SEC = 0.18f
         const val REVERSE_DUCK = 0.2f
+        const val SHIFT_FROM_PEDAL = 0.55f    // the shift sound only when driven hard: none below...
+        const val SHIFT_FULL_PEDAL = 0.85f    // ...full from here
         const val SHIFT_GAIN = 3f             // the gearshift sound sits over the engine, not under it
         const val LAUNCH_GAIN = 1.8f          // launches (build, bang, boom): over the engine too
         // crossed on purpose: the "down" take sounds right going up, and the other way round
@@ -41,7 +44,10 @@ class DriveEffects(private val sampleRate: Int, private val open: ((String) -> I
     }
 
     /** A sound: [pcm] left, [pcmR] right (the same array for a mono file). */
-    private class Clip(val pcm: FloatArray, val pcmR: FloatArray) { var pos = -1.0 }
+    private class Clip(val pcm: FloatArray, val pcmR: FloatArray) {
+        var pos = -1.0
+        var level = 1f
+    }
 
     private var clips: Map<String, Clip>? = null
     private var loadTried = false
@@ -132,16 +138,22 @@ class DriveEffects(private val sampleRate: Int, private val open: ((String) -> I
         duck = (if (reverse) REVERSE_DUCK else 1f) * (if (duckT > 0f) SHIFT_DUCK else 1f)
     }
 
-    private fun fire(name: String) {
-        clips?.get(name)?.pos = 0.0
+    private fun fire(name: String, level: Float = 1f) {
+        clips?.get(name)?.let { it.pos = 0.0; it.level = level }
     }
 
     /**
-     * The hydraulic gearshift sound, on a shift of the gearbox. [duck] dips the main sound
-     * briefly under an upshift, for sounds with no torque cut of their own.
+     * The hydraulic gearshift sound, on a shift of the gearbox -- only when it's being driven
+     * hard: [effort] is the pedal (0..1); none below [SHIFT_FROM_PEDAL], fading in to full by
+     * [SHIFT_FULL_PEDAL], so ordinary shifts are just the change in the sound itself. [duck]
+     * dips the main sound briefly under an upshift that plays it, for sounds with no torque
+     * cut of their own.
      */
-    fun shift(up: Boolean, duck: Boolean = false) {
-        fire(if (up) SHIFT_UP else SHIFT_DOWN)
+    fun shift(up: Boolean, effort: Float, duck: Boolean = false) {
+        val x = ((effort - SHIFT_FROM_PEDAL) / (SHIFT_FULL_PEDAL - SHIFT_FROM_PEDAL)).coerceIn(0f, 1f)
+        val level = x * x * (3 - 2 * x)
+        if (level <= 0f) return
+        fire(if (up) SHIFT_UP else SHIFT_DOWN, level)
         if (up && duck) duckT = SHIFT_DUCK_SEC
     }
 
@@ -177,8 +189,8 @@ class DriveEffects(private val sampleRate: Int, private val open: ((String) -> I
                             "launch_build", "launch_bang", "boom" -> LAUNCH_GAIN
                             else -> 1f
                         }
-                        x += sample(clip.pcm, clip.pos) * g
-                        xr += sample(clip.pcmR, clip.pos) * g
+                        x += sample(clip.pcm, clip.pos) * g * clip.level
+                        xr += sample(clip.pcmR, clip.pos) * g * clip.level
                         clip.pos += step
                         if (clip.pos >= clip.pcm.size - 1) clip.pos = -1.0
                     }

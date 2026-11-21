@@ -141,11 +141,12 @@ class SoundVoice(
             pitchMul += (pitchTarget - pitchMul) * kotlin.math.min(1f, bdt / 0.03f)
             recorded.pitchMul = pitchMul
             future.pitchMul = pitchMul
-            // every gearbox shift of every sound gets the shift sound; sounds without a torque
-            // cut of their own (not engines) dip briefly under the upshift
+            // gearbox shifts made while driving hard get the shift sound (DriveEffects.shift decides
+            // by the pedal); sounds without a torque cut of their own (not engines) dip under it
             if (st.gear >= 1) {
-                if (shiftsSeen >= 0 && st.shifts != shiftsSeen) effects.shift(up = true, duck = !sound.isEngine)
-                if (downSeen >= 0 && st.downshifts != downSeen) effects.shift(up = false)
+                val effort = pedal ?: st.throttle
+                if (shiftsSeen >= 0 && st.shifts != shiftsSeen) effects.shift(up = true, effort = effort, duck = !sound.isEngine)
+                if (downSeen >= 0 && st.downshifts != downSeen) effects.shift(up = false, effort = effort)
             }
             shiftsSeen = st.shifts
             downSeen = st.downshifts

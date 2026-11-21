@@ -67,24 +67,27 @@ class DriveEffectsTest {
         }
     }
 
-    /** Every gearbox shift of an engine sound plays the shift sound. */
-    @Test fun gearshiftsPlayTheShiftSound() {
+    /** Shifts made while driving hard play the shift sound; ordinary ones don't. */
+    @Test fun hardShiftsPlayTheShiftSound() {
         if (!File(assets, "effects/shift_cin_up.wav").exists()) return
-        fun energyAfter(shift: Boolean): Double {
+        fun energyAfter(shift: Boolean, pedal: Float): Double {
             val v = SoundVoice(48000, open = opener()).apply { sound = EngineSound.V8; volume = 0.3f }
             val buf = FloatArray(960)                  // 480 stereo frames, as the app plays them
             fun block(shifts: Int): Double {
-                v.drive(0.5f, false)
-                v.set(EngineState(3000f, 0.5f, 2, true, shifts, false, speedKmh = 40f))
+                v.drive(pedal, false)                  // the pedal decides whether the shift sound plays...
+                v.set(EngineState(3000f, 0.5f, 2, true, shifts, false, speedKmh = 40f))   // ...the engine stays the same
                 v.renderStereo(buf)
                 return buf.sumOf { (it * it).toDouble() }
             }
             repeat(1000) { block(0) }                // past the start-up chime
             return (0 until 50).sumOf { block(if (shift) 1 else 0) }   // the next 0.5 s (the hit lands ~0.12 s in)
         }
-        val with = energyAfter(true)
-        val without = energyAfter(false)
-        assertTrue("shift sound heard (${"%.1f".format(10 * kotlin.math.log10(with / without))} dB)", with > without * 1.5)
+        fun db(a: Double, b: Double) = "%.1f".format(10 * kotlin.math.log10(a / b))
+        val hard = energyAfter(true, 0.9f) to energyAfter(false, 0.9f)
+        assertTrue("shift sound heard when driving hard (${db(hard.first, hard.second)} dB)", hard.first > hard.second * 1.5)
+        val light = energyAfter(true, 0.3f) to energyAfter(false, 0.3f)
+        // (the engine's own ignition cut on the upshift makes it a little quieter, if anything)
+        assertTrue("no shift sound at a light pedal (${db(light.first, light.second)} dB)", light.first <= light.second * 1.01)
     }
 
     /** The EV launch: the build on hard acceleration; the bang at its end only when floored. */
