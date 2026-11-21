@@ -10,8 +10,9 @@ import kotlin.math.pow
  * Plays an imported FMOD sound set ([FmodSound]) with the FMOD Studio runtime -- the sound
  * designer's own events, as the game plays them:
  *
- *  - a car: its looping engine event driven by rpms and throttle from [Drivetrain], plus its
- *    gear, limiter and backfire one-shots on shifts, fuel cuts and lift-offs
+ *  - a car: its looping engine event driven by rpms and throttle from the gearbox ([Dct]), plus its
+ *    limiter and backfire one-shots on fuel cuts and lift-offs (its own gear one-shot stays
+ *    silent: every sound shares the hydraulic shift sound)
  *  - a jet: its looping layers driven by a turbofan spool (the pedal sets the target engine
  *    speed, the engine winds up slowly and down a little faster), an afterburner that lights
  *    near full pedal once spooled up, road speed as airspeed, and its boom on a hard launch

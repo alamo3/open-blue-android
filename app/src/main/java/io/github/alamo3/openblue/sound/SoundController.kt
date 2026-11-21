@@ -282,7 +282,7 @@ class SoundController(
             .build()
 
         val model = EngineModel()
-        val drivetrain = Drivetrain()
+        val dct = Dct()
         val fmod = FmodVoice(context)
         val voice = SoundVoice(rate, fmod) { path -> runCatching { context.assets.open(path) }.getOrNull() }
         val buf = FloatArray(frames * 2)                 // stereo, interleaved
@@ -304,7 +304,8 @@ class SoundController(
                     model.redline = s.redline
                 }
                 model.holdRevs = holdRevs
-                model.gearshifts = gearshifts && s.isEngine
+                // the gearbox is the DCT's (below), for every sound: the model only reads the car
+                model.gearshifts = false
 
                 // The car's own data when the Pi has it; the phone's estimate otherwise.
                 val car = if (usePi && pi.fresh) pi.latest else null
@@ -343,15 +344,14 @@ class SoundController(
                 val vPred = max(0f, speedNow + a * ahead)
 
                 var st = model.update(dt, vPred, aPred, revThrottle, pedal)
-                // recorded engines with gearshifts: the Pi's drivetrain (shift cut, blip, limiter)
                 fmod.setId = if (s.kind == EngineSound.Kind.FMOD) fmodSet else null
-                // recorded engines and FMOD sounds (cars, and jets with gearshifts) use the drivetrain
-                val drivetrainSound = s.kind == EngineSound.Kind.RECORDED || s.kind == EngineSound.Kind.FMOD
-                if (drivetrainSound && model.gearshifts && revThrottle == null) {
+                // gearshifts on: every sound runs through the virtual dual-clutch gearbox (shift
+                // schedule, kickdown, cut and blip, launch slip), over the sound's own rev range
+                if (gearshifts && revThrottle == null) {
                     val (idle, red) = (if (s.kind == EngineSound.Kind.FMOD) fmod.revRange() else null) ?: (s.idleRpm to s.redline)
-                    drivetrain.idleRpm = idle
-                    drivetrain.redline = red
-                    st = drivetrain.step(dt, vPred * 3.6f, pedal ?: st.load)
+                    dct.idleRpm = idle
+                    dct.redline = red
+                    st = dct.step(dt, vPred * 3.6f, pedal ?: st.load, car?.motorRpm ?: 0)
                 }
                 voice.drive(pedal, car?.reversing == true)
                 voice.set(st)

@@ -13,8 +13,8 @@ import kotlin.math.min
  *    make their own launch)
  *  - reverse: the reversing pad and ping, looping while the car is in reverse (the car's
  *    own data from the Pi); the main sound ducks right down meanwhile
- *  - virtual gears (cinematic sounds): 1->2 at 30 km/h, 2->3 at 60 and so on; pitch climbs
- *    8 % through each gear and drops back on the upshift, with a thump and a brief duck
+ *  - gearshifts: the hydraulic shift sound on every shift of the gearbox ([Dct]), with a
+ *    brief duck of the main sound on upshifts for sounds that have no torque cut of their own
  *
  * Pure Kotlin apart from [open]; with no [open] it plays nothing.
  */
@@ -29,9 +29,6 @@ class DriveEffects(private val sampleRate: Int, private val open: ((String) -> I
         const val LAUNCH_BUILD_PEDAL = 0.75f
         const val LAUNCH_BANG_PEDAL = 0.9f
         const val EV_LAUNCH_COOLDOWN_SEC = 5f
-        val GEAR_SHIFT_KMH = floatArrayOf(30f, 60f, 90f, 120f)
-        const val GEAR_HYSTERESIS_KMH = 2.5f
-        const val GEAR_PITCH_DEPTH = 0.08f
         const val SHIFT_DUCK = 0.75f          // a gentle dip under the shift sound, not a cut
         const val SHIFT_DUCK_SEC = 0.18f
         const val REVERSE_DUCK = 0.2f
@@ -51,11 +48,6 @@ class DriveEffects(private val sampleRate: Int, private val open: ((String) -> I
 
     /** Multiply the main sound by this (ducks under shifts and reversing). */
     var duck = 1f
-        private set
-    /** Pitch multiplier for sounds with virtual gears. */
-    var pitchMul = 1f
-        private set
-    var gear = 1
         private set
     var reverse = false
         private set
@@ -100,16 +92,11 @@ class DriveEffects(private val sampleRate: Int, private val open: ((String) -> I
     }
 
     /**
-     * Once per audio block. [pedal] 0..1 (the car's own, else the estimated load); [launch]
-     * and [virtualGears] say which effects this sound uses.
-     */
-    /**
      * Once per audio block. [pedal] 0..1 (the car's own, else the estimated load); [launch] is
      * the kind of launch this sound makes ("ev": build, then a bang if floored; "boom": the
-     * sonic boom on a pedal stab) or null for none; [virtualGears] whether this sound gets the
-     * virtual gears.
+     * sonic boom on a pedal stab) or null for none.
      */
-    fun step(dt: Float, speedKmh: Float, pedal: Float, reversing: Boolean, launch: String?, virtualGears: Boolean) {
+    fun step(dt: Float, speedKmh: Float, pedal: Float, reversing: Boolean, launch: String?) {
         if (!loadTried) { loadTried = true; clips = runCatching { load() }.getOrNull() }
         reverse = reversing
 
@@ -141,27 +128,6 @@ class DriveEffects(private val sampleRate: Int, private val open: ((String) -> I
             if (buildLeft <= 0f && pedal >= LAUNCH_BANG_PEDAL && !reverse) fire("launch_bang")
         }
 
-        // virtual gears
-        if (virtualGears && !reverse) {
-            val upAt = if (gear <= GEAR_SHIFT_KMH.size) GEAR_SHIFT_KMH[gear - 1] else 1e9f
-            val downAt = if (gear > 1) GEAR_SHIFT_KMH[gear - 2] - GEAR_HYSTERESIS_KMH else -1f
-            if (speedKmh > upAt) {
-                gear++
-                duckT = SHIFT_DUCK_SEC
-                fire(SHIFT_UP)
-            } else if (speedKmh < downAt) {
-                gear--
-                fire(SHIFT_DOWN)
-            }
-            val lo = if (gear > 1) GEAR_SHIFT_KMH[gear - 2] else 0f
-            val hi = if (gear <= GEAR_SHIFT_KMH.size) GEAR_SHIFT_KMH[gear - 1] else lo + 40f
-            val frac = ((speedKmh - lo) / (hi - lo)).coerceIn(0f, 1f)
-            pitchMul = 1f - GEAR_PITCH_DEPTH + GEAR_PITCH_DEPTH * frac
-        } else {
-            gear = 1
-            pitchMul = 1f
-        }
-
         duckT = max(0f, duckT - dt)
         duck = (if (reverse) REVERSE_DUCK else 1f) * (if (duckT > 0f) SHIFT_DUCK else 1f)
     }
@@ -170,8 +136,14 @@ class DriveEffects(private val sampleRate: Int, private val open: ((String) -> I
         clips?.get(name)?.pos = 0.0
     }
 
-    /** The hydraulic gearshift sound, for a sound's own gearbox shifting. */
-    fun shift(up: Boolean) = fire(if (up) SHIFT_UP else SHIFT_DOWN)
+    /**
+     * The hydraulic gearshift sound, on a shift of the gearbox. [duck] dips the main sound
+     * briefly under an upshift, for sounds with no torque cut of their own.
+     */
+    fun shift(up: Boolean, duck: Boolean = false) {
+        fire(if (up) SHIFT_UP else SHIFT_DOWN)
+        if (up && duck) duckT = SHIFT_DUCK_SEC
+    }
 
     /** The start-up chime. */
     fun chime() = fire("chime")

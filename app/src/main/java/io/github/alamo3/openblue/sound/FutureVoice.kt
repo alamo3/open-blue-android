@@ -28,6 +28,9 @@ class FutureVoice(private val sampleRate: Int, seed: Int = 11) {
     @Volatile var kind: EngineSound.Kind = EngineSound.Kind.STARSHIP
     @Volatile var volume = 0.8f
 
+    /** Pitch multiplier from the gearbox's revs (1 without gearshifts); scales every oscillator. */
+    @Volatile var pitchMul = 1f
+
     @Volatile private var targetSpeed = 0f
     @Volatile private var targetLoad = 0f
     @Volatile private var targetEngaged = false
@@ -82,7 +85,7 @@ class FutureVoice(private val sampleRate: Int, seed: Int = 11) {
     }
 
     private fun osc(n: Int, hz: Float): Double {
-        phase[n] += hz / sr
+        phase[n] += hz * pitchMul / sr
         if (phase[n] >= 1.0) phase[n] -= 1.0
         return phase[n]
     }

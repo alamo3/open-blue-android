@@ -11,32 +11,6 @@ class DriveEffectsTest {
     private val dt = 480 / 48000f
     private fun opener(): (String) -> java.io.InputStream? = { p -> File(assets, p).takeIf { it.exists() }?.inputStream() }
 
-    @Test fun drivetrainShiftsAtThePisSpeeds() {
-        val d = Drivetrain(2200f, 7000f)
-        var kmh = 0f
-        val upAt = ArrayList<Float>()
-        var lastShifts = 0
-        var sawCut = false
-        while (kmh < 70f) {
-            val st = d.step(dt, kmh, 0.5f)
-            if (st.shifts != lastShifts) { upAt += kmh; lastShifts = st.shifts }
-            if (st.shifting > 0.5f) sawCut = true
-            kmh += 3f * 3.6f * dt                  // 3 m/s²
-        }
-        assertEquals(2, upAt.size)
-        assertEquals(30f, upAt[0], 0.5f)
-        assertEquals(60f, upAt[1], 0.5f)
-        assertTrue("torque cut through the shift", sawCut)
-        // lift off at speed: engine braking, and the lift-off counts (for pops)
-        var st = d.step(dt, 70f, 0f)
-        repeat(100) { st = d.step(dt, 70f, 0f) }
-        assertTrue("overrun ${st.overrun}", (st.overrun ?: 0f) > 0.2f)
-        // slow right down: downshifts
-        var k = 70f
-        while (k > 5f) { st = d.step(dt, k, 0f); k -= 4f * 3.6f * dt }
-        assertTrue("downshifted (${st.downshifts})", st.downshifts >= 2)
-    }
-
     private fun rms(x: FloatArray) = sqrt(x.sumOf { (it * it).toDouble() } / x.size)
 
     @Test fun launchAndReversePlay() {
@@ -73,7 +47,7 @@ class DriveEffectsTest {
         fun loudness(sound: EngineSound): Double {
             val v = SoundVoice(48000, open = opener()).apply { this.sound = sound; volume = 0.8f }
             val m = EngineModel(idleRpm = sound.idleRpm, redline = sound.redline, gearshifts = true)
-            val d = Drivetrain(sound.idleRpm, sound.redline)
+            val d = Dct(sound.idleRpm, sound.redline)
             val buf = FloatArray(480)
             var e = 0.0
             for (i in 0 until 800) {

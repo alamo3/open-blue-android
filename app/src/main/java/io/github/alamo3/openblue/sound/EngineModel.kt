@@ -19,7 +19,7 @@ data class EngineState(
     val liftOffs: Int = 0,
     /** Road speed, or for revving in place a stand-in that rises with the revs. */
     val speedKmh: Float = 0f,
-    // From [Drivetrain] (recorded engines with gearshifts); the defaults mean "not modelled".
+    // From [Dct] (any sound with gearshifts on); the defaults mean "not modelled".
     /** 0..1: engine braking off the pedal; null = work it out from [engaged] and speed. */
     val overrun: Float? = null,
     /** 0..1: how deep into a shift's torque cut. */

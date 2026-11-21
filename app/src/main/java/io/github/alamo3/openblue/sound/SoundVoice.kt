@@ -25,6 +25,9 @@ class SoundVoice(
         private const val CEILING = 0.89f          // output peaks never go above this (-1 dBFS)
         private const val LOOKAHEAD_SEC = 0.003f   // the limiter sees peaks coming this early
         private const val LIMIT_RELEASE_SEC = 0.25f
+        /** Pitch of non-engine sounds across the gearbox's rev range: idle .. redline. */
+        private const val GEAR_PITCH_LOW = 0.92f
+        private const val GEAR_PITCH_SPAN = 0.25f
     }
 
     private val engine = EngineVoice(sampleRate)
@@ -125,16 +128,23 @@ class SoundVoice(
                     !sound.isEngine -> "ev"
                     else -> null
                 },
-                virtualGears = k == EngineSound.Kind.BAKED,
             )
-            // virtual gears: the pitch glides to the new gear (~120 ms) rather than jumping
+            // gearshifts on (gear >= 1): the sounds that aren't engines take their pitch from the
+            // gearbox's revs, climbing through each gear and dropping on the upshift. (Engines
+            // follow the revs themselves.) The gearbox already moves the revs smoothly through a
+            // shift, so this only takes the edge off block steps.
             val bdt = frames / sampleRate.toFloat()
-            pitchMul += (effects.pitchMul - pitchMul) * kotlin.math.min(1f, bdt / 0.12f)
+            val pitchTarget = if (st.gear >= 1 && !sound.isEngine) {
+                val norm = ((st.rpm - sound.idleRpm) / (sound.redline - sound.idleRpm)).coerceIn(0f, 1f)
+                GEAR_PITCH_LOW + GEAR_PITCH_SPAN * norm
+            } else 1f
+            pitchMul += (pitchTarget - pitchMul) * kotlin.math.min(1f, bdt / 0.03f)
             recorded.pitchMul = pitchMul
-            // every gearbox shift of an engine sound (synth, recorded, FMOD car or jet) gets the
-            // shift sound; gear >= 1 means gearshifts are on
-            if (sound.isEngine && st.gear >= 1) {
-                if (shiftsSeen >= 0 && st.shifts != shiftsSeen) effects.shift(up = true)
+            future.pitchMul = pitchMul
+            // every gearbox shift of every sound gets the shift sound; sounds without a torque
+            // cut of their own (not engines) dip briefly under the upshift
+            if (st.gear >= 1) {
+                if (shiftsSeen >= 0 && st.shifts != shiftsSeen) effects.shift(up = true, duck = !sound.isEngine)
                 if (downSeen >= 0 && st.downshifts != downSeen) effects.shift(up = false)
             }
             shiftsSeen = st.shifts
