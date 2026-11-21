@@ -37,8 +37,9 @@ class DriveEffects(private val sampleRate: Int, private val open: ((String) -> I
         const val REVERSE_DUCK = 0.2f
         const val SHIFT_GAIN = 3f             // the gearshift sound sits over the engine, not under it
         const val LAUNCH_GAIN = 1.8f          // launches (build, bang, boom): over the engine too
-        const val SHIFT_UP = "shift_cin_up"
-        const val SHIFT_DOWN = "shift_cin_down"
+        // crossed on purpose: the "down" take sounds right going up, and the other way round
+        const val SHIFT_UP = "shift_cin_down"
+        const val SHIFT_DOWN = "shift_cin_up"
         private const val ASSET_RATE = 48000
     }
 
