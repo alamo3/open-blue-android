@@ -353,7 +353,7 @@ class SoundController(
                     dct.redline = red
                     st = dct.step(dt, vPred * 3.6f, pedal ?: st.load, car?.motorRpm ?: 0)
                 }
-                voice.drive(pedal, car?.reversing == true)
+                voice.drive(pedal, car?.reversing == true, a, car?.motorRpm ?: 0)
                 voice.set(st)
                 // Fade in at the start and out at the end (or while measuring), so there's no click.
                 val target = if (stopping || muted || waitingForPi) 0f else 1f

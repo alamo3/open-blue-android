@@ -325,6 +325,10 @@ private fun soundBlurb(s: EngineSound) = when (s.kind) {
     EngineSound.Kind.FMOD -> "A game's own FMOD sound design (imported from your phone), played by FMOD Studio by Firelight Technologies Pty Ltd., " +
         "following a virtual gearbox: its engine, shifts, limiter and backfires."
     EngineSound.Kind.BAKED -> "A cinematic sound from the Raspberry Pi engine, recorded across the speed range: it glides with your speed and swells with the pedal."
+    EngineSound.Kind.FLAT6 -> "A boxer six built cylinder by cylinder: its exhaust pulses, intake howl and overrun crackle follow the gearbox's revs and your pedal."
+    EngineSound.Kind.HYPERCAR -> "An electric hypercar in layers: an aggressive tone that shifts with the gearbox over the car's own motor whine, a snarl under load, air with speed."
+    EngineSound.Kind.JET -> "A fighter's turbofan run through the gearbox: it spools up through each gear, buzzsaws at high power and lights the afterburner when floored."
+    EngineSound.Kind.WARP -> "A warp drive: an endless rising drone as you accelerate, a pulsing field, debris streaking past, and a jump to warp when you launch hard."
 }
 
 /** How hard the car is pulling, as a glowing ring. */

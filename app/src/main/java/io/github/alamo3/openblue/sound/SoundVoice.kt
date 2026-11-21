@@ -40,6 +40,15 @@ class SoundVoice(
     private var state: EngineState? = null
     @Volatile private var pedal: Float? = null
     @Volatile private var reversing = false
+    @Volatile private var accel = 0f
+    @Volatile private var motorRpm = 0f
+    // the layered voices, made once (each costs CPU only while it's the one playing)
+    private val layered = mapOf(
+        EngineSound.Kind.FLAT6 to Flat6Voice(sampleRate),
+        EngineSound.Kind.HYPERCAR to HypercarVoice(sampleRate),
+        EngineSound.Kind.JET to JetVoice(sampleRate),
+        EngineSound.Kind.WARP to WarpVoice(sampleRate),
+    )
     // look-ahead limiter state (see limit())
     private val la = max(2, (LOOKAHEAD_SEC * sampleRate).toInt())
     private val delayL = FloatArray(la - 1)
@@ -62,11 +71,14 @@ class SoundVoice(
 
     /**
      * The car's own pedal (0..1) and whether it's reversing, from the Raspberry Pi; null pedal
-     * when only the phone's sensors are available.
+     * when only the phone's sensors are available. [accel] (m/s², forward) and [motorRpm] (the
+     * car's own motor, 0 if unknown) feed the layered voices.
      */
-    fun drive(pedal: Float?, reversing: Boolean) {
+    fun drive(pedal: Float?, reversing: Boolean, accel: Float = 0f, motorRpm: Int = 0) {
         this.pedal = pedal
         this.reversing = reversing
+        this.accel = accel
+        this.motorRpm = kotlin.math.abs(motorRpm).toFloat()
     }
 
     var sound: EngineSound = EngineSound.STARSHIP
@@ -78,6 +90,7 @@ class SoundVoice(
                 EngineSound.Kind.PISTON -> engine.sound = v
                 EngineSound.Kind.RECORDED, EngineSound.Kind.BAKED -> recorded.setId = v.loopSet
                 EngineSound.Kind.FMOD -> {}
+                EngineSound.Kind.FLAT6, EngineSound.Kind.HYPERCAR, EngineSound.Kind.JET, EngineSound.Kind.WARP -> {}
                 else -> future.kind = v.kind
             }
         }
@@ -88,6 +101,7 @@ class SoundVoice(
             engine.volume = v
             future.volume = v
             recorded.volume = v
+            for (l in layered.values) l.volume = v
         }
 
     fun set(state: EngineState) {
@@ -129,6 +143,8 @@ class SoundVoice(
                 // jets, which boom by themselves) make their own
                 launch = when {
                     k == EngineSound.Kind.BAKED && recorded.isJet -> "boom"
+                    k == EngineSound.Kind.JET -> "boom"
+                    k == EngineSound.Kind.WARP -> null          // makes its own (inflate, punch through)
                     !sound.isEngine -> "ev"
                     else -> null
                 },
@@ -147,7 +163,7 @@ class SoundVoice(
             future.pitchMul = pitchMul
             // gearbox shifts made while driving hard get the shift sound (DriveEffects.shift decides
             // by the pedal); sounds without a torque cut of their own (not engines) dip under it
-            if (st.gear >= 1) {
+            if (st.gear >= 1 && sound.hasGears) {
                 val effort = pedal ?: st.throttle
                 if (shiftsSeen >= 0 && st.shifts != shiftsSeen) effects.shift(up = true, effort = effort, duck = !sound.isEngine)
                 if (downSeen >= 0 && st.downshifts != downSeen) effects.shift(up = false, effort = effort)
@@ -159,11 +175,16 @@ class SoundVoice(
             EngineSound.Kind.PISTON -> { engine.render(out, frames); out.copyInto(outR, 0, 0, frames) }
             EngineSound.Kind.RECORDED, EngineSound.Kind.BAKED -> recorded.render(out, outR, frames)
             EngineSound.Kind.FMOD -> { out.fill(0f, 0, frames); outR.fill(0f, 0, frames) }   // its own output
+            EngineSound.Kind.FLAT6, EngineSound.Kind.HYPERCAR, EngineSound.Kind.JET, EngineSound.Kind.WARP -> {
+                val v = layered.getValue(k)
+                if (st != null) v.set(st, pedal ?: st.throttle, accel, motorRpm)
+                v.render(out, outR, frames)
+            }
             else -> { future.render(out, frames); out.copyInto(outR, 0, 0, frames) }
         }
         // the gearbox's rev limiter: engines chop on its fuel cuts themselves; the other sounds
         // stutter with it here (a quick dip on each cut, eased so it doesn't click)
-        val cutTarget = if (!sound.isEngine && st?.cut == true) LIMITER_CUT_LEVEL else 1f
+        val cutTarget = if (!sound.isEngine && sound.hasGears && st?.cut == true) LIMITER_CUT_LEVEL else 1f
         if (cutTarget < 1f || cutGain < 1f) {
             val k = 1f / (LIMITER_EASE_SEC * sampleRate)
             for (n in 0 until frames) {
