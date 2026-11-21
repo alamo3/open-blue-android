@@ -3,6 +3,7 @@ package io.github.alamo3.openblue.sound
 import java.io.InputStream
 import kotlin.math.abs
 import kotlin.math.max
+import kotlin.math.pow
 
 /**
  * Plays whichever sound is chosen: a synthesized engine ([EngineVoice]), an EV sound
@@ -31,6 +32,13 @@ class SoundVoice(
         /** Sounds that aren't engines, on each of the rev limiter's cuts: down to this level... */
         private const val LIMITER_CUT_LEVEL = 0.35f
         private const val LIMITER_EASE_SEC = 0.004f   // ...eased over about this long
+        private const val CORNER_LEAN = 0.3f           // how far the sound leans in a hard corner...
+        private const val CORNER_FULL_MS2 = 5.9f       // ...at this cornering force (0.6 g)
+        private val SQRT2 = kotlin.math.sqrt(2f)
+        private const val SPEED_FROM_KMH = 30f
+        private const val SPEED_FULL_KMH = 120f
+        private const val SPEED_GAIN_DB = 3f
+        private const val SPEED_BRIGHT_DB = 2f
     }
 
     private val engine = EngineVoice(sampleRate)
@@ -42,6 +50,11 @@ class SoundVoice(
     @Volatile private var reversing = false
     @Volatile private var accel = 0f
     @Volatile private var motorRpm = 0f
+    @Volatile private var lateralG = 0f
+    private var lean = 0f
+    private val tiltL = Biq()
+    private val tiltR = Biq()
+    private var speedMix = 0f                     // 0..1: how far into the speed-aware mix
     // the layered voices, made once (each costs CPU only while it's the one playing)
     private val layered = mapOf(
         EngineSound.Kind.FLAT6 to Flat6Voice(sampleRate),
@@ -79,6 +92,14 @@ class SoundVoice(
         this.reversing = reversing
         this.accel = accel
         this.motorRpm = kotlin.math.abs(motorRpm).toFloat()
+    }
+
+    /**
+     * Cornering force (m/s², positive = cornering left, see [Cornering]): the sound leans gently
+     * toward the outside of the turn, as your body does.
+     */
+    fun corner(lateralAccel: Float) {
+        lateralG = lateralAccel
     }
 
     var sound: EngineSound = EngineSound.STARSHIP
@@ -196,11 +217,52 @@ class SoundVoice(
         }
         if (external != null && st != null) {
             // FMOD: same level, fades and ducking as the rest; silent when another sound is chosen
-            val level = if (k == EngineSound.Kind.FMOD) volume * effects.duck * OUTPUT_TRIM else 0f
+            // (its own output: the speed-aware lift as a level only)
+            val level = if (k == EngineSound.Kind.FMOD) volume * effects.duck * OUTPUT_TRIM * 10f.pow(SPEED_GAIN_DB * speedMix / 20f) else 0f
             external.update(st, level, frames / sampleRate.toFloat())
         }
         effects.mix(out, outR, frames, volume)
+        speedMix(out, outR, frames, st?.speedKmh ?: 0f)
+        lean(out, outR, frames)
         limit(out, outR, frames)
+    }
+
+    /**
+     * At speed, road and wind noise rise: the sound comes up a little to stay present, up to
+     * [SPEED_GAIN_DB] louder and [SPEED_BRIGHT_DB] brighter (above 3 kHz) by [SPEED_FULL_KMH],
+     * from nothing at [SPEED_FROM_KMH]; eased over about a second. Town driving is untouched.
+     */
+    private fun speedMix(out: FloatArray, outR: FloatArray, frames: Int, kmh: Float) {
+        val target = ((kmh - SPEED_FROM_KMH) / (SPEED_FULL_KMH - SPEED_FROM_KMH)).coerceIn(0f, 1f)
+        speedMix += (target - speedMix) * kotlin.math.min(1f, frames / (1f * sampleRate))
+        if (speedMix < 1e-3f) return
+        tiltL.highShelf(3000f, 0.707f, SPEED_BRIGHT_DB * speedMix, sampleRate)
+        tiltR.highShelf(3000f, 0.707f, SPEED_BRIGHT_DB * speedMix, sampleRate)
+        val g = 10f.pow(SPEED_GAIN_DB * speedMix / 20f)
+        for (n in 0 until frames) {
+            out[n] = tiltL.process(out[n]) * g
+            outR[n] = tiltR.process(outR[n]) * g
+        }
+    }
+
+    /**
+     * Leans the whole sound toward the outside of a corner: up to [CORNER_LEAN] of the way at
+     * [CORNER_FULL_MS2] (about 0.6 g), with an equal-power balance so it doesn't get louder or
+     * quieter, eased over ~0.2 s.
+     */
+    private fun lean(out: FloatArray, outR: FloatArray, frames: Int) {
+        // + = to the right: cornering left (positive lateral force) leans right, to the outside
+        val target = (lateralG / CORNER_FULL_MS2).coerceIn(-1f, 1f) * CORNER_LEAN
+        val dt = frames / sampleRate.toFloat()
+        val l0 = lean
+        lean += (target - lean) * kotlin.math.min(1f, dt / 0.2f)
+        if (kotlin.math.abs(l0) < 1e-4f && kotlin.math.abs(lean) < 1e-4f) return
+        for (n in 0 until frames) {
+            val p = l0 + (lean - l0) * n / frames
+            val a = (Math.PI / 4 * (1 + p)).toFloat()
+            out[n] *= SQRT2 * kotlin.math.cos(a)
+            outR[n] *= SQRT2 * kotlin.math.sin(a)
+        }
     }
 
     /**

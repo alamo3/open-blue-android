@@ -9,7 +9,8 @@ import kotlin.math.pow
  * acceleration, motor rpm) until it's done. Idle, a gentle pull away to 40 km/h, then a hard pull
  * to 100 km/h, floored (a kickdown on the way, the rev limiter in each gear), a lift off the
  * pedal coasting on regen, braking to a stop,
- * and a moment at idle -- about 25 s. Speed comes from a rough IONIQ 5 (traction- then
+ * and a moment at idle -- about 25 s. It corners too (a left-hand bend pulling away, a long
+ * right-hander off the pedal), for the sound's lean. Speed comes from a rough IONIQ 5 (traction- then
  * power-limited, drag, one-pedal regen); the pedal moves as a foot would (~0.2 s end to end).
  */
 class TestDrive {
@@ -29,6 +30,8 @@ class TestDrive {
         const val SETTLE_SEC = 2f
         const val MOTOR_RPM_PER_KMH = 77.5f
         const val PEDAL_PER_SEC = 5f
+        const val BEND_LEFT_M = 40f
+        const val BEND_RIGHT_M = 150f
     }
 
     var stage = Stage.IDLE
@@ -43,6 +46,12 @@ class TestDrive {
     var accel = 0f
         private set
     val kmh: Float get() = speed * 3.6f
+    /**
+     * Yaw rate (rad/s, positive = turning left): a left-hand bend pulling away (radius
+     * [BEND_LEFT_M], 20-35 km/h) and a long right-hander off the pedal ([BEND_RIGHT_M]).
+     */
+    var yawRate = 0f
+        private set
     val motorRpm: Int get() = (kmh * MOTOR_RPM_PER_KMH).toInt()
     val done: Boolean get() = stage == Stage.DONE
     private var inStage = 0f
@@ -66,6 +75,13 @@ class TestDrive {
         val before = speed
         speed = max(0f, speed + (push - drag - regen - brake) * dt)
         accel = if (dt > 0f) (speed - before) / dt else 0f
+        val radius = when {
+            stage == Stage.PULL_AWAY && kmh in 20f..35f -> BEND_LEFT_M
+            stage == Stage.LIFT -> -BEND_RIGHT_M
+            else -> 0f
+        }
+        val wantYaw = if (radius == 0f) 0f else speed / radius
+        yawRate += (wantYaw - yawRate) * min(1f, dt / 0.5f)               // eased into and out of a bend
         val next = when (stage) {
             Stage.IDLE -> if (inStage >= IDLE_SEC) Stage.PULL_AWAY else null
             Stage.PULL_AWAY -> if (kmh >= GENTLE_TO_KMH) Stage.HARD else null

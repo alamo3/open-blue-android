@@ -156,6 +156,35 @@ class DctTest {
         assertTrue("no upshift while braking", braking.last().st.shifts == braking.first().st.shifts)
     }
 
+    /** Just started, it idles fast and settles over about a minute; a real idle is never quite still. */
+    @Test fun idleIsFastWhenColdAndNeverQuiteSteady() {
+        val box = Dct(900f, 7000f)
+        var st = box.step(dt, 0f, 0f)
+        repeat((2f / dt).toInt()) { st = box.step(dt, 0f, 0f) }
+        assertTrue("fast idle just after starting (${st.rpm})", st.rpm in 1100f..1300f)
+        repeat((90f / dt).toInt()) { st = box.step(dt, 0f, 0f) }
+        var lo = 1e9f; var hi = 0f
+        repeat((10f / dt).toInt()) { st = box.step(dt, 0f, 0f); lo = minOf(lo, st.rpm); hi = maxOf(hi, st.rpm) }
+        println("idle after 90 s: $lo..$hi rpm")
+        assertTrue("settled near idle ($lo..$hi)", lo > 860f && hi < 950f)
+        assertTrue("wanders a little ($lo..$hi)", hi - lo > 10f)
+    }
+
+    /** A kickdown under power flares the revs past the new gear before the clutch takes them. */
+    @Test fun powerDownshiftFlares() {
+        val box = Dct(900f, 7000f)
+        repeat((60f / dt).toInt()) { box.step(dt, 60f, 0.2f) }                // settled cruising
+        val before = box.gear
+        var peakOver = 0f
+        repeat((1f / dt).toInt()) {
+            val st = box.step(dt, 60f, 1f)                                    // floored: kickdown
+            if (box.gear < before) peakOver = maxOf(peakOver, st.rpm / box.gearRpm(box.gear, 60f))
+        }
+        println("kickdown from $before to ${box.gear}: revs peaked %.1f %% over the new gear".format((peakOver - 1) * 100))
+        assertTrue("kicked down ($before -> ${box.gear})", box.gear < before)
+        assertTrue("flared (${peakOver})", peakOver > 1.02f)
+    }
+
     @Test fun learnsTheCarsRatioFromMotorRpm() {
         val box = Dct()
         var st = box.step(dt, 60f, 0.3f, 0)

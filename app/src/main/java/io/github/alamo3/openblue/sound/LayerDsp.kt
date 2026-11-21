@@ -113,6 +113,14 @@ internal class Biq {
         return this
     }
 
+    fun highShelf(f: Float, q: Float, db: Float, sr: Int): Biq {
+        val w = w(f, sr); val c = cos(w); val al = sin(w) / (2 * q); val a = 10.0.pow(db / 40.0)
+        val s = 2 * sqrt(a) * al
+        norm(a * ((a + 1) + (a - 1) * c + s), -2 * a * ((a - 1) + (a + 1) * c), a * ((a + 1) + (a - 1) * c - s),
+            (a + 1) - (a - 1) * c + s, 2 * ((a - 1) - (a + 1) * c), (a + 1) - (a - 1) * c - s)
+        return this
+    }
+
     fun process(x: Float): Float {
         val y = b0 * x + z1
         z1 = b1 * x - a1 * y + z2

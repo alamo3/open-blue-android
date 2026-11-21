@@ -118,11 +118,16 @@ class SoundController(
     private var sensorThread: HandlerThread? = null
     private val gravity = floatArrayOf(0f, 0f, 9.81f)
     private var hasSensors = false
+    /** Cornering force: the car's speed x the phone gyroscope's yaw rate. */
+    private val cornering = Cornering()
+    /** Uphill / downhill: the pedal made heavier or lighter by how hard the car is working. */
+    private val effort = Effort()
 
     private val sensorListener = object : SensorEventListener {
         override fun onSensorChanged(e: SensorEvent) {
             when (e.sensor.type) {
                 Sensor.TYPE_GRAVITY -> e.values.copyInto(gravity, endIndex = 3)
+                Sensor.TYPE_GYROSCOPE -> cornering.onGyro(e.values, gravity, e.timestamp)
                 Sensor.TYPE_LINEAR_ACCELERATION -> {
                     fusion.onAccel(e.values, gravity, e.timestamp)
                     // Remember the mount every half minute or so, for next drive.
@@ -166,6 +171,7 @@ class SoundController(
         if (hasSensors) {
             sm!!.registerListener(sensorListener, grav, SensorManager.SENSOR_DELAY_GAME, handler)
             sm.registerListener(sensorListener, lin, SensorManager.SENSOR_DELAY_GAME, handler)
+            sm.getDefaultSensor(Sensor.TYPE_GYROSCOPE)?.let { sm.registerListener(sensorListener, it, SensorManager.SENSOR_DELAY_GAME, handler) }
         }
         if (canUseGps) {
             runCatching {
@@ -354,7 +360,9 @@ class SoundController(
                 val aPred = (a + (jerk * ahead * 0.7f).coerceIn(-0.8f, 0.8f)).coerceIn(-9f, 10f)
                 val vPred = max(0f, speedNow + a * ahead)
 
-                var st = model.update(dt, vPred, aPred, revThrottle, pedal)
+                // the pedal as the gearbox and the sound feel it: heavier uphill, lighter downhill
+                val effortPedal = pedal?.let { effort.step(dt, it, speedNow, a) }
+                var st = model.update(dt, vPred, aPred, revThrottle, effortPedal)
                 fmod.setId = if (s.kind == EngineSound.Kind.FMOD) fmodSet else null
                 // gearshifts on: every sound runs through the virtual dual-clutch gearbox (shift
                 // schedule, kickdown, cut and blip, launch slip), over the sound's own rev range
@@ -362,9 +370,11 @@ class SoundController(
                     val (idle, red) = (if (s.kind == EngineSound.Kind.FMOD) fmod.revRange() else null) ?: (s.idleRpm to s.redline)
                     dct.idleRpm = idle
                     dct.redline = red
-                    st = dct.step(dt, vPred * 3.6f, pedal ?: st.load, motorRpm)
+                    st = dct.step(dt, vPred * 3.6f, effortPedal ?: st.load, motorRpm)
                 }
                 voice.drive(pedal, car?.reversing == true, a, motorRpm)
+                // cornering: speed x yaw rate (the test drive's own corners while it runs)
+                voice.corner(cornering.lateralAccel(speedNow, td?.yawRate ?: cornering.yawRate))
                 voice.set(st)
                 // Fade in at the start and out at the end (or while measuring), so there's no click.
                 val target = if (stopping || muted || waitingForPi) 0f else 1f

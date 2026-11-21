@@ -2,6 +2,8 @@ package io.github.alamo3.openblue.sound
 
 import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.cos
+import kotlin.math.exp
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.pow
@@ -31,6 +33,9 @@ import kotlin.math.sin
  *    gear it keeps bouncing. [EngineState.limiter] / [EngineState.cut] say when.
  *  - **Shifts.** Upshifts hand over in 0.10-0.30 s with a torque dip (deep and sharp at full
  *    load, barely there when light); downshifts blip the throttle to match revs.
+ *  - **Engine character.** Revs flare a little on a power downshift and as the clutch takes up on
+ *    a hard launch; the idle wanders slightly, and runs fast just after starting, settling over
+ *    about a minute.
  *  - **Launch.** Pulling away the clutch slips: the engine sits at a launch rpm (higher the
  *    harder you press) until the wheels catch up; gently, the revs settle as it bites.
  *
@@ -52,6 +57,11 @@ class Dct(var idleRpm: Float = 900f, var redline: Float = 7000f) {
         const val CLUTCH_CLOSE_SEC = 1.2f
         const val INERTIA_SEC = 0.06f
         const val TORQUE_SMOOTH_SEC = 0.04f
+        const val COLD_IDLE = 0.35f            // just started: idles this much faster...
+        const val COLD_IDLE_SEC = 20f          // ...settling with this time constant (~1 min)
+        const val IDLE_WANDER_RPM = 20f        // a real idle is never quite steady
+        const val POWER_FLARE = 0.05f          // a downshift under power flares the revs this much
+        const val LAUNCH_FLARE = 0.06f         // so does the clutch taking up on a hard launch
         const val OVERRUN_KMH = 6f
         const val LIMITER_HZ = 12f
         const val LIMITER_PEDAL = 0.8f         // floored (80 %+): run into the limiter before upshifting...
@@ -92,6 +102,11 @@ class Dct(var idleRpm: Float = 900f, var redline: Float = 7000f) {
     private var downshifts = 0
     private var liftOffs = 0
     private var pullPeak = 0f
+    private var age = 0f                       // seconds since this engine "started"
+    private val idleRnd = kotlin.random.Random(7)
+    private var idleFrom = 0f
+    private var idleTo = 0f
+    private var idlePhase = 1f
 
     // --- gear train ---------------------------------------------------------------------
     private fun finalDrive(): Float {
@@ -122,7 +137,12 @@ class Dct(var idleRpm: Float = 900f, var redline: Float = 7000f) {
     fun step(dt: Float, kmh: Float, pedalIn: Float, motorRpm: Int = 0): EngineState {
         val pedal = pedalIn.coerceIn(0f, 1f)
         val r = redline
-        val idle = idleRpm
+        // idle: fast just after starting, settling over a minute, and never perfectly steady
+        age += dt
+        idlePhase += dt / 1.2f
+        if (idlePhase >= 1f) { idlePhase -= 1f; idleFrom = idleTo; idleTo = idleRnd.nextFloat() * 2f - 1f }
+        val wander = idleFrom + (idleTo - idleFrom) * (0.5f - 0.5f * cos(PI.toFloat() * idlePhase))
+        val idle = idleRpm * (1f + COLD_IDLE * exp(-age / COLD_IDLE_SEC)) + IDLE_WANDER_RPM * wander
         if (motorRpm != 0 && motorRpm != lastMotor && kmh > 15f) {
             motorRpmPerKmh += (abs(motorRpm) / kmh - motorRpmPerKmh) * RATIO_LEARN
         }
@@ -194,7 +214,9 @@ class Dct(var idleRpm: Float = 900f, var redline: Float = 7000f) {
             // gently the revs settle toward a little over idle as it bites; under power it holds
             // the launch rpm and the car catches up (it never stalls the engine)
             val bite = max(wheel, idle * 1.3f)
-            val held = launch - (launch - bite) * smoothstep(closing) * (1f - pedal)
+            // (a hard launch flares the revs as the clutch first takes up)
+            val flare = 1f + LAUNCH_FLARE * pedal * max(0f, 1f - slipT / 0.3f)
+            val held = (launch - (launch - bite) * smoothstep(closing) * (1f - pedal)) * flare
             target = max(target, held)
             if (wheel >= 0.98f * held) clutchLocked = true
         }
@@ -225,10 +247,12 @@ class Dct(var idleRpm: Float = 900f, var redline: Float = 7000f) {
                 shifting = depth * if (frac < 0.35f) frac / 0.35f else 1f - (frac - 0.35f) / 0.65f
                 rpm = shiftFromRpm + (target - shiftFromRpm) * k
             } else {
-                // rev-matching blip, overshooting a touch (more when sporty, none under power)
+                // rev-matching blip, overshooting a touch (more when sporty); under power (a
+                // kickdown) the revs flare past the new gear before the clutch takes them
                 blip = sin(PI.toFloat() * min(1f, frac / 0.7f))
-                val over = 1f + lerp(0.03f, 0.08f, sport) * blip * (1f - pedalT)
-                rpm = (shiftFromRpm + (target - shiftFromRpm) * k) * over
+                // the shift lands this far above the new gear; inertia then settles it back
+                val over = lerp(0.03f, 0.08f, sport) * (1f - pedalT) + POWER_FLARE * pedalT
+                rpm = shiftFromRpm + (target * (1f + over) - shiftFromRpm) * k
             }
             shiftT -= dt
         } else {
