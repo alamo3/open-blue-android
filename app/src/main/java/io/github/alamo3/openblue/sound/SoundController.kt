@@ -41,6 +41,8 @@ data class SoundReadout(
     val piNoPermission: Boolean = false,
     /** FMOD: what it's playing, or why it isn't. */
     val fmodStatus: String? = null,
+    /** A test drive is driving the sound: its current stage (null when it isn't). */
+    val testDrive: String? = null,
 )
 
 /**
@@ -70,6 +72,12 @@ class SoundController(
     @Volatile var gearshifts = false
     /** 0..1 while the rev slider is held; null otherwise. */
     @Volatile var revThrottle: Float? = null
+    /** A scripted drive standing in for the car while it runs ([TestDrive]); null otherwise. */
+    @Volatile private var testDrive: TestDrive? = null
+
+    /** Runs a scripted drive (0 to 100 km/h and back to a stop) in place of the car's data. */
+    fun startTestDrive() { testDrive = TestDrive() }
+    fun stopTestDrive() { testDrive = null }
     /**
      * Predicts the car this far ahead (ms), to hide output delay such as Android Auto's.
      * Larger values react sooner but overshoot more when the car changes its mind.
@@ -307,12 +315,15 @@ class SoundController(
                 // the gearbox is the DCT's (below), for every sound: the model only reads the car
                 model.gearshifts = false
 
-                // The car's own data when the Pi has it; the phone's estimate otherwise.
-                val car = if (usePi && pi.fresh) pi.latest else null
-                val waitingForPi = usePi && piOnly && car == null
-                val speedNow = car?.let { it.speedKmh / 3.6f } ?: fusedSpeed
+                // A test drive, while one runs; else the car's own data when the Pi has it; else
+                // the phone's estimate.
+                val td = testDrive?.let { t -> if (t.step(dt)) t else { testDrive = null; null } }
+                val car = if (td == null && usePi && pi.fresh) pi.latest else null
+                val waitingForPi = td == null && usePi && piOnly && car == null
+                val speedNow = td?.speed ?: car?.let { it.speedKmh / 3.6f } ?: fusedSpeed
                 // Reversing out of a spot isn't "accelerating": keep the sound at idle.
-                val pedalNow = car?.let { if (it.reversing) 0f else it.pedal }
+                val pedalNow = td?.pedal ?: car?.let { if (it.reversing) 0f else it.pedal }
+                val motorRpm = td?.motorRpm ?: car?.motorRpm ?: 0
                 // Pedal velocity, from each new reading the Pi sends (~25 a second).
                 if (car != null && pedalNow != null && car.at != lastPedalAt) {
                     val pdt = (car.at - lastPedalAt) / 1000f
@@ -334,12 +345,12 @@ class SoundController(
                     } else p
                 }
                 // Look ahead: extend the current trend in acceleration by the output delay.
-                val a = if (car != null) (if (car.reversing) 0f else pi.accel) else fusedAccel
+                val a = td?.accel ?: if (car != null) (if (car.reversing) 0f else pi.accel) else fusedAccel
                 jerk += ((a - prevAccel) / dt - jerk) * minOf(1f, dt / 0.12f)
                 prevAccel = a
                 // Not at walking pace, where the jolt of setting off would be stretched into a spike,
                 // and never more than a modest nudge.
-                val ahead = if (speedNow < 2.5f) 0f else lookaheadMs / 1000f
+                val ahead = if (speedNow < 2.5f || td != null) 0f else lookaheadMs / 1000f
                 val aPred = (a + (jerk * ahead * 0.7f).coerceIn(-0.8f, 0.8f)).coerceIn(-9f, 10f)
                 val vPred = max(0f, speedNow + a * ahead)
 
@@ -351,9 +362,9 @@ class SoundController(
                     val (idle, red) = (if (s.kind == EngineSound.Kind.FMOD) fmod.revRange() else null) ?: (s.idleRpm to s.redline)
                     dct.idleRpm = idle
                     dct.redline = red
-                    st = dct.step(dt, vPred * 3.6f, pedal ?: st.load, car?.motorRpm ?: 0)
+                    st = dct.step(dt, vPred * 3.6f, pedal ?: st.load, motorRpm)
                 }
-                voice.drive(pedal, car?.reversing == true, a, car?.motorRpm ?: 0)
+                voice.drive(pedal, car?.reversing == true, a, motorRpm)
                 voice.set(st)
                 // Fade in at the start and out at the end (or while measuring), so there's no click.
                 val target = if (stopping || muted || waitingForPi) 0f else 1f
@@ -392,6 +403,7 @@ class SoundController(
                         waitingForPi = waitingForPi,
                         piNoPermission = usePi && pi.state == PiLink.State.OFF && !canUseBluetooth(),
                         fmodStatus = if (s.kind == EngineSound.Kind.FMOD) (fmod.status ?: if (fmodSet == null) "No FMOD sound chosen" else "Starting FMOD…") else null,
+                        testDrive = td?.stage?.label,
                     )
                 }
                 if (stopping && fade <= 0f) break

@@ -173,6 +173,12 @@ fun SoundScreen(vm: MainViewModel, onBack: () -> Unit) {
                     },
                     colors = sliderColors(app.heat),
                 )
+
+                // A scripted drive, so a sound can be heard across its range while parked.
+                val driving = r?.testDrive != null
+                TextButton(onClick = { if (driving) vm.stopTestDrive() else vm.runTestDrive() }) {
+                    Text(if (driving) "Stop test drive" else "Test drive: 0 to 100 km/h and back")
+                }
             }
 
             HorizontalDivider(color = app.hairline, modifier = Modifier.padding(top = 12.dp))
@@ -378,6 +384,7 @@ private fun piStatus(soundOn: Boolean, r: SoundReadout?): String {
 
 private fun statusLine(r: SoundReadout?): String = when {
     r == null -> "Starting…"
+    r.testDrive != null -> "Test drive: ${r.testDrive}, %.0f km/h.".format(r.speedKmh)
     r.carData -> "Following the car: live data from the Raspberry Pi."
     r.waitingForPi -> "Quiet until the Raspberry Pi has car data (\"Only play with car data\" is on)."
     r.piState == PiLink.State.CONNECTED ->

@@ -1986,6 +1986,15 @@ class MainViewModel(
         soundReadout = null
     }
 
+    /** A scripted drive, 0 to 100 km/h and back to a stop, in place of the car's data. */
+    fun runTestDrive() {
+        soundCtl?.startTestDrive()
+    }
+
+    fun stopTestDrive() {
+        soundCtl?.stopTestDrive()
+    }
+
     /** Revving in place: 0..1 while the slider is held, null when let go. */
     fun revEngine(throttle: Float?) {
         soundCtl?.revThrottle = throttle
