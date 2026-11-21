@@ -103,7 +103,7 @@ class DriveEffects(private val sampleRate: Int, private val open: ((String) -> I
      * sonic boom on a pedal stab) or null for none.
      */
     fun step(dt: Float, speedKmh: Float, pedal: Float, reversing: Boolean, launch: String?) {
-        if (!loadTried) { loadTried = true; clips = runCatching { load() }.getOrNull() }
+        ensureLoaded()
         reverse = reversing
 
         // launch: a fast, deep pedal stab from low speed
@@ -138,7 +138,13 @@ class DriveEffects(private val sampleRate: Int, private val open: ((String) -> I
         duck = (if (reverse) REVERSE_DUCK else 1f) * (if (duckT > 0f) SHIFT_DUCK else 1f)
     }
 
+    /** The sounds load on first use -- whichever comes first (the start-up chime fires before any step). */
+    private fun ensureLoaded() {
+        if (!loadTried) { loadTried = true; clips = runCatching { load() }.getOrNull() }
+    }
+
     private fun fire(name: String, level: Float = 1f) {
+        ensureLoaded()
         clips?.get(name)?.let { it.pos = 0.0; it.level = level }
     }
 
