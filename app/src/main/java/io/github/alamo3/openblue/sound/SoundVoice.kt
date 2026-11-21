@@ -1,6 +1,8 @@
 package io.github.alamo3.openblue.sound
 
 import java.io.InputStream
+import kotlin.math.abs
+import kotlin.math.max
 
 /**
  * Plays whichever sound is chosen: a synthesized engine ([EngineVoice]), an EV sound
@@ -14,8 +16,15 @@ class SoundVoice(
     open: ((String) -> InputStream?)? = null,
 ) {
     companion object {
-        private const val CEILING = 0.95f          // output peaks never go above this
-        private const val LIMIT_RELEASE_SEC = 0.15f
+        /**
+         * Everything (sounds, effects, FMOD) is mixed this much lower than it used to be, so the
+         * hot baked sets (normalised to rms 0.55: peaks 2-10 dB over full scale at full volume)
+         * no longer lean on the limiter all the time. Turn the car's volume up to make it up.
+         */
+        private const val OUTPUT_TRIM = 0.5f       // -6 dB
+        private const val CEILING = 0.89f          // output peaks never go above this (-1 dBFS)
+        private const val LOOKAHEAD_SEC = 0.003f   // the limiter sees peaks coming this early
+        private const val LIMIT_RELEASE_SEC = 0.25f
     }
 
     private val engine = EngineVoice(sampleRate)
@@ -25,7 +34,20 @@ class SoundVoice(
     private var state: EngineState? = null
     @Volatile private var pedal: Float? = null
     @Volatile private var reversing = false
-    private var limitEnv = 0f
+    // look-ahead limiter state (see limit())
+    private val la = max(2, (LOOKAHEAD_SEC * sampleRate).toInt())
+    private val delayL = FloatArray(la - 1)
+    private val delayR = FloatArray(la - 1)
+    private var delayPos = 0
+    private val minVal = FloatArray(la)          // monotonic queue of the gains peaks need...
+    private val minIdx = LongArray(la)           // ...and which sample asked for each
+    private var minHead = 0
+    private var minCount = 0
+    private val avgBuf = FloatArray(la) { 1f }   // that minimum, averaged over the look-ahead
+    private var avgPos = 0
+    private var avgSum = la.toDouble()
+    private var sampleIdx = 0L
+    private var limitGain = 1f
     private var chimed = false
     private var pitchMul = 1f
     private var shiftsSeen = -1
@@ -126,7 +148,7 @@ class SoundVoice(
         }
         if (external != null && st != null) {
             // FMOD: same level, fades and ducking as the rest; silent when another sound is chosen
-            val level = if (k == EngineSound.Kind.FMOD) volume * effects.duck else 0f
+            val level = if (k == EngineSound.Kind.FMOD) volume * effects.duck * OUTPUT_TRIM else 0f
             external.update(st, level, frames / sampleRate.toFloat())
         }
         effects.mix(out, outR, frames, volume)
@@ -134,21 +156,46 @@ class SoundVoice(
     }
 
     /**
-     * Peak limiter, linked across both channels (so the stereo image doesn't shift): instant
-     * attack, smooth release, so turning things up never clips.
+     * Look-ahead peak limiter, linked across both channels (so the stereo image doesn't shift).
+     * The output runs [LOOKAHEAD_SEC] late, so the gain can glide down over that time *before*
+     * a peak instead of snapping down on it: the old instant-attack limiter bent the waveform
+     * cycle by cycle, which is what made loud sounds distort. Peaks still never pass [CEILING].
+     *
+     * The gain each sample needs is min(1, CEILING / peak). Its minimum over the last `la`
+     * samples, averaged over `la` samples, is never above what the delayed sample needs (every
+     * window in the average contains it), so the glide is guaranteed to have arrived in time.
      */
     private fun limit(out: FloatArray, outR: FloatArray, frames: Int) {
-        val rel = 1f - 1f / (LIMIT_RELEASE_SEC * sampleRate)
-        var env = limitEnv
+        val rel = 1f / (LIMIT_RELEASE_SEC * sampleRate)
+        var g = limitGain
         for (n in 0 until frames) {
-            val a = kotlin.math.max(kotlin.math.abs(out[n]), kotlin.math.abs(outR[n]))
-            env = if (a > env) a else env * rel
-            if (env > CEILING) {
-                val g = CEILING / env
-                out[n] *= g
-                outR[n] *= g
-            }
+            val l = out[n] * OUTPUT_TRIM
+            val r = outR[n] * OUTPUT_TRIM
+            val peak = max(abs(l), abs(r))
+            val need = if (peak > CEILING) CEILING / peak else 1f
+            // sliding minimum over the last la samples (monotonic queue; drop the expired first)
+            if (minCount > 0 && minIdx[minHead] <= sampleIdx - la) { minHead = (minHead + 1) % la; minCount-- }
+            while (minCount > 0 && minVal[(minHead + minCount - 1) % la] >= need) minCount--
+            minVal[(minHead + minCount) % la] = need
+            minIdx[(minHead + minCount) % la] = sampleIdx
+            minCount++
+            val m = minVal[minHead]
+            // ...averaged: a smooth ramp down that lands exactly on the peak
+            avgSum += m - avgBuf[avgPos]
+            avgBuf[avgPos] = m
+            avgPos = (avgPos + 1) % la
+            val s = (avgSum / la).toFloat()
+            g = if (s < g) s else g + (s - g) * rel
+            // out goes the sample from la - 1 samples ago, at this gain
+            out[n] = delayL[delayPos] * g
+            outR[n] = delayR[delayPos] * g
+            delayL[delayPos] = l
+            delayR[delayPos] = r
+            delayPos = (delayPos + 1) % delayL.size
+            sampleIdx++
         }
-        limitEnv = env
+        limitGain = g
+        // the running sum drifts a little in floating point: rebuild it now and then
+        if ((sampleIdx and 0xFFFFL) < frames.toLong()) avgSum = avgBuf.sumOf { it.toDouble() }
     }
 }
