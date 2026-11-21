@@ -304,6 +304,9 @@ class SoundController(
         var core: SoundCore? = null
         var coreFailed = false
         var chimed = false                               // whichever engine played first chimed
+        // the other sounds get the native engine's tires too
+        val tires = SoundCore.tires(rate)
+        voice.tires = tires
         val buf = FloatArray(frames * 2)                 // stereo, interleaved
         val dt = frames / rate.toFloat()
         var fade = 0f
@@ -453,6 +456,8 @@ class SoundController(
             track.release()
             runCatching { fmod.stop() }
             core?.close()
+            voice.tires = null
+            tires?.close()
         }
     }
 }

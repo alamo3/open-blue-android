@@ -30,8 +30,8 @@ class TestDrive {
         const val SETTLE_SEC = 2f
         const val MOTOR_RPM_PER_KMH = 77.5f
         const val PEDAL_PER_SEC = 5f
-        const val BEND_LEFT_M = 40f
-        const val BEND_RIGHT_M = 150f
+        const val BEND_LEFT_M = 25f
+        const val BEND_RIGHT_M = 100f     // hard enough at speed to have the tires squealing
     }
 
     var stage = Stage.IDLE
@@ -48,7 +48,7 @@ class TestDrive {
     val kmh: Float get() = speed * 3.6f
     /**
      * Yaw rate (rad/s, positive = turning left): a left-hand bend pulling away (radius
-     * [BEND_LEFT_M], 20-35 km/h) and a long right-hander off the pedal ([BEND_RIGHT_M]).
+     * [BEND_LEFT_M], 20-35 km/h) and a fast right-hander off the pedal ([BEND_RIGHT_M]), hard enough for the tires to squeal.
      */
     var yawRate = 0f
         private set

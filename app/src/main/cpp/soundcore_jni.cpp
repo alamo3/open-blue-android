@@ -83,4 +83,26 @@ Java_io_github_alamo3_openblue_sound_SoundCore_00024Native_render(JNIEnv* env, j
     }
 }
 
+// The tire layer on its own, for the app's other sounds: adds into l / r in place.
+JNIEXPORT jlong JNICALL
+Java_io_github_alamo3_openblue_sound_SoundCore_00024Native_tiresCreate(JNIEnv*, jobject, jint sampleRate) {
+    return reinterpret_cast<jlong>(new sc::Tires(sampleRate));
+}
+
+JNIEXPORT void JNICALL
+Java_io_github_alamo3_openblue_sound_SoundCore_00024Native_tiresDestroy(JNIEnv*, jobject, jlong h) {
+    delete reinterpret_cast<sc::Tires*>(h);
+}
+
+JNIEXPORT void JNICALL
+Java_io_github_alamo3_openblue_sound_SoundCore_00024Native_tiresRender(JNIEnv* env, jobject, jlong h, jfloatArray l, jfloatArray r,
+                                                                       jint frames, jfloat lateral, jfloat speedMs, jfloat volume) {
+    if (env->GetArrayLength(l) < frames || env->GetArrayLength(r) < frames) return;
+    float* pl = static_cast<float*>(env->GetPrimitiveArrayCritical(l, nullptr));
+    float* pr = static_cast<float*>(env->GetPrimitiveArrayCritical(r, nullptr));
+    if (pl && pr) reinterpret_cast<sc::Tires*>(h)->render(pl, pr, frames, lateral, speedMs, volume);
+    if (pr) env->ReleasePrimitiveArrayCritical(r, pr, 0);
+    if (pl) env->ReleasePrimitiveArrayCritical(l, pl, 0);
+}
+
 }  // extern "C"

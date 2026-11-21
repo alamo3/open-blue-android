@@ -34,8 +34,8 @@ class SoundVoice(
         /** Sounds that aren't engines, on each of the rev limiter's cuts: down to this level... */
         private const val LIMITER_CUT_LEVEL = 0.35f
         private const val LIMITER_EASE_SEC = 0.004f   // ...eased over about this long
-        private const val CORNER_LEAN = 0.3f           // how far the sound leans in a hard corner...
-        private const val CORNER_FULL_MS2 = 5.9f       // ...at this cornering force (0.6 g)
+        private const val CORNER_LEAN = 0.45f          // how far the sound leans in a hard corner...
+        private const val CORNER_FULL_MS2 = 3.9f       // ...at this cornering force (0.4 g)
         private val SQRT2 = kotlin.math.sqrt(2f)
         private const val SPEED_FROM_KMH = 30f
         private const val SPEED_FULL_KMH = 120f
@@ -73,6 +73,8 @@ class SoundVoice(
     private var limitGain = 1f
     private var cutGain = 1f
     private var chimed = false
+    /** The tires squealing in hard corners at speed: the native engine's tire layer; null without it (tests). */
+    var tires: SoundCore.Tires? = null
     /** The start-up chime has already played (the native engine played it): don't play it again. */
     fun skipChime() { chimed = true }
     private var pitchMul = 1f
@@ -214,6 +216,8 @@ class SoundVoice(
             val level = if (k == EngineSound.Kind.FMOD) volume * effects.duck * OUTPUT_TRIM * 10f.pow(SPEED_GAIN_DB * speedMix / 20f) else 0f
             external.update(st, level, frames / sampleRate.toFloat())
         }
+        // the tires in a hard corner (the native engine's: see SoundCore.Tires)
+        if (st != null && !reversing) tires?.render(out, outR, frames, lateralG, st.speedKmh / 3.6f, volume)
         effects.mix(out, outR, frames, volume)
         speedMix(out, outR, frames, st?.speedKmh ?: 0f)
         lean(out, outR, frames)

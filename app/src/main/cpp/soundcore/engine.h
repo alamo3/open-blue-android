@@ -2,7 +2,7 @@
 // The sound engine: everything between the car's data and the speaker, shared by every host
 // (the Pi's player, Open Blue through JNI, the offline renderer). Per block: the car's inputs in,
 // stereo out. Inside: the gearbox (or revving in place), hill effort, the chosen layered voice,
-// the drive effects, the limiter stutter, a speed-aware mix, the cornering lean, and a
+// the drive effects, the limiter stutter, the tires in corners, a speed-aware mix, the cornering lean, and a
 // look-ahead limiter. A test drive can stand in for the car.
 #pragma once
 
@@ -12,6 +12,7 @@
 #include "dct.h"
 #include "dsp.h"
 #include "effects.h"
+#include "tires.h"
 #include "voices.h"
 
 namespace sc {
@@ -23,12 +24,13 @@ struct Inputs {
     float accel = 0;            // forward acceleration, m/s^2
     int motorRpm = 0;           // the car's motor rpm (0: unknown)
     bool reversing = false;
-    float yawRate = 0;          // rad/s, + = turning left (for the cornering lean)
+    float yawRate = 0;          // rad/s, + = turning left (the cornering lean, the tires)
     float revThrottle = -1;     // >= 0: revving in place (the "Rev it" slider), the gearbox set aside
 };
 
 struct Readout {
     float rpm = 0, kmh = 0, load = 0;
+    float tires = 0;            // 0..1: how hard the tires are squealing
     int gear = 0;
     bool limiter = false;
     const char* testDrive = nullptr;   // the test drive's stage while one runs
@@ -86,6 +88,7 @@ private:
     Sound sound_ = Sound::FLAT6;
     std::unique_ptr<LayeredVoice> voices_[4];
     Effects effects_;
+    Tires tires_;
     std::unique_ptr<Dct> dct_;
     NeutralRev neutral_;
     Effort effort_;

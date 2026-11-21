@@ -6,7 +6,8 @@ import java.io.File
 /**
  * The shared native sound engine (src/main/cpp/soundcore, from virtual-car-sound/soundcore): the
  * layered sounds -- Flat-6, Hypercar, Turbofan, Warp bubble -- with their gearbox, drive effects,
- * limiter stutter, speed-aware mix, cornering lean and output limiter. The Raspberry Pi's player
+ * limiter stutter, tires, speed-aware mix, cornering lean and output limiter; and its tire layer
+ * on its own ([Tires]) for the other sounds. The Raspberry Pi's player
  * runs the very same engine, so a sound is the same sound wherever it plays.
  *
  * Use it from one thread (the audio thread): [open], then per block [render]; [close] at the end.
@@ -53,6 +54,13 @@ class SoundCore private constructor(private var handle: Long) : AutoCloseable {
             return dir
         }
 
+        /** The engine's tire layer on its own (for the sounds that aren't the engine's), or null if it can't load. */
+        fun tires(sampleRate: Int): Tires? {
+            if (!load()) return null
+            val h = Native.tiresCreate(sampleRate)
+            return if (h != 0L) Tires(h) else null
+        }
+
         /** The engine's number for each layered sound (sc::Sound); null for the others. */
         fun soundId(s: EngineSound): Int? = when (s.kind) {
             EngineSound.Kind.FLAT6 -> 0
@@ -93,6 +101,20 @@ class SoundCore private constructor(private var handle: Long) : AutoCloseable {
         if (handle != 0L) { Native.destroy(handle); handle = 0L }
     }
 
+    /**
+     * The tires (sc::Tires): scrub, then a squeal, as the cornering force nears the limit at
+     * speed, louder from the outside of the turn. Added into [l] / [r] in place.
+     */
+    class Tires internal constructor(private var handle: Long) : AutoCloseable {
+        /** [lateral] m/s² (+ = cornering left), [speedMs] m/s. */
+        fun render(l: FloatArray, r: FloatArray, frames: Int, lateral: Float, speedMs: Float, volume: Float) {
+            if (handle != 0L) Native.tiresRender(handle, l, r, frames, lateral, speedMs, volume)
+        }
+        override fun close() {
+            if (handle != 0L) { Native.tiresDestroy(handle); handle = 0L }
+        }
+    }
+
     /** The JNI bridge: src/main/cpp/soundcore_jni.cpp. */
     private object Native {
         external fun create(sampleRate: Int, effectsDir: String): Long
@@ -105,5 +127,8 @@ class SoundCore private constructor(private var handle: Long) : AutoCloseable {
             h: Long, pedal: Float, hasPedal: Boolean, speedMs: Float, accel: Float, motorRpm: Int,
             reversing: Boolean, yawRate: Float, revThrottle: Float, out: FloatArray, frames: Int, readout: FloatArray,
         )
+        external fun tiresCreate(sampleRate: Int): Long
+        external fun tiresDestroy(h: Long)
+        external fun tiresRender(h: Long, l: FloatArray, r: FloatArray, frames: Int, lateral: Float, speedMs: Float, volume: Float)
     }
 }

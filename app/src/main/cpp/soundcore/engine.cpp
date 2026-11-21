@@ -13,14 +13,14 @@ namespace {
 // output stage (as Open Blue's SoundVoice)
 constexpr float OUTPUT_TRIM = 0.5f, CEILING = 0.89f, LOOKAHEAD_SEC = 0.003f, LIMIT_RELEASE_SEC = 0.25f;
 constexpr float LIMITER_CUT_LEVEL = 0.35f, LIMITER_EASE_SEC = 0.004f;
-constexpr float CORNER_LEAN = 0.3f, CORNER_FULL_MS2 = 5.9f;
+constexpr float CORNER_LEAN = 0.45f, CORNER_FULL_MS2 = 3.9f;   // the lean: this far over by 0.4 g
 constexpr float SPEED_FROM_KMH = 30.f, SPEED_FULL_KMH = 120.f, SPEED_GAIN_DB = 3.f, SPEED_BRIGHT_DB = 2.f;
 // hill effort (as Effort.kt)
 constexpr float EF_MIN_KMH = 18.f, EF_MIN_PEDAL = 0.15f, EF_LEARN_SEC = 90.f, EF_NOW_SEC = 3.f, EF_GAIN = 0.5f, EF_MAX = 0.8f;
 // test drive (as TestDrive.kt)
 constexpr float TD_GENTLE_PEDAL = 0.35f, TD_GENTLE_TO_KMH = 40.f, TD_HARD_PEDAL = 1.f, TD_TOP_KMH = 100.f;
 constexpr float TD_IDLE_SEC = 1.5f, TD_LIFT_SEC = 2.5f, TD_BRAKE_MS2 = 3.f, TD_SETTLE_SEC = 2.f, TD_PEDAL_PER_SEC = 5.f;
-constexpr float TD_BEND_LEFT_M = 40.f, TD_BEND_RIGHT_M = 150.f;
+constexpr float TD_BEND_LEFT_M = 25.f, TD_BEND_RIGHT_M = 100.f;   // a brisk left, then a right that has the tires squealing
 const char* TD_STAGES[] = {"idle", "pulling away", "hard to 100 km/h", "off the pedal", "braking to a stop", "idle", "done"};
 }  // namespace
 
@@ -70,7 +70,7 @@ bool TestDrive::step(float dt) {
 
 // --- Engine ----------------------------------------------------------------------------------
 Engine::Engine(int sampleRate, const std::string& effectsDir)
-    : sr_(sampleRate), effects_(sampleRate, effectsDir), la_(std::max(2, (int)(LOOKAHEAD_SEC * sampleRate))) {
+    : sr_(sampleRate), effects_(sampleRate, effectsDir), tires_(sampleRate), la_(std::max(2, (int)(LOOKAHEAD_SEC * sampleRate))) {
     for (int s = 0; s < 4; ++s) voices_[s] = makeVoice((Sound)s, sampleRate);
     delayL_.reset(new float[la_ - 1]()); delayR_.reset(new float[la_ - 1]());
     minVal_.reset(new float[la_]()); minIdx_.reset(new long long[la_]());
@@ -156,12 +156,15 @@ void Engine::render(const Inputs& inRaw, float* l, float* r, int frames) {
         for (int n = 0; n < frames; ++n) { cutGain_ += (cutTarget - cutGain_) * k; l[n] *= cutGain_; r[n] *= cutGain_; }
         if (cutTarget == 1.f && cutGain_ > 0.999f) cutGain_ = 1.f;
     }
+    // the tires: the cornering force (speed x yaw rate) has them scrubbing, then squealing
+    tires_.render(l, r, frames, in.reversing ? 0.f : in.speedMs * in.yawRate, in.speedMs, vol);
     effects_.mix(l, r, frames, vol);
     speedMix(l, r, frames, kmh);
     lean(l, r, frames, in.speedMs * in.yawRate);
     limit(l, r, frames);
 
     readout_.rpm = st.rpm; readout_.kmh = kmh; readout_.load = st.load; readout_.gear = st.gear; readout_.limiter = st.limiter;
+    readout_.tires = tires_.squeal();
     readout_.testDrive = testDrive_ ? testDrive_->stage() : nullptr;
 }
 
