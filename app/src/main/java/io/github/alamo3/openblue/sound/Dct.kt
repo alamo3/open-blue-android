@@ -23,8 +23,8 @@ import kotlin.math.sin
  *  - **Adaptive.** [sport] (0..1) learns the driving style from how deep and how fast the pedal
  *    goes and how hard the car accelerates: quick to rise, settling back over ~30 s. Sportier
  *    moves the shift points later, downshifts earlier on the brakes, and shifts faster.
- *  - **Reactive.** Kickdown on a deep, fast press: straight to the lowest gear under 90 % of the
- *    redline, skipping gears. A quick lift ("fast off") holds the gear for a moment instead of
+ *  - **Reactive.** Kickdown on a deep, fast press: straight to the lowest gear that lands in the
+ *    power band (under 75 % of the redline), skipping gears. A quick lift ("fast off") holds the gear for a moment instead of
  *    upshifting, ready to pull again. Braking downshifts, earlier the sportier.
  *  - **Shifts.** Upshifts hand over in 0.10-0.30 s with a torque dip (deep and sharp at full
  *    load, barely there when light); downshifts blip the throttle to match revs.
@@ -145,11 +145,16 @@ class Dct(var idleRpm: Float = 900f, var redline: Float = 7000f) {
         val g = gear
         if (shiftT <= 0f && kmh > 2f) {
             val here = gearRpm(g, kmh)
-            val kick = (pedal > 0.8f && pedal - pedalAvg > KICKDOWN_JUMP) || (pedal > 0.9f && here < 0.55f * r && g > 1)
+            // kickdown: a deep, fast press -- or floored and well down the revs (not just after a
+            // shift, or it would undo the upshift it just made)
+            val kick = (pedal > 0.8f && pedal - pedalAvg > KICKDOWN_JUMP) ||
+                (pedal > 0.9f && here < 0.55f * r && g > 1 && sinceShift >= MIN_GEAR_SEC)
             var target = g
             if (kick) {
-                // the lowest gear under 90 % of the redline: may skip several
-                for (c in 1 until g) if (gearRpm(c, kmh) < 0.90f * r) { target = c; break }
+                // the lowest gear that lands in the power band: under 75 % of the redline and under
+                // the upshift point (may skip several)
+                val limit = min(0.75f * r, 0.9f * upRpm(pedal))
+                for (c in 1 until g) if (gearRpm(c, kmh) < limit) { target = c; break }
             } else if (sinceShift >= MIN_GEAR_SEC) {
                 val slowing = accel < -0.5f && pedal < 0.2f
                 if (g < GEARS && hold <= 0f && !slowing && here >= upRpm(pedalAvg) &&

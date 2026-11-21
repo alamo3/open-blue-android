@@ -107,6 +107,17 @@ class DctTest {
         assertEquals("in one shift", s[i - 1].st.downshifts + 1, s[i + 15].st.downshifts)
     }
 
+    /** Floored from a gentle cruise: one kickdown, then only upshifts (no undoing them). */
+    @Test fun flooredFromCruiseNeverHunts() {
+        val s = drive(Dct(900f, 7000f), 26f) { t -> (if (t < 12f) 0.2f else 1f) to 0f }
+        val pull = s.filter { it.t > 12f }
+        val seq = gearSequence(pull)
+        println("floored from cruise: $seq")
+        assertTrue("kicked down", seq[1] < seq[0])
+        assertTrue("then only up ($seq)", (2 until seq.size).all { seq[it] > seq[it - 1] })
+        assertTrue("kickdown lands in the power band", pull.first { it.st.gear == seq[1] }.st.rpm < 0.8f * 7000f)
+    }
+
     @Test fun fastLiftHoldsTheGearAndBrakingShiftsDown() {
         val s = drive(Dct(900f, 7000f), 22f) { t ->
             when {
