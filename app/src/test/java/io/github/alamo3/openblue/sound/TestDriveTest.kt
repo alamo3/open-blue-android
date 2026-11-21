@@ -14,21 +14,28 @@ class TestDriveTest {
         var top = 0f
         val box = Dct(900f, 7000f)
         val gears = ArrayList<Int>()
+        var cuts = 0
+        var wasCut = false
         while (d.step(dt)) {
             t += dt
             top = maxOf(top, d.kmh)
             if (stages.lastOrNull() != d.stage) stages += d.stage
-            val g = box.step(dt, d.kmh, d.pedal, d.motorRpm).gear
+            val st = box.step(dt, d.kmh, d.pedal, d.motorRpm)
+            val g = st.gear
+            if (st.cut == true && !wasCut) cuts++
+            wasCut = st.cut == true
             if (gears.lastOrNull() != g) gears += g
             assertTrue("runs away (${t}s)", t < 60f)
         }
-        println("test drive: %.1f s, top %.0f km/h, stages %s, gears %s".format(t, top, stages, gears))
+        println("test drive: %.1f s, top %.0f km/h, stages %s, gears %s, %d limiter cuts".format(t, top, stages, gears, cuts))
+        assertTrue("bounces off the rev limiter on the hard pull ($cuts cuts)", cuts >= 5)
         assertEquals(TestDrive.Stage.entries.dropLast(1), stages)
         assertTrue("reaches 100 km/h ($top)", top >= 100f && top < 106f)
         assertEquals(0f, d.speed, 0f)
         assertTrue("about half a minute (${t}s)", t in 15f..40f)
-        // the gearbox goes up through the gears, kicks down for the hard pull, and back to 1st
-        assertTrue("shifts up ($gears)", gears.max() >= 3)
+        // the gearbox shifts up pulling away, kicks down to 1st for the floored pull (2nd runs to
+        // 106 km/h, so 40-100 is 1st, the limiter, then 2nd), and comes back down to 1st
+        assertTrue("shifts up ($gears)", gears.max() >= 2 && gears.indexOf(1) < gears.lastIndexOf(2))
         assertEquals(1, gears.last())
     }
 

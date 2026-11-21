@@ -7,7 +7,8 @@ import kotlin.math.pow
 /**
  * A scripted drive for trying a sound while parked: it stands in for the car (speed, pedal,
  * acceleration, motor rpm) until it's done. Idle, a gentle pull away to 40 km/h, then a hard pull
- * to 100 km/h (a kickdown on the way), a lift off the pedal coasting on regen, braking to a stop,
+ * to 100 km/h, floored (a kickdown on the way, the rev limiter in each gear), a lift off the
+ * pedal coasting on regen, braking to a stop,
  * and a moment at idle -- about 25 s. Speed comes from a rough IONIQ 5 (traction- then
  * power-limited, drag, one-pedal regen); the pedal moves as a foot would (~0.2 s end to end).
  */
@@ -20,7 +21,7 @@ class TestDrive {
     companion object {
         const val GENTLE_PEDAL = 0.35f
         const val GENTLE_TO_KMH = 40f
-        const val HARD_PEDAL = 0.85f
+        const val HARD_PEDAL = 1f              // floored: the rev limiter in each gear
         const val TOP_KMH = 100f
         const val IDLE_SEC = 1.5f
         const val LIFT_SEC = 2.5f

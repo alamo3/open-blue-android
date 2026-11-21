@@ -54,8 +54,8 @@ class Dct(var idleRpm: Float = 900f, var redline: Float = 7000f) {
         const val TORQUE_SMOOTH_SEC = 0.04f
         const val OVERRUN_KMH = 6f
         const val LIMITER_HZ = 12f
-        const val LIMITER_PEDAL = 0.9f         // floored: run into the limiter before upshifting...
-        const val LIMITER_HOLD_SEC = 0.3f      // ...and bounce off it this long (~3-4 cuts)
+        const val LIMITER_PEDAL = 0.8f         // floored (80 %+): run into the limiter before upshifting...
+        const val LIMITER_HOLD_SEC = 0.5f      // ...and bounce off it this long (~6 cuts)
         const val LIMITER_DIP = 0.04f          // each cut drops the revs this much
 
         private fun lerp(a: Float, b: Float, t: Float) = a + (b - a) * t.coerceIn(0f, 1f)
