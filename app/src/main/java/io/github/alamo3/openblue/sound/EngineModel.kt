@@ -99,8 +99,8 @@ class EngineModel(
         // Load follows quickly going up, more gently going down; faster still with the car's own
         // pedal reading, which is already clean (no sensor noise to hide).
         val targetLoad = if (engaged) max(rawLoad, 0.12f) else 0f
-        val rise = if (pedal != null) 30f else 12f
-        val fall = if (pedal != null) 8f else 5f
+        val rise = if (pedal != null) 60f else 12f     // ~17 ms with the car's pedal
+        val fall = if (pedal != null) 14f else 5f
         load += (targetLoad - load) * min(1f, dt * if (targetLoad > load) rise else fall)
         if (engaged) pullPeak = max(pullPeak, load)
 

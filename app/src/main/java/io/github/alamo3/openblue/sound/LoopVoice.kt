@@ -369,7 +369,9 @@ class LoopVoice(
         bakedSpeed = if (bakedSpeed < 0f) tSpeed else bakedSpeed + (tSpeed - bakedSpeed) * min(1f, dt / 0.08f)
         // the load as it falls (not the on/off "engaged" flag), glided: lifting or pressing
         // crossfades cruise <-> accelerating loops instead of switching
-        bakedLoad += (tLoad.coerceIn(0f, 1f) - bakedLoad) * min(1f, dt / 0.1f)
+        // (quick going up -- that's the press you feel -- gentler coming down)
+        val loadT = tLoad.coerceIn(0f, 1f)
+        bakedLoad += (loadT - bakedLoad) * min(1f, dt / if (loadT > bakedLoad) 0.03f else 0.08f)
         val pedalNow = bakedLoad
         // the grid position: road speed, or for a jet its spool
         val v = s.spool?.step(pedalNow, dt) ?: bakedSpeed

@@ -86,6 +86,13 @@ class SoundController(
     @Volatile private var muted = false
     private val clickTimes = java.util.concurrent.ConcurrentLinkedQueue<Long>()
 
+    private companion object {
+        /** How much of the look-ahead the pedal gets (its moves are less predictable than speed). */
+        const val PEDAL_LOOKAHEAD = 0.6f
+        /** The most the pedal may run ahead of the real one (0..1 of travel). */
+        const val PEDAL_LEAD_MAX = 0.35f
+    }
+
     @Volatile var readout: SoundReadout? = null
         private set
     val running: Boolean get() = audioThread != null
@@ -284,6 +291,9 @@ class SoundController(
         var sinceReadout = 0f
         var prevAccel = 0f
         var jerk = 0f
+        var lastPedal = -1f
+        var lastPedalAt = 0L
+        var pedalVel = 0f
         track.play()
         try {
             while (true) {
@@ -301,7 +311,27 @@ class SoundController(
                 val waitingForPi = usePi && piOnly && car == null
                 val speedNow = car?.let { it.speedKmh / 3.6f } ?: fusedSpeed
                 // Reversing out of a spot isn't "accelerating": keep the sound at idle.
-                val pedal = car?.let { if (it.reversing) 0f else it.pedal }
+                val pedalNow = car?.let { if (it.reversing) 0f else it.pedal }
+                // Pedal velocity, from each new reading the Pi sends (~25 a second).
+                if (car != null && pedalNow != null && car.at != lastPedalAt) {
+                    val pdt = (car.at - lastPedalAt) / 1000f
+                    pedalVel = if (lastPedal >= 0f && pdt in 0.005f..0.2f) (pedalNow - lastPedal) / pdt else 0f
+                    lastPedal = pedalNow
+                    lastPedalAt = car.at
+                } else if (car == null) {
+                    lastPedal = -1f
+                    pedalVel = 0f
+                }
+                // Look ahead on the pedal too: a press takes 0.1-0.3 s of travel, so carrying it on
+                // lets the sound get there sooner. Presses only (a lift is never anticipated), and
+                // capped, so a quick dab to part throttle can't sound like flooring it. Unlike the
+                // speed, this works from a standstill: that's when a launch most needs it.
+                val pedal = pedalNow?.let { p ->
+                    if (pedalVel > 0.5f) {
+                        val lead = (pedalVel * lookaheadMs / 1000f * PEDAL_LOOKAHEAD).coerceAtMost(PEDAL_LEAD_MAX)
+                        minOf(1f, p + lead)
+                    } else p
+                }
                 // Look ahead: extend the current trend in acceleration by the output delay.
                 val a = if (car != null) (if (car.reversing) 0f else pi.accel) else fusedAccel
                 jerk += ((a - prevAccel) / dt - jerk) * minOf(1f, dt / 0.12f)
