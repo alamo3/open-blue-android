@@ -51,6 +51,12 @@ class PiLink(private val context: Context) {
         private val CCCD: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
         /** Older than this, the data no longer counts as live. */
         const val STALE_MS = 500L
+        /** Through a gap this long, the sound keeps following the last reading. */
+        const val HOLD_MS = 1500L
+        /** Between readings, the speed carries on at the current acceleration for up to this long. */
+        const val CARRY_MAX_SEC = 0.25f
+        /** A gap between readings longer than this counts as one (they come every ~35 ms). */
+        const val GAP_MS = 250L
         /**
          * The car reports speed in whole km/h, which would make the pitch step; it's smoothed
          * over this long, and the lag that adds is taken back out using the acceleration.
@@ -75,6 +81,29 @@ class PiLink(private val context: Context) {
             return piFresh && SystemClock.elapsedRealtime() - d.at < STALE_MS
         }
     @Volatile private var piFresh = false
+
+    /**
+     * Good enough to keep following: fresh, or was within the last [HOLD_MS]. A hiccup in the
+     * readings (an OBD retry, a busy Bluetooth link) holds the last reading instead of the sound
+     * dropping to the phone's guess -- or going quiet -- for a moment.
+     */
+    val usable: Boolean
+        get() = latest != null && SystemClock.elapsedRealtime() - lastFreshAt < HOLD_MS
+    @Volatile private var lastFreshAt = -HOLD_MS
+
+    /** The speed now, km/h: the latest reading carried on at the current acceleration (between readings). */
+    fun speedNow(): Float {
+        val d = latest ?: return 0f
+        if (d.speedKmh <= 0f) return 0f
+        val age = ((SystemClock.elapsedRealtime() - d.at) / 1000f).coerceIn(0f, CARRY_MAX_SEC)
+        return maxOf(0f, d.speedKmh + accel * 3.6f * age)
+    }
+
+    /** Gaps in the car's data while connected: how many (over [GAP_MS]) and the longest, ms. */
+    @Volatile var gaps = 0
+        private set
+    @Volatile var longestGapMs = 0L
+        private set
 
     private val main = Handler(Looper.getMainLooper())
     private var gatt: BluetoothGatt? = null
@@ -197,6 +226,14 @@ class PiLink(private val context: Context) {
         val amps = b.short / 10f
         val now = SystemClock.elapsedRealtime()
         piFresh = flags and 1 != 0
+        if (piFresh) {
+            val gap = now - lastFreshAt
+            if (lastFreshAt > 0 && gap > GAP_MS && gap < 60_000) {
+                gaps++
+                longestGapMs = maxOf(longestGapMs, gap)
+            }
+            lastFreshAt = now
+        }
         // acceleration from successive speeds, smoothed over ~0.3 s (OBD speed is coarse);
         // the speed itself smoothed, plus what the smoothing lags behind at this acceleration
         if (lastSpeed >= 0f && now > lastAt) {

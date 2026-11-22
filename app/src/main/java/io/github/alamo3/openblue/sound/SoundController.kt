@@ -43,6 +43,8 @@ data class SoundReadout(
     val fmodStatus: String? = null,
     /** A test drive is driving the sound: its current stage (null when it isn't). */
     val testDrive: String? = null,
+    /** Hiccups so far (gaps in the Pi's data, audio underruns); null when there haven't been any. */
+    val dropouts: String? = null,
 )
 
 /**
@@ -100,6 +102,8 @@ class SoundController(
         const val PEDAL_LOOKAHEAD = 0.6f
         /** The most the pedal may run ahead of the real one (0..1 of travel). */
         const val PEDAL_LEAD_MAX = 0.35f
+        /** The car's pedal glides between readings over about this long. */
+        const val PEDAL_GLIDE_SEC = 0.03f
     }
 
     @Volatile var readout: SoundReadout? = null
@@ -267,6 +271,17 @@ class SoundController(
         return DelayDetector.median(pcm, read, rate, ts.framePosition, ts.nanoTime, clicks)
     }
 
+    /** Hiccups, for the screen: gaps in the Pi's data and audio underruns, when there have been any. */
+    private fun dropouts(track: AudioTrack): String? {
+        val under = if (android.os.Build.VERSION.SDK_INT >= 24) runCatching { track.underrunCount }.getOrDefault(0) else 0
+        val gaps = pi.gaps
+        if (gaps == 0 && under == 0) return null
+        return buildList {
+            if (gaps > 0) add("$gaps gap${if (gaps == 1) "" else "s"} in the car's data (longest ${pi.longestGapMs} ms)")
+            if (under > 0) add("$under audio underrun${if (under == 1) "" else "s"}")
+        }.joinToString(", ")
+    }
+
     private fun audioLoop() {
         Process.setThreadPriority(Process.THREAD_PRIORITY_URGENT_AUDIO)
         val rate = AudioTrack.getNativeOutputSampleRate(AudioManager.STREAM_MUSIC).takeIf { it > 0 } ?: 48000
@@ -316,6 +331,7 @@ class SoundController(
         var lastPedal = -1f
         var lastPedalAt = 0L
         var pedalVel = 0f
+        var pedalGlide = -1f
         track.play()
         try {
             while (true) {
@@ -332,9 +348,10 @@ class SoundController(
                 // A test drive, while one runs; else the car's own data when the Pi has it; else
                 // the phone's estimate.
                 val td = testDrive?.let { t -> if (t.step(dt)) t else { testDrive = null; null } }
-                val car = if (td == null && usePi && pi.fresh) pi.latest else null
+                val car = if (td == null && usePi && pi.usable) pi.latest else null
                 val waitingForPi = td == null && usePi && piOnly && car == null
-                val speedNow = td?.speed ?: car?.let { it.speedKmh / 3.6f } ?: fusedSpeed
+                // the car's speed carried on between its readings (they come ~30 a second, in steps)
+                val speedNow = td?.speed ?: car?.let { pi.speedNow() / 3.6f } ?: fusedSpeed
                 // Reversing out of a spot isn't "accelerating": keep the sound at idle.
                 val pedalNow = td?.pedal ?: car?.let { if (it.reversing) 0f else it.pedal }
                 val motorRpm = td?.motorRpm ?: car?.motorRpm ?: 0
@@ -347,17 +364,26 @@ class SoundController(
                 } else if (car == null) {
                     lastPedal = -1f
                     pedalVel = 0f
+                } else if (android.os.SystemClock.elapsedRealtime() - car.at > 150) {
+                    pedalVel = 0f                    // held through a gap: don't keep leading on an old press
                 }
                 // Look ahead on the pedal too: a press takes 0.1-0.3 s of travel, so carrying it on
                 // lets the sound get there sooner. Presses only (a lift is never anticipated), and
                 // capped, so a quick dab to part throttle can't sound like flooring it. Unlike the
                 // speed, this works from a standstill: that's when a launch most needs it.
-                val pedal = pedalNow?.let { p ->
+                val pedalAhead = pedalNow?.let { p ->
                     if (pedalVel > 0.5f) {
                         val lead = (pedalVel * lookaheadMs / 1000f * PEDAL_LOOKAHEAD).coerceAtMost(PEDAL_LEAD_MAX)
                         minOf(1f, p + lead)
                     } else p
                 }
+                // The car's pedal arrives in steps, one per reading: glide between them so the
+                // sound moves smoothly instead of stepping ~30 times a second.
+                val pedal = if (car != null && pedalAhead != null) {
+                    pedalGlide = if (pedalGlide < 0f) pedalAhead
+                    else pedalGlide + (pedalAhead - pedalGlide) * (1f - kotlin.math.exp(-dt / PEDAL_GLIDE_SEC))
+                    pedalGlide
+                } else { pedalGlide = -1f; pedalAhead }
                 // Look ahead: extend the current trend in acceleration by the output delay.
                 val a = td?.accel ?: if (car != null) (if (car.reversing) 0f else pi.accel) else fusedAccel
                 jerk += ((a - prevAccel) / dt - jerk) * minOf(1f, dt / 0.12f)
@@ -447,6 +473,7 @@ class SoundController(
                         fmodStatus = if (SoundCore.soundId(s) != null && coreFailed) "The sound engine failed to load"
                             else if (s.kind == EngineSound.Kind.FMOD) (fmod.status ?: if (fmodSet == null) "No FMOD sound chosen" else "Starting FMOD…") else null,
                         testDrive = td?.stage?.label,
+                        dropouts = dropouts(track),
                     )
                 }
                 if (stopping && fade <= 0f) break

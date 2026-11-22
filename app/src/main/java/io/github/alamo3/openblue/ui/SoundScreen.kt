@@ -259,6 +259,9 @@ fun SoundScreen(vm: MainViewModel, onBack: () -> Unit) {
                     color = if (r?.piCar != null) scheme.primary else scheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 4.dp),
                 )
+                r?.dropouts?.let {
+                    Text("Hiccups this session: $it", style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
+                }
                 if (r?.piNoPermission == true && android.os.Build.VERSION.SDK_INT >= 31) {
                     TextButton(onClick = {
                         askBluetooth.launch(arrayOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT))
