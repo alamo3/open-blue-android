@@ -93,6 +93,7 @@ void Engine::startTestDrive() { testDrive_ = std::make_unique<TestDrive>(); }
 void Engine::stopTestDrive() { testDrive_.reset(); }
 
 void Engine::render(const Inputs& inRaw, float* l, float* r, int frames) {
+    NoDenormals ftz;
     const float dt = (float)frames / sr_;
     const SoundInfo& si = info(sound_);
     Inputs in = inRaw;

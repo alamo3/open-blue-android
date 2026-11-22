@@ -21,6 +21,7 @@ Tires::Tires(int sr) : sr_(sr), pitch_(1.5f, sr, 0x3301), warble_(7.f, sr, 0x330
 }
 
 void Tires::render(float* l, float* r, int frames, float lateral, float speedMs, float volume) {
+    NoDenormals ftz;
     const float dt = (float)frames / sr_;
     const float g = std::fabs(lateral) / G;
     const float atSpeed = smoothstep((speedMs * 3.6f - SPEED_FROM_KMH) / (SPEED_FULL_KMH - SPEED_FROM_KMH));

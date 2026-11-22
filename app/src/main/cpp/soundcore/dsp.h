@@ -7,8 +7,45 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#if defined(__SSE__) || defined(_M_X64)
+#include <xmmintrin.h>
+#endif
 
 namespace sc {
+
+// Flushes denormals (tiny numbers left in filters and resonators as a sound dies away) to zero
+// while it's in scope. ARM processors -- a Raspberry Pi, a phone -- handle them very slowly by
+// default: enough to make a Pi miss its audio deadlines, which comes out as buzzing and crackle.
+class NoDenormals {
+public:
+    NoDenormals() {
+#if defined(__aarch64__)
+        asm volatile("mrs %0, fpcr" : "=r"(saved_));
+        asm volatile("msr fpcr, %0" : : "r"(saved_ | (1ull << 24)));         // FZ
+#elif defined(__arm__) && defined(__ARM_FP)
+        uint32_t v;
+        asm volatile("vmrs %0, fpscr" : "=r"(v));
+        saved_ = v;
+        asm volatile("vmsr fpscr, %0" : : "r"(v | (1u << 24)));              // FZ
+#elif defined(__SSE__) || defined(_M_X64)
+        saved_ = _mm_getcsr();
+        _mm_setcsr((unsigned)saved_ | 0x8040);                                // FTZ | DAZ
+#endif
+    }
+    ~NoDenormals() {
+#if defined(__aarch64__)
+        asm volatile("msr fpcr, %0" : : "r"(saved_));
+#elif defined(__arm__) && defined(__ARM_FP)
+        asm volatile("vmsr fpscr, %0" : : "r"((uint32_t)saved_));
+#elif defined(__SSE__) || defined(_M_X64)
+        _mm_setcsr((unsigned)saved_);
+#endif
+    }
+    NoDenormals(const NoDenormals&) = delete;
+    NoDenormals& operator=(const NoDenormals&) = delete;
+private:
+    uint64_t saved_ = 0;
+};
 
 constexpr float kPi = 3.14159265358979f;
 
