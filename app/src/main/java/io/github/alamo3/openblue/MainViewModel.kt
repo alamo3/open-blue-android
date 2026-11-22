@@ -1986,6 +1986,66 @@ class MainViewModel(
         soundReadout = null
     }
 
+    // ---------------------------- the Pi's own sound (virtual-car-sound --native-sound)
+    // A remote over Bluetooth: the Pi plays the sound through its own speakers, and this picks
+    // the sound, sets the volume and the gearbox, runs a test drive and revs it in place.
+
+    private val piLink get() = io.github.alamo3.openblue.sound.PiLink.shared(getApplication())
+    private val piRemoteHolder = Any()
+    private var piRemotePoll: Job? = null
+    /** The Pi's status while the remote is open; its [native] part is set when the Pi plays the sound. */
+    var piRemote by mutableStateOf<io.github.alamo3.openblue.sound.PiStatus?>(null)
+        private set
+    var piRemoteLink by mutableStateOf(io.github.alamo3.openblue.sound.PiLink.State.OFF)
+        private set
+
+    private fun canUseBluetooth(): Boolean {
+        val perms = if (android.os.Build.VERSION.SDK_INT >= 31) {
+            listOf(android.Manifest.permission.BLUETOOTH_SCAN, android.Manifest.permission.BLUETOOTH_CONNECT)
+        } else {
+            listOf(android.Manifest.permission.ACCESS_FINE_LOCATION)
+        }
+        val app = getApplication<Application>()
+        return perms.all { app.checkSelfPermission(it) == android.content.pm.PackageManager.PERMISSION_GRANTED }
+    }
+
+    /** Connects to the Pi for the remote (while the sound screen shows it). */
+    fun attachPiRemote() {
+        if (piRemotePoll != null) return
+        piRemotePoll = viewModelScope.launch {
+            var held = false
+            while (true) {
+                // connects once Bluetooth may be used (the permission can come later)
+                if (!held && canUseBluetooth()) { piLink.acquire(piRemoteHolder); held = true }
+                piRemote = piLink.status
+                piRemoteLink = piLink.state
+                delay(250)
+            }
+        }
+    }
+
+    fun detachPiRemote() {
+        piRemotePoll?.cancel()
+        piRemotePoll = null
+        piLink.release(piRemoteHolder)
+        piRemote = null
+    }
+
+    fun piSound(name: String) = piLink.send("voice $name")
+    fun piVolume(v: Float) = piLink.send("volume %.2f".format(java.util.Locale.US, v.coerceIn(0f, 1f)))
+    fun piGearshifts(on: Boolean) = piLink.send("gearshifts ${if (on) 1 else 0}")
+    fun piTestDrive(start: Boolean) = piLink.send("testdrive ${if (start) "start" else "stop"}")
+
+    private var piRevSentAt = 0L
+    /** Revving the Pi's engine in place: 0..1 while the slider is held, null when let go. */
+    fun piRev(throttle: Float?) {
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (throttle == null) { piLink.send("rev off"); return }
+        if (now - piRevSentAt < 80) return                  // ~12 a second is plenty over Bluetooth
+        piRevSentAt = now
+        piLink.send("rev %.2f".format(java.util.Locale.US, throttle.coerceIn(0f, 1f)))
+    }
+
     /** A scripted drive, 0 to 100 km/h and back to a stop, in place of the car's data. */
     fun runTestDrive() {
         soundCtl?.startTestDrive()
@@ -2145,6 +2205,7 @@ class MainViewModel(
     override fun onCleared() {
         // The sound keeps running in its service; only stop watching it.
         soundPoll?.cancel()
+        detachPiRemote()
         stopObservingStatus?.invoke()
         ProcessLifecycleOwner.get().lifecycle.removeObserver(widgetResyncObserver)
         super.onCleared()

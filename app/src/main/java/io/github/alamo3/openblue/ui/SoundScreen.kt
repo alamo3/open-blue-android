@@ -254,11 +254,17 @@ fun SoundScreen(vm: MainViewModel, onBack: () -> Unit) {
                     vm.piOnly,
                 ) { vm.changePiOnly(it) }
                 Text(
-                    piStatus(vm.soundOn, r),
+                    piStatus(vm.soundOn, r, vm.piRemoteLink, vm.piRemote),
                     style = MaterialTheme.typography.bodyMedium,
                     color = if (r?.piCar != null) scheme.primary else scheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 4.dp),
                 )
+                // The Pi's own sound (when it plays it): a remote
+                androidx.compose.runtime.DisposableEffect(Unit) {
+                    vm.attachPiRemote()
+                    onDispose { vm.detachPiRemote() }
+                }
+                vm.piRemote?.native?.let { n -> PiSoundRemote(vm, vm.piRemote!!, n) }
                 r?.dropouts?.let {
                     Text("Hiccups this session: $it", style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
                 }
@@ -368,9 +374,74 @@ private fun soundPermissions(): Array<String> = buildList {
     }
 }.toTypedArray()
 
+private val PI_SOUNDS = listOf("Flat-6", "Hypercar", "Turbofan", "Warp bubble")
+
+/** The remote for the Pi's own sound (virtual-car-sound --native-sound). */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun PiSoundRemote(vm: MainViewModel, s: io.github.alamo3.openblue.sound.PiStatus, n: io.github.alamo3.openblue.sound.PiNative) {
+    val scheme = MaterialTheme.colorScheme
+    Column(Modifier.fillMaxWidth().padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("Raspberry Pi sound", style = MaterialTheme.typography.titleMedium)
+        Text(
+            "The Pi plays the sound through its own speakers." +
+                if (vm.soundOn) " The app's sound is on too: stop it to hear only the Pi." else "",
+            style = MaterialTheme.typography.bodySmall,
+            color = scheme.onSurfaceVariant,
+        )
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            PI_SOUNDS.forEach { name -> OptionPill(name, s.voice == name, { vm.piSound(name) }) }
+        }
+        // volume: sent when let go (the Pi saves every change)
+        var vol by remember(s.volume) { mutableFloatStateOf(s.volume) }
+        Text("Volume ${(vol * 100).roundToInt()}%", style = MaterialTheme.typography.bodyMedium)
+        Slider(value = vol, onValueChange = { vol = it }, onValueChangeFinished = { vm.piVolume(vol) }, colors = sliderColors(scheme.primary))
+        SettingSwitch("Gearbox", "The dual-clutch gearbox: shifts, kickdown, the rev limiter.", n.gears) { vm.piGearshifts(it) }
+        // rev it in place: springs back when let go
+        var rev by remember { mutableFloatStateOf(0f) }
+        Text("Rev it", style = MaterialTheme.typography.bodyMedium)
+        Slider(
+            value = rev,
+            onValueChange = { rev = it; vm.piRev(it) },
+            onValueChangeFinished = { rev = 0f; vm.piRev(null) },
+            colors = sliderColors(scheme.tertiary),
+        )
+        val driving = n.testDrive != null
+        TextButton(onClick = { vm.piTestDrive(!driving) }) {
+            Text(if (driving) "Stop test drive" else "Test drive: 0 to 100 km/h and back")
+        }
+        Text(piLive(s, n), style = MaterialTheme.typography.bodySmall, color = if (n.live || driving) scheme.primary else scheme.onSurfaceVariant)
+        if (s.message.isNotEmpty()) Text(s.message, style = MaterialTheme.typography.bodySmall, color = scheme.error)
+    }
+}
+
+private fun piLive(s: io.github.alamo3.openblue.sound.PiStatus, n: io.github.alamo3.openblue.sound.PiNative): String {
+    if (n.gear == null) return "Waiting for the Pi's sound player…"
+    val what = when {
+        n.testDrive != null -> "Test drive: ${n.testDrive}"
+        n.live -> "Following the car"
+        else -> "No car data: quiet until the car is on"
+    }
+    val gear = if (n.gear >= 1) "gear ${n.gear}" else "neutral"
+    return "$what · %.0f km/h · $gear · ${n.rpm} rpm".format(n.kmh) +
+        (if (n.limiter) " · limiter" else "") +
+        " · CPU %.0f%%".format(n.cpu) +
+        (if (n.underruns > 0) " · ${n.underruns} underruns" else "")
+}
+
 /** The Pi link, for its own section: state, and the live reading when there is one. */
-private fun piStatus(soundOn: Boolean, r: SoundReadout?): String {
-    if (!soundOn || r == null) return "Connects when the sound starts."
+private fun piStatus(
+    soundOn: Boolean, r: SoundReadout?,
+    link: PiLink.State, remote: io.github.alamo3.openblue.sound.PiStatus?,
+): String {
+    if (!soundOn || r == null) return when {
+        // the sound is off, but the remote keeps a link to the Pi
+        remote != null -> if (remote.carLive) "Connected: the Pi has live car data." else "Connected: the Pi is waiting for car data."
+        link == PiLink.State.CONNECTED -> "Connected to the Pi."
+        link == PiLink.State.CONNECTING -> "Found the Pi, connecting…"
+        link == PiLink.State.SEARCHING -> "Searching for the Pi…"
+        else -> "Connects when the sound starts."
+    }
     r.piCar?.let { c ->
         return "Live: ${c.speedKmh.roundToInt()} km/h, pedal ${(c.pedal * 100).roundToInt()}%" +
             (if (c.motorRpm != 0) ", motor ${c.motorRpm} rpm" else "") +

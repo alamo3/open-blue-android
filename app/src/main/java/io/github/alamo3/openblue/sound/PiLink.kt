@@ -42,13 +42,27 @@ data class CarData(
  * No pairing: it scans for the Pi's service, subscribes to its telemetry and reconnects by
  * itself if the link drops. [latest] is null until data arrives; [fresh] says whether it's
  * recent and the Pi itself has live car data.
+ *
+ * One link is shared ([shared]) by everyone who needs the Pi -- the sound, the Pi remote --
+ * each holding it with [acquire] and letting go with [release]; it runs while anyone holds it.
+ * Through it the app also reads the Pi's [status] and sends it commands ([send]): the remote
+ * for the Pi's own sound.
  */
 @SuppressLint("MissingPermission")
 class PiLink(private val context: Context) {
     companion object {
+        @Volatile private var instance: PiLink? = null
+        /** The app's one link to the Pi. */
+        fun shared(context: Context): PiLink =
+            instance ?: synchronized(this) { instance ?: PiLink(context.applicationContext).also { instance = it } }
+
         val SERVICE: UUID = UUID.fromString("7a6b0001-3c1e-4b7a-9d55-2f1c0e5b8a01")
+        val COMMAND: UUID = UUID.fromString("7a6b0002-3c1e-4b7a-9d55-2f1c0e5b8a01")
+        val STATUS: UUID = UUID.fromString("7a6b0003-3c1e-4b7a-9d55-2f1c0e5b8a01")
         val TELEMETRY: UUID = UUID.fromString("7a6b0005-3c1e-4b7a-9d55-2f1c0e5b8a01")
         private val CCCD: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
+        /** The MTU asked for: the status JSON is a couple of hundred bytes. */
+        private const val MTU = 517
         /** Older than this, the data no longer counts as live. */
         const val STALE_MS = 500L
         /** Through a gap this long, the sound keeps following the last reading. */
@@ -105,6 +119,87 @@ class PiLink(private val context: Context) {
     @Volatile var longestGapMs = 0L
         private set
 
+    /** The Pi's latest status; null until it sends one (or with a Pi too old to). */
+    @Volatile var status: PiStatus? = null
+        private set
+
+    private val holders = mutableSetOf<Any>()
+
+    /** Starts the link for [holder] (if it isn't running already). */
+    @Synchronized fun acquire(holder: Any) {
+        holders += holder
+        if (holders.size == 1) main.post { start() }
+    }
+
+    /** Lets go for [holder]; the link stops when nobody holds it. */
+    @Synchronized fun release(holder: Any) {
+        if (holders.remove(holder) && holders.isEmpty()) main.post { if (holders.isEmpty()) stop() }
+    }
+
+    /** Sends the Pi a command (ble_control.py: "voice Hypercar", "volume 0.7", "testdrive start"...). */
+    fun send(command: String) {
+        main.post {
+            enqueue { g ->
+                val c = g.getService(SERVICE)?.getCharacteristic(COMMAND) ?: return@enqueue false
+                val bytes = command.toByteArray(Charsets.UTF_8)
+                if (Build.VERSION.SDK_INT >= 33) {
+                    g.writeCharacteristic(c, bytes, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT) == BluetoothGatt.GATT_SUCCESS
+                } else {
+                    @Suppress("DEPRECATION")
+                    c.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+                    @Suppress("DEPRECATION")
+                    c.value = bytes
+                    @Suppress("DEPRECATION")
+                    g.writeCharacteristic(c)
+                }
+            }
+        }
+    }
+
+    // GATT allows one operation at a time: they queue here (on the main thread), and each
+    // completion callback starts the next
+    private val ops = ArrayDeque<(BluetoothGatt) -> Boolean>()
+    private var opBusy = false
+
+    private fun enqueue(op: (BluetoothGatt) -> Boolean) {
+        if (ops.size > 20) ops.removeFirst()
+        ops.addLast(op)
+        nextOp()
+    }
+
+    private fun nextOp() {
+        while (!opBusy) {
+            val g = gatt ?: run { ops.clear(); return }
+            val op = ops.removeFirstOrNull() ?: return
+            opBusy = runCatching { op(g) }.getOrDefault(false)
+            if (opBusy) main.postDelayed(opTimeout, 2_000)   // a lost callback mustn't stall the queue
+        }
+    }
+
+    private fun opDone() {
+        main.post {
+            main.removeCallbacks(opTimeout)
+            opBusy = false
+            nextOp()
+        }
+    }
+
+    private val opTimeout = Runnable { opBusy = false; nextOp() }
+
+    private fun subscribe(uuid: UUID) = enqueue { g ->
+        val c = g.getService(SERVICE)?.getCharacteristic(uuid) ?: return@enqueue false
+        g.setCharacteristicNotification(c, true)
+        val d = c.getDescriptor(CCCD) ?: return@enqueue false
+        if (Build.VERSION.SDK_INT >= 33) {
+            g.writeDescriptor(d, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE) == BluetoothGatt.GATT_SUCCESS
+        } else {
+            @Suppress("DEPRECATION")
+            d.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+            @Suppress("DEPRECATION")
+            g.writeDescriptor(d)
+        }
+    }
+
     private val main = Handler(Looper.getMainLooper())
     private var gatt: BluetoothGatt? = null
     private var scanning = false
@@ -113,14 +208,19 @@ class PiLink(private val context: Context) {
     private var lastAt = 0L
     private var smoothSpeed = -1f
 
-    fun start() {
+    private fun start() {
         if (running) return
         running = true
+        gaps = 0
+        longestGapMs = 0
         scan()
     }
 
-    fun stop() {
+    private fun stop() {
         running = false
+        ops.clear()
+        opBusy = false
+        status = null
         main.removeCallbacksAndMessages(null)
         stopScan()
         gatt?.let { runCatching { it.disconnect(); it.close() } }
@@ -169,49 +269,70 @@ class PiLink(private val context: Context) {
     }
 
     private val gattCallback = object : BluetoothGattCallback() {
-        override fun onConnectionStateChange(g: BluetoothGatt, status: Int, newState: Int) {
+        override fun onConnectionStateChange(g: BluetoothGatt, gattStatus: Int, newState: Int) {
             if (newState == BluetoothProfile.STATE_CONNECTED) {
                 g.requestConnectionPriority(BluetoothGatt.CONNECTION_PRIORITY_HIGH)   // 25 Hz data
-                g.discoverServices()
+                // room for the status (a couple of hundred bytes) in one notification
+                if (!g.requestMtu(MTU)) g.discoverServices()
             } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
                 runCatching { g.close() }
                 main.post {
                     gatt = null
                     piFresh = false
+                    status = null
+                    ops.clear()
+                    opBusy = false
                     state = if (running) State.SEARCHING else State.OFF
                     retry()
                 }
             }
         }
 
-        override fun onServicesDiscovered(g: BluetoothGatt, status: Int) {
-            val c = g.getService(SERVICE)?.getCharacteristic(TELEMETRY)
-            if (c == null) {               // an older Pi build without telemetry
+        override fun onMtuChanged(g: BluetoothGatt, mtu: Int, gattStatus: Int) {
+            g.discoverServices()
+        }
+
+        override fun onServicesDiscovered(g: BluetoothGatt, gattStatus: Int) {
+            val service = g.getService(SERVICE)
+            if (service?.getCharacteristic(TELEMETRY) == null) {   // an older Pi build without telemetry
                 runCatching { g.disconnect() }
                 return
             }
-            g.setCharacteristicNotification(c, true)
-            val d = c.getDescriptor(CCCD) ?: return
-            if (Build.VERSION.SDK_INT >= 33) {
-                g.writeDescriptor(d, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE)
-            } else {
-                @Suppress("DEPRECATION")
-                d.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
-                @Suppress("DEPRECATION")
-                g.writeDescriptor(d)
+            main.post {
+                subscribe(TELEMETRY)
+                if (service.getCharacteristic(STATUS) != null) {
+                    subscribe(STATUS)
+                    send("status")                               // the status straight away
+                }
+                state = State.CONNECTED
             }
-            state = State.CONNECTED
         }
 
+        override fun onDescriptorWrite(g: BluetoothGatt, d: BluetoothGattDescriptor, gattStatus: Int) = opDone()
+        override fun onCharacteristicWrite(g: BluetoothGatt, c: BluetoothGattCharacteristic, gattStatus: Int) = opDone()
+
         override fun onCharacteristicChanged(g: BluetoothGatt, c: BluetoothGattCharacteristic, value: ByteArray) {
-            if (c.uuid == TELEMETRY) parse(value)
+            when (c.uuid) {
+                TELEMETRY -> parse(value)
+                STATUS -> parseStatus(value)
+            }
         }
 
         @Deprecated("Deprecated in Java")
         override fun onCharacteristicChanged(g: BluetoothGatt, c: BluetoothGattCharacteristic) {
+            if (Build.VERSION.SDK_INT >= 33) return
             @Suppress("DEPRECATION")
-            if (Build.VERSION.SDK_INT < 33 && c.uuid == TELEMETRY) parse(c.value ?: return)
+            val v = c.value ?: return
+            when (c.uuid) {
+                TELEMETRY -> parse(v)
+                STATUS -> parseStatus(v)
+            }
         }
+    }
+
+    /** The status JSON (ble_control.py's _status). */
+    private fun parseStatus(v: ByteArray) {
+        status = parsePiStatus(String(v, Charsets.UTF_8)) ?: return
     }
 
     /** Packet layout: see ble_control.py on the Pi (10 bytes, little-endian, version 1). */
@@ -250,3 +371,4 @@ class PiLink(private val context: Context) {
         latest = CarData(shown, pedal.coerceIn(0f, 1f), rpm, amps, flags and 2 != 0, now)
     }
 }
+

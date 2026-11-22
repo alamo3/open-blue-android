@@ -68,7 +68,7 @@ class SoundController(
     @Volatile var usePi = true
         set(v) {
             field = v
-            if (running) { if (v && canUseBluetooth()) pi.start() else if (!v) pi.stop() }
+            if (running) { if (v && canUseBluetooth()) pi.acquire(this) else if (!v) pi.release(this) }
         }
     /** Without the Pi's live data, stay quiet instead of guessing from the phone's sensors. */
     @Volatile var piOnly = false
@@ -111,7 +111,7 @@ class SoundController(
     val running: Boolean get() = audioThread != null
 
     private val fusion = MotionFusion().apply { restoreMount(savedMount) }
-    private val pi = PiLink(context)
+    private val pi = PiLink.shared(context)
     private var sinceMountSave = 0
     @Volatile private var fusedAccel = 0f
     @Volatile private var fusedSpeed = 0f
@@ -184,7 +184,7 @@ class SoundController(
                     ?.requestLocationUpdates(LocationManager.GPS_PROVIDER, 0L, 0f, locationListener, ht.looper)
             }
         }
-        if (usePi && canUseBluetooth()) pi.start()
+        if (usePi && canUseBluetooth()) pi.acquire(this)
         focus.start()
         // FMOD's Android layer sets itself up here, on the main thread, before the audio thread uses it
         if (sound.kind == EngineSound.Kind.FMOD || fmodSet != null) FmodNative.ensure(context)
@@ -202,7 +202,7 @@ class SoundController(
     }
 
     fun stop() {
-        pi.stop()
+        pi.release(this)
         focus.stop()
         val t = audioThread ?: return
         fusion.exportMount()?.let(saveMount)
