@@ -332,6 +332,8 @@ class SoundController(
         var lastPedalAt = 0L
         var pedalVel = 0f
         var pedalGlide = -1f
+        val speedTrack = SpeedTracker()
+        var trackedAt = 0L
         track.play()
         try {
             while (true) {
@@ -350,8 +352,13 @@ class SoundController(
                 val td = testDrive?.let { t -> if (t.step(dt)) t else { testDrive = null; null } }
                 val car = if (td == null && usePi && pi.usable) pi.latest else null
                 val waitingForPi = td == null && usePi && piOnly && car == null
-                // the car's speed carried on between its readings (they come ~30 a second, in steps)
-                val speedNow = td?.speed ?: car?.let { pi.speedNow() / 3.6f } ?: fusedSpeed
+                // The car's speed comes in whole km/h, ~30 times a second: tracked between its
+                // readings (speed and acceleration), so the revs glide instead of stepping.
+                if (car != null) {
+                    if (car.at != trackedAt) { speedTrack.reading(car.rawKmh, car.at); trackedAt = car.at }
+                } else if (trackedAt != 0L) { speedTrack.reset(); trackedAt = 0L }
+                val trackedKmh = if (car != null) speedTrack.next(android.os.SystemClock.elapsedRealtime(), dt) else 0f
+                val speedNow = td?.speed ?: car?.let { trackedKmh / 3.6f } ?: fusedSpeed
                 // Reversing out of a spot isn't "accelerating": keep the sound at idle.
                 val pedalNow = td?.pedal ?: car?.let { if (it.reversing) 0f else it.pedal }
                 val motorRpm = td?.motorRpm ?: car?.motorRpm ?: 0
@@ -385,7 +392,7 @@ class SoundController(
                     pedalGlide
                 } else { pedalGlide = -1f; pedalAhead }
                 // Look ahead: extend the current trend in acceleration by the output delay.
-                val a = td?.accel ?: if (car != null) (if (car.reversing) 0f else pi.accel) else fusedAccel
+                val a = td?.accel ?: if (car != null) (if (car.reversing) 0f else speedTrack.accel) else fusedAccel
                 jerk += ((a - prevAccel) / dt - jerk) * minOf(1f, dt / 0.12f)
                 prevAccel = a
                 // Not at walking pace, where the jolt of setting off would be stretched into a spike,

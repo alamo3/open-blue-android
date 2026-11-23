@@ -34,6 +34,8 @@ data class CarData(
     val reversing: Boolean,
     /** When it arrived ([SystemClock.elapsedRealtime] ms). */
     val at: Long,
+    /** The speed as the car reported it (whole km/h), for [SpeedTracker]. */
+    val rawKmh: Float = speedKmh,
 )
 
 /**
@@ -67,8 +69,6 @@ class PiLink(private val context: Context) {
         const val STALE_MS = 500L
         /** Through a gap this long, the sound keeps following the last reading. */
         const val HOLD_MS = 1500L
-        /** Between readings, the speed carries on at the current acceleration for up to this long. */
-        const val CARRY_MAX_SEC = 0.25f
         /** A gap between readings longer than this counts as one (they come every ~35 ms). */
         const val GAP_MS = 250L
         /**
@@ -104,14 +104,6 @@ class PiLink(private val context: Context) {
     val usable: Boolean
         get() = latest != null && SystemClock.elapsedRealtime() - lastFreshAt < HOLD_MS
     @Volatile private var lastFreshAt = -HOLD_MS
-
-    /** The speed now, km/h: the latest reading carried on at the current acceleration (between readings). */
-    fun speedNow(): Float {
-        val d = latest ?: return 0f
-        if (d.speedKmh <= 0f) return 0f
-        val age = ((SystemClock.elapsedRealtime() - d.at) / 1000f).coerceIn(0f, CARRY_MAX_SEC)
-        return maxOf(0f, d.speedKmh + accel * 3.6f * age)
-    }
 
     /** Gaps in the car's data while connected: how many (over [GAP_MS]) and the longest, ms. */
     @Volatile var gaps = 0
@@ -368,7 +360,7 @@ class PiLink(private val context: Context) {
         lastSpeed = speed
         lastAt = now
         val shown = if (speed < 0.5f) 0f else maxOf(0f, smoothSpeed + accel * 3.6f * SPEED_SMOOTH_SEC)
-        latest = CarData(shown, pedal.coerceIn(0f, 1f), rpm, amps, flags and 2 != 0, now)
+        latest = CarData(shown, pedal.coerceIn(0f, 1f), rpm, amps, flags and 2 != 0, now, rawKmh = speed)
     }
 }
 

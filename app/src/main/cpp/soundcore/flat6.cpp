@@ -21,6 +21,7 @@ constexpr float F_LO[4] = {1.00f, 0.45f, 0.10f, 0.02f};
 constexpr float F_HI[4] = {1.00f, 0.85f, 0.55f, 0.22f};
 constexpr float RIGHT_TUNE = 1.10f, WEAK_LOW = 0.66f, WEAK_HIGH = 0.86f;
 constexpr float TRIM = 4.9f, POP_SEC = 0.03f;
+constexpr float RASP = 0.06f;            // the turbulent rasp on each pulse, at full load
 }  // namespace
 
 class Flat6Voice : public LayeredVoice {
@@ -99,15 +100,17 @@ public:
             attack_[1] += (hitR / attackK_ - attack_[1]) * attackK_;
             float bankL = exhaust(0, attack_[0] * attackK_, formantGain);
             float bankR = exhaust(1, attack_[1] * attackK_, formantGain);
-            float g = 1.f + 0.35f * load * grit_.process(noise_.gauss());
-            float l = (bankL * 0.62f + bankR * 0.38f) * g;
-            float r = (bankL * 0.38f + bankR * 0.62f) * g;
+            // the rasp: turbulent flow riding on each exhaust pulse, added to it. (It used to
+            // multiply the whole exhaust by noise -- heard as a distorted, rattling buzz.)
+            float pulseEnv = std::exp(-sinceFire_ / pulseTau);
+            float rasp = grit_.process(noise_.gauss()) * pulseEnv * RASP * load;
+            float l = bankL * 0.62f + bankR * 0.38f + rasp;
+            float r = bankL * 0.38f + bankR * 0.62f + rasp;
             l = muffler_[0].process(header_[0].process(tailpipe_[0].process(l)));
             r = muffler_[1].process(header_[1].process(tailpipe_[1].process(r)));
             float lv = level_.next(lvlTarget);
             l *= lv; r *= lv;
             // intake
-            float pulseEnv = std::exp(-sinceFire_ / pulseTau);
             float roar = intakeBp_.process(pink_.next()) * (0.45f + 0.55f * pulseEnv) * intakeLevel_.next(intakeTarget);
             l += roar * 0.5f; r += roar * 0.5f;
             // mechanical
