@@ -197,6 +197,10 @@ class SecureStore(private val prefs: SharedPreferences) {
     var gearshifts: Boolean
         get() = prefs.getBoolean("gearshifts", false)
         set(v) = prefs.edit().putBoolean("gearshifts", v).apply()
+    /** Engine sound: ease the engine down at a steady cruise (CruiseSettle). */
+    var cruiseSettle: Boolean
+        get() = prefs.getBoolean("cruiseSettle", true)
+        set(v) = prefs.edit().putBoolean("cruiseSettle", v).apply()
     var holdRevs: Boolean
         get() = prefs.getBoolean("holdRevs", false)
         set(v) = prefs.edit().putBoolean("holdRevs", v).apply()

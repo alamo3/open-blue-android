@@ -81,6 +81,7 @@ class SoundCore private constructor(private var handle: Long) : AutoCloseable {
     fun setSound(id: Int) = Native.setSound(handle, id)
     fun setVolume(v: Float) = Native.setVolume(handle, v)
     fun setGearshifts(on: Boolean) = Native.setGearshifts(handle, on)
+    fun setCruiseSettle(on: Boolean) = Native.setCruiseSettle(handle, on)
     fun skipChime() = Native.skipChime(handle)
 
     /**
@@ -122,6 +123,7 @@ class SoundCore private constructor(private var handle: Long) : AutoCloseable {
         external fun setSound(h: Long, sound: Int)
         external fun setVolume(h: Long, v: Float)
         external fun setGearshifts(h: Long, on: Boolean)
+        external fun setCruiseSettle(h: Long, on: Boolean)
         external fun skipChime(h: Long)
         external fun render(
             h: Long, pedal: Float, hasPedal: Boolean, speedMs: Float, accel: Float, motorRpm: Int,

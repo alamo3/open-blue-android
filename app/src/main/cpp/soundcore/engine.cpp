@@ -19,6 +19,12 @@ constexpr float OUTPUT_TRIM = 0.25f, CEILING = 0.89f, LOOKAHEAD_SEC = 0.003f, LI
 constexpr float LIMITER_CUT_LEVEL = 0.35f, LIMITER_EASE_SEC = 0.004f;
 constexpr float CORNER_LEAN = 0.45f, CORNER_FULL_MS2 = 3.9f;   // the lean: this far over by 0.4 g
 constexpr float SPEED_FROM_KMH = 30.f, SPEED_FULL_KMH = 120.f, SPEED_GAIN_DB = 3.f, SPEED_BRIGHT_DB = 2.f;
+// cruise settle: steady (above CRUISE_MIN_KMH, acceleration under CRUISE_ACCEL, the pedal within
+// CRUISE_PEDAL of its 2 s average, no shift) for CRUISE_AFTER_SEC -> the engine eases CRUISE_DB
+// down over ~CRUISE_DOWN_SEC; any change brings it back within ~CRUISE_UP_SEC
+constexpr float CRUISE_MIN_KMH = 40.f, CRUISE_ACCEL = 0.35f, CRUISE_PEDAL = 0.06f, CRUISE_AFTER_SEC = 4.f;
+constexpr float CRUISE_DB = -6.f, CRUISE_DOWN_SEC = 2.5f, CRUISE_UP_SEC = 0.12f;
+constexpr float CRUISE_LIFE_LOAD = 0.06f, CRUISE_LIFE_RPM = 0.004f;   // the life in it: slow load / rev drift
 // hill effort (as Effort.kt)
 constexpr float EF_MIN_KMH = 18.f, EF_MIN_PEDAL = 0.15f, EF_LEARN_SEC = 90.f, EF_NOW_SEC = 3.f, EF_GAIN = 0.5f, EF_MAX = 0.8f;
 // test drive (as TestDrive.kt)
@@ -74,7 +80,8 @@ bool TestDrive::step(float dt) {
 
 // --- Engine ----------------------------------------------------------------------------------
 Engine::Engine(int sampleRate, const std::string& effectsDir)
-    : sr_(sampleRate), effects_(sampleRate, effectsDir), tires_(sampleRate), la_(std::max(2, (int)(LOOKAHEAD_SEC * sampleRate))) {
+    : sr_(sampleRate), effects_(sampleRate, effectsDir), tires_(sampleRate), la_(std::max(2, (int)(LOOKAHEAD_SEC * sampleRate))),
+      lifeLoad_(0.25f, sampleRate, 0x4C1F), lifeRpm_(0.4f, sampleRate, 0x4C20) {
     for (int s = 0; s < 4; ++s) voices_[s] = makeVoice((Sound)s, sampleRate);
     delayL_.reset(new float[la_ - 1]()); delayR_.reset(new float[la_ - 1]());
     minVal_.reset(new float[la_]()); minIdx_.reset(new long long[la_]());
@@ -149,8 +156,23 @@ void Engine::render(const Inputs& inRaw, float* l, float* r, int frames) {
     shiftsSeen_ = st.shifts;
     downSeen_ = st.downshifts;
 
+    // cruise settle: a steady cruise eases the engine down; any change brings it straight back
+    cruisePedal_ += (pedal - cruisePedal_) * (1.f - std::exp(-dt / 2.f));
+    const bool steady = cruiseSettle_ && !testDrive_ && in.revThrottle < 0.f && !in.reversing && kmh > CRUISE_MIN_KMH &&
+                        std::fabs(in.accel) < CRUISE_ACCEL && std::fabs(pedal - cruisePedal_) < CRUISE_PEDAL && st.shifting <= 0.f;
+    steadyT_ = steady ? steadyT_ + dt : 0.f;
+    const float settleTo = steadyT_ > CRUISE_AFTER_SEC ? std::pow(10.f, CRUISE_DB / 20.f) : 1.f;
+    cruiseGain_ += (settleTo - cruiseGain_) * (1.f - std::exp(-dt / (settleTo < cruiseGain_ ? CRUISE_DOWN_SEC : CRUISE_UP_SEC)));
+    // ...with a little life in it: a slow drift in load and revs, eased in and out
+    life_ += (clamp01((steadyT_ - 1.f) / 2.f) - life_) * (1.f - std::exp(-dt / 0.3f));
+    const float driftLoad = lifeLoad_.next(frames), driftRpm = lifeRpm_.next(frames);
+    if (life_ > 1e-3f) {
+        st.load = clamp01(st.load * (1.f + CRUISE_LIFE_LOAD * life_ * driftLoad));
+        st.rpm *= 1.f + CRUISE_LIFE_RPM * life_ * driftRpm;
+    }
+
     LayeredVoice& v = *voices_[(int)sound_];
-    v.volume = vol;
+    v.volume = vol * cruiseGain_;
     v.set(st, in.hasPedal ? pedal : st.throttle, in.accel, (float)std::abs(in.motorRpm));
     v.render(l, r, frames);
 
@@ -170,6 +192,7 @@ void Engine::render(const Inputs& inRaw, float* l, float* r, int frames) {
 
     readout_.rpm = st.rpm; readout_.kmh = kmh; readout_.load = st.load; readout_.gear = st.gear; readout_.limiter = st.limiter;
     readout_.tires = tires_.squeal();
+    readout_.settled = cruiseGain_ < 0.9f;
     readout_.testDrive = testDrive_ ? testDrive_->stage() : nullptr;
 }
 

@@ -2034,6 +2034,7 @@ class MainViewModel(
     fun piSound(name: String) = piLink.send("voice $name")
     fun piVolume(v: Float) = piLink.send("volume %.2f".format(java.util.Locale.US, v.coerceIn(0f, 1f)))
     fun piGearshifts(on: Boolean) = piLink.send("gearshifts ${if (on) 1 else 0}")
+    fun piCruiseSettle(on: Boolean) = piLink.send("set cruise_quiet ${if (on) 1 else 0}")
     fun piTestDrive(start: Boolean) = piLink.send("testdrive ${if (start) "start" else "stop"}")
 
     private var piRevSentAt = 0L
@@ -2121,6 +2122,15 @@ class MainViewModel(
         piOnly = on
         store.piOnly = on
         soundCtl?.piOnly = on
+    }
+
+    var cruiseSettle by mutableStateOf(store.cruiseSettle)
+        private set
+
+    fun changeCruiseSettle(on: Boolean) {
+        cruiseSettle = on
+        store.cruiseSettle = on
+        soundCtl?.cruiseSettle = on
     }
 
     fun changeGearshifts(on: Boolean) {

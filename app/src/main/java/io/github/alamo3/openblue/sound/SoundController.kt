@@ -73,6 +73,8 @@ class SoundController(
     /** Without the Pi's live data, stay quiet instead of guessing from the phone's sensors. */
     @Volatile var piOnly = false
     @Volatile var gearshifts = false
+    /** At a steady cruise, ease the engine down ([CruiseSettle]; the native engine's own for its sounds). */
+    @Volatile var cruiseSettle = true
     /** 0..1 while the rev slider is held; null otherwise. */
     @Volatile var revThrottle: Float? = null
     /** A scripted drive standing in for the car while it runs ([TestDrive]); null otherwise. */
@@ -333,6 +335,7 @@ class SoundController(
         var pedalVel = 0f
         var pedalGlide = -1f
         val speedTrack = SpeedTracker()
+        val cruise = CruiseSettle()
         var trackedAt = 0L
         track.play()
         try {
@@ -431,6 +434,7 @@ class SoundController(
                 if (nat != null) {
                     nat.setSound(coreId!!)
                     nat.setGearshifts(gearshifts)
+                    nat.setCruiseSettle(cruiseSettle)
                     nat.setVolume(volume * fade)
                     nat.render(pedal, vPred, a, motorRpm, car?.reversing == true, yaw, revThrottle, buf, frames)
                     if (!chimed) { chimed = true; voice.skipChime() }
@@ -442,7 +446,11 @@ class SoundController(
                     // cornering: speed x yaw rate (the test drive's own corners while it runs)
                     voice.corner(cornering.lateralAccel(speedNow, yaw))
                     voice.set(st)
-                    voice.volume = volume * fade
+                    val settle = cruise.step(
+                        dt, cruiseSettle && td == null && revThrottle == null && car?.reversing != true,
+                        speedNow * 3.6f, a, pedal ?: st.load, st.shifting > 0f,
+                    )
+                    voice.volume = volume * fade * settle
                     voice.renderStereo(buf, frames)
                     if (!chimed) { chimed = true; core?.skipChime() }
                 }

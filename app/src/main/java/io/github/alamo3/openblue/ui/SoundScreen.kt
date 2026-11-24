@@ -228,6 +228,11 @@ fun SoundScreen(vm: MainViewModel, onBack: () -> Unit) {
                 ) { vm.changeGearshifts(it) }
             }
             SettingSwitch(
+                "Settle at a steady cruise",
+                "On: after a few seconds of steady speed the engine eases down, so a long run doesn't drone; it comes straight back when you press or lift.",
+                vm.cruiseSettle,
+            ) { vm.changeCruiseSettle(it) }
+            SettingSwitch(
                 "Hold revs when not accelerating",
                 "Off: revs drop back to idle whenever you're not on the power. On: they stay where the gear would put them.",
                 vm.holdRevs,
@@ -397,6 +402,7 @@ private fun PiSoundRemote(vm: MainViewModel, s: io.github.alamo3.openblue.sound.
         Text("Volume ${(vol * 100).roundToInt()}%", style = MaterialTheme.typography.bodyMedium)
         Slider(value = vol, onValueChange = { vol = it }, onValueChangeFinished = { vm.piVolume(vol) }, colors = sliderColors(scheme.primary))
         SettingSwitch("Gearbox", "The dual-clutch gearbox: shifts, kickdown, the rev limiter.", n.gears) { vm.piGearshifts(it) }
+        SettingSwitch("Settle at a steady cruise", "Eases the engine down after a few seconds of steady speed; back the moment you press or lift.", s.cruiseSettle) { vm.piCruiseSettle(it) }
         // rev it in place: springs back when let go
         var rev by remember { mutableFloatStateOf(0f) }
         Text("Rev it", style = MaterialTheme.typography.bodyMedium)
@@ -425,6 +431,7 @@ private fun piLive(s: io.github.alamo3.openblue.sound.PiStatus, n: io.github.ala
     val gear = if (n.gear >= 1) "gear ${n.gear}" else "neutral"
     return "$what · %.0f km/h · $gear · ${n.rpm} rpm".format(n.kmh) +
         (if (n.limiter) " · limiter" else "") +
+        (if (n.settled) " · settled" else "") +
         " · CPU %.0f%%".format(n.cpu) +
         (if (n.underruns > 0) " · ${n.underruns} underruns" else "")
 }

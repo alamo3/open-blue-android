@@ -51,6 +51,11 @@ Java_io_github_alamo3_openblue_sound_SoundCore_00024Native_setGearshifts(JNIEnv*
 }
 
 JNIEXPORT void JNICALL
+Java_io_github_alamo3_openblue_sound_SoundCore_00024Native_setCruiseSettle(JNIEnv*, jobject, jlong h, jboolean on) {
+    H(h)->engine.setCruiseSettle(on);
+}
+
+JNIEXPORT void JNICALL
 Java_io_github_alamo3_openblue_sound_SoundCore_00024Native_skipChime(JNIEnv*, jobject, jlong h) {
     H(h)->engine.skipChime();
 }

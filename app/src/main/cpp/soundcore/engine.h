@@ -31,6 +31,7 @@ struct Inputs {
 struct Readout {
     float rpm = 0, kmh = 0, load = 0;
     float tires = 0;            // 0..1: how hard the tires are squealing
+    bool settled = false;       // eased down for a steady cruise
     int gear = 0;
     bool limiter = false;
     const char* testDrive = nullptr;   // the test drive's stage while one runs
@@ -71,6 +72,9 @@ public:
     void setGearshifts(bool on) { gearshifts_ = on; }
     void setActive(bool on) { active_ = on; }      // fades in / out (no clicks)
     void skipChime() { chimed_ = true; }           // e.g. a host that already chimed, or switched sound mid-drive
+    // cruise settle: at a steady cruise the engine eases ~6 dB down (with a little life in it),
+    // and snaps back the moment the pedal moves -- as cars with synthetic engine sound do
+    void setCruiseSettle(bool on) { cruiseSettle_ = on; }
     void startTestDrive();
     void stopTestDrive();
     bool testDriving() const { return testDrive_ != nullptr; }
@@ -108,6 +112,10 @@ private:
     long long sampleIdx_ = 0;
     float limitGain_ = 1;
     Readout readout_;
+    // cruise settle
+    bool cruiseSettle_ = true;
+    float cruisePedal_ = 0, steadyT_ = 0, cruiseGain_ = 1, life_ = 0;
+    Wander lifeLoad_, lifeRpm_;
 };
 
 }  // namespace sc

@@ -13,6 +13,8 @@ data class PiNative(
     val underruns: Int = 0,
     val cpu: Float = 0f,
     val live: Boolean = false,
+    /** Eased down for a steady cruise (cruise settle). */
+    val settled: Boolean = false,
 )
 
 /** The Pi's status (once a second, and after each command). */
@@ -23,6 +25,8 @@ data class PiStatus(
     val carLive: Boolean,
     /** The last problem it reported ("" when all is well). */
     val message: String,
+    /** Cruise settle on (the Pi's saved "cruise quiet"). */
+    val cruiseSettle: Boolean = true,
     /** Set when the Pi plays the sound itself with the native engine: then it can be remote-controlled. */
     val native: PiNative?,
 )
@@ -36,6 +40,7 @@ internal fun parsePiStatus(json: String): PiStatus? = runCatching {
         volume = o.optDouble("vol", 1.0).toFloat(),
         carLive = o.optBoolean("car"),
         message = o.optString("msg"),
+        cruiseSettle = o.optBoolean("cq", true),
         native = n?.let {
             PiNative(
                 gears = it.optBoolean("gears", true),
@@ -47,6 +52,7 @@ internal fun parsePiStatus(json: String): PiStatus? = runCatching {
                 underruns = it.optInt("ur"),
                 cpu = it.optDouble("cpu", 0.0).toFloat(),
                 live = it.optInt("live") != 0,
+                settled = it.optInt("cs") != 0,
             )
         },
     )

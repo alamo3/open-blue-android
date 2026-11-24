@@ -63,6 +63,7 @@ class EngineSoundService : Service() {
                 fmodSet = store.fmodSet
                 piOnly = store.piOnly
                 gearshifts = store.gearshifts
+                cruiseSettle = store.cruiseSettle
                 lookaheadMs = store.soundLookaheadMs.toFloat()
                 padSign = store.soundPlacement.takeIf { it != 0 }
                 start(canUseGps = gps)
