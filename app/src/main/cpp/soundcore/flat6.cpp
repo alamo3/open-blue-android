@@ -113,10 +113,10 @@ public:
             // intake
             float roar = intakeBp_.process(pink_.next()) * (0.45f + 0.55f * pulseEnv) * intakeLevel_.next(intakeTarget);
             l += roar * 0.5f; r += roar * 0.5f;
-            // mechanical
-            chainPhase_ += rpm / 60.0 * 21.0 / sr_;
-            float mech = sin1(chainPhase_) * 0.012f * (0.3f + rpmN) +
-                         tickBp_.process(noise_.gauss()) * pulseEnv * pulseEnv * pulseEnv * 0.05f * (0.2f + rpmN);
+            // mechanical: valvetrain tick on each pulse. (A pure 'timing chain' tone at 21x the
+            // revs used to sit here: at a cruise it stood ~4 dB over the engine's own harmonics
+            // around it -- heard as an electric-motor whine. A real chain is texture, not a tone.)
+            float mech = tickBp_.process(noise_.gauss()) * pulseEnv * pulseEnv * pulseEnv * 0.05f * (0.2f + rpmN);
             l += mech * 0.5f; r += mech * 0.5f;
             // overrun crackle
             if (popRate > 0.f && noise_.chance(popRate / sr_)) {
@@ -151,7 +151,7 @@ private:
     float attackK_;
     Biq grit_, tailpipe_[2], header_[2], muffler_[2], intakeBp_, tickBp_, shelf_[2], hp_[2];
     Smooth level_, intakeLevel_;
-    double firePhase_ = 0, chainPhase_ = 0, popPan_ = 0;
+    double firePhase_ = 0, popPan_ = 0;
     long long firing_ = 0;
     float sinceFire_ = 1e9f;
     int liftOffsSeen_ = -1;
