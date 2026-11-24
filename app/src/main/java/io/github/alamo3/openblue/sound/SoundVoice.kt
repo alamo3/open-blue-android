@@ -24,7 +24,9 @@ class SoundVoice(
          * hot baked sets (normalised to rms 0.55: peaks 2-10 dB over full scale at full volume)
          * no longer lean on the limiter all the time. Turn the car's volume up to make it up.
          */
-        private const val OUTPUT_TRIM = 0.5f       // -6 dB
+        // -12 dB, as the native engine (soundcore): headroom so the limiter only catches the odd
+        // extreme instead of clamping on every pulse (a distorted crackle at 0.5, the old value)
+        private const val OUTPUT_TRIM = 0.25f
         private const val CEILING = 0.89f          // output peaks never go above this (-1 dBFS)
         private const val LOOKAHEAD_SEC = 0.003f   // the limiter sees peaks coming this early
         private const val LIMIT_RELEASE_SEC = 0.25f

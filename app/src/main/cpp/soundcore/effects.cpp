@@ -13,7 +13,8 @@ namespace {
 constexpr float LAUNCH_PEDAL_RATE = 2.f, LAUNCH_MIN_PEDAL = 0.65f, LAUNCH_MAX_KMH = 50.f, LAUNCH_COOLDOWN_SEC = 4.f;
 constexpr float LAUNCH_BUILD_PEDAL = 0.75f, LAUNCH_BANG_PEDAL = 0.9f, EV_LAUNCH_COOLDOWN_SEC = 5.f;
 constexpr float SHIFT_DUCK = 0.75f, SHIFT_DUCK_SEC = 0.18f, REVERSE_DUCK = 0.2f;
-constexpr float SHIFT_FROM_PEDAL = 0.55f, SHIFT_FULL_PEDAL = 0.85f, SHIFT_GAIN = 3.f, LAUNCH_GAIN = 1.8f;
+// SHIFT_GAIN: over the engine; 3 clamped the limiter on every hard shift, 2.4 just touches it
+constexpr float SHIFT_FROM_PEDAL = 0.55f, SHIFT_FULL_PEDAL = 0.85f, SHIFT_GAIN = 2.4f, LAUNCH_GAIN = 1.8f;
 constexpr int ASSET_RATE = 48000;
 // crossed on purpose: the "down" take sounds right going up, and the other way round
 const char* SHIFT_UP = "shift_cin_down";

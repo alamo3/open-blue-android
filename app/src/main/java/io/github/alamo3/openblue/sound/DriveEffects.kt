@@ -35,7 +35,7 @@ class DriveEffects(private val sampleRate: Int, private val open: ((String) -> I
         const val REVERSE_DUCK = 0.2f
         const val SHIFT_FROM_PEDAL = 0.55f    // the shift sound only when driven hard: none below...
         const val SHIFT_FULL_PEDAL = 0.85f    // ...full from here
-        const val SHIFT_GAIN = 3f             // the gearshift sound sits over the engine, not under it
+        const val SHIFT_GAIN = 2.4f           // the gearshift sound sits over the engine (3 slammed the limiter on hard shifts)
         const val LAUNCH_GAIN = 1.8f          // launches (build, bang, boom): over the engine too
         // crossed on purpose: the "down" take sounds right going up, and the other way round
         const val SHIFT_UP = "shift_cin_down"

@@ -11,7 +11,11 @@ namespace sc {
 
 namespace {
 // output stage (as Open Blue's SoundVoice)
-constexpr float OUTPUT_TRIM = 0.5f, CEILING = 0.89f, LOOKAHEAD_SEC = 0.003f, LIMIT_RELEASE_SEC = 0.25f;
+// OUTPUT_TRIM leaves headroom: at full volume the loudest moments (a hard pull at speed) peak
+// around -1 to -5 dBFS, so the limiter only catches the odd extreme. (At 0.5 they overshot by
+// 4-5 dB and the limiter clamped down on every exhaust pulse -- heard as a distorted crackle --
+// and left nothing for the amp or the car after it.) Turn the car / amp up to make up the level.
+constexpr float OUTPUT_TRIM = 0.25f, CEILING = 0.89f, LOOKAHEAD_SEC = 0.003f, LIMIT_RELEASE_SEC = 0.25f;
 constexpr float LIMITER_CUT_LEVEL = 0.35f, LIMITER_EASE_SEC = 0.004f;
 constexpr float CORNER_LEAN = 0.45f, CORNER_FULL_MS2 = 3.9f;   // the lean: this far over by 0.4 g
 constexpr float SPEED_FROM_KMH = 30.f, SPEED_FULL_KMH = 120.f, SPEED_GAIN_DB = 3.f, SPEED_BRIGHT_DB = 2.f;
