@@ -18,9 +18,15 @@ constexpr float CYL_GAIN[6] = {1.00f, 0.93f, 1.05f, 0.97f, 1.02f, 0.95f};
 constexpr float F_HZ[4] = {170.f, 480.f, 1250.f, 3100.f};
 constexpr float F_DECAY[4] = {0.0045f, 0.0018f, 0.0009f, 0.00035f};
 constexpr float F_LO[4] = {1.00f, 0.45f, 0.10f, 0.02f};
-constexpr float F_HI[4] = {1.00f, 0.85f, 0.55f, 0.22f};
+constexpr float F_HI[4] = {1.00f, 0.85f, 0.50f, 0.14f};
+// What keeps it from sounding like a saw wave (a perfectly regular train of sharp pulses):
+//  - FIRE_JITTER: each firing lands a little early or late (cycle-to-cycle combustion variation,
+//    ~0.7 degrees of crank): the upper harmonics turn to texture while the low ones stay tonal
+//  - ATTACK_SEC: each pulse rises over this long, not in a single sample
+//  - MUFFLE_LO / MUFFLE_HI: the exhaust's top end, closed to open with load and revs
+constexpr float FIRE_JITTER = 0.006f, ATTACK_SEC = 0.0006f, MUFFLE_LO = 2000.f, MUFFLE_HI = 5000.f;
 constexpr float RIGHT_TUNE = 1.10f, WEAK_LOW = 0.66f, WEAK_HIGH = 0.86f;
-constexpr float TRIM = 4.9f, POP_SEC = 0.03f;
+constexpr float TRIM = 5.7f, POP_SEC = 0.03f;
 constexpr float RASP = 0.06f;            // the turbulent rasp on each pulse, at full load
 }  // namespace
 
@@ -29,7 +35,7 @@ public:
     static constexpr float IDLE = 900.f, REDLINE = 8500.f;
 
     explicit Flat6Voice(int sr)
-        : LayeredVoice(sr), noise_(11), pink_(12), attackK_(1.f - std::exp(-1.f / (0.00025f * sr))),
+        : LayeredVoice(sr), noise_(11), pink_(12), attackK_(1.f - std::exp(-1.f / (ATTACK_SEC * sr))),
           level_(0.02f, sr), intakeLevel_(0.05f, sr) {
         for (int c = 0; c < 2; ++c) { shelf_[c].lowShelf(140.f, 0.7f, 1.f, sr); hp_[c].highPass(28.f, 0.707f, sr); }
         int n = (int)(POP_SEC * sr);
@@ -61,7 +67,7 @@ public:
         for (int f = 0; f < 4; ++f) formantGain[f] = F_LO[f] + (F_HI[f] - F_LO[f]) * bright;
         for (int b = 0; b < 2; ++b) for (int f = 0; f < 4; ++f) res_[b][f].set(F_HZ[f] * (b == 1 ? RIGHT_TUNE : 1.f), F_DECAY[f], sr_);
         grit_.bandPass(2200.f, 0.8f, sr_);
-        float mute = lerp(2200.f, 8000.f, load * (0.35f + 0.65f * rpmN)) * (1.f - 0.45f * overrun);
+        float mute = lerp(MUFFLE_LO, MUFFLE_HI, load * (0.35f + 0.65f * rpmN)) * (1.f - 0.45f * overrun);
         for (int c = 0; c < 2; ++c) {
             tailpipe_[c].peak(92.f, 2.5f, 3.f, sr_);
             header_[c].peak(270.f, 2.f, 3.f, sr_);
@@ -84,8 +90,9 @@ public:
             // firing: strike the bank's resonators
             firePhase_ += fireHz / sr_;
             float hitL = 0.f, hitR = 0.f;
-            if (firePhase_ >= 1.0) {
-                firePhase_ -= 1.0;
+            if (firePhase_ >= fireAt_) {
+                firePhase_ -= fireAt_;
+                fireAt_ = 1.0 + FIRE_JITTER * noise_.gauss();       // when the next one lands
                 firing_++;
                 sinceFire_ = 0.f;
                 int cyl = FIRING_ORDER[firing_ % 6];
@@ -151,7 +158,7 @@ private:
     float attackK_;
     Biq grit_, tailpipe_[2], header_[2], muffler_[2], intakeBp_, tickBp_, shelf_[2], hp_[2];
     Smooth level_, intakeLevel_;
-    double firePhase_ = 0, popPan_ = 0;
+    double firePhase_ = 0, popPan_ = 0, fireAt_ = 1.0;
     long long firing_ = 0;
     float sinceFire_ = 1e9f;
     int liftOffsSeen_ = -1;
