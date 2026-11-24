@@ -27,6 +27,12 @@ data class PiStatus(
     val message: String,
     /** Cruise settle on (the Pi's saved "cruise quiet"). */
     val cruiseSettle: Boolean = true,
+    /**
+     * With the Pi's separate Bluetooth service: what its engine is doing -- "running", or
+     * systemd's word for it while it isn't reporting ("activating": starting or updating,
+     * "failed", "inactive"). Null from a Pi without that service.
+     */
+    val engineState: String? = null,
     /** Set when the Pi plays the sound itself with the native engine: then it can be remote-controlled. */
     val native: PiNative?,
 )
@@ -41,6 +47,7 @@ internal fun parsePiStatus(json: String): PiStatus? = runCatching {
         carLive = o.optBoolean("car"),
         message = o.optString("msg"),
         cruiseSettle = o.optBoolean("cq", true),
+        engineState = o.optString("svc").takeIf { it.isNotEmpty() },
         native = n?.let {
             PiNative(
                 gears = it.optBoolean("gears", true),

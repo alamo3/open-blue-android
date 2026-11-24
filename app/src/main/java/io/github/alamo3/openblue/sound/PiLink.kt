@@ -62,6 +62,10 @@ class PiLink(private val context: Context) {
         val COMMAND: UUID = UUID.fromString("7a6b0002-3c1e-4b7a-9d55-2f1c0e5b8a01")
         val STATUS: UUID = UUID.fromString("7a6b0003-3c1e-4b7a-9d55-2f1c0e5b8a01")
         val TELEMETRY: UUID = UUID.fromString("7a6b0005-3c1e-4b7a-9d55-2f1c0e5b8a01")
+        /** The Pi's log, a line at a time (its separate Bluetooth service; "logs" replays the recent ones). */
+        val LOG: UUID = UUID.fromString("7a6b0006-3c1e-4b7a-9d55-2f1c0e5b8a01")
+        /** Log lines kept. */
+        const val LOG_KEEP = 300
         private val CCCD: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
         /** The MTU asked for: the status JSON is a couple of hundred bytes. */
         private const val MTU = 517
@@ -110,6 +114,10 @@ class PiLink(private val context: Context) {
         private set
     @Volatile var longestGapMs = 0L
         private set
+
+    /** The Pi's log so far, oldest first ("HH:MM:SS message"); empty with a Pi too old to send it. */
+    val log: List<String> get() = synchronized(logLines) { logLines.toList() }
+    private val logLines = ArrayDeque<String>()
 
     /** The Pi's latest status; null until it sends one (or with a Pi too old to). */
     @Volatile var status: PiStatus? = null
@@ -296,6 +304,11 @@ class PiLink(private val context: Context) {
                     subscribe(STATUS)
                     send("status")                               // the status straight away
                 }
+                if (service.getCharacteristic(LOG) != null) {
+                    synchronized(logLines) { logLines.clear() }
+                    subscribe(LOG)
+                    send("logs")                                 // the recent log, then it follows
+                }
                 state = State.CONNECTED
             }
         }
@@ -307,6 +320,7 @@ class PiLink(private val context: Context) {
             when (c.uuid) {
                 TELEMETRY -> parse(value)
                 STATUS -> parseStatus(value)
+                LOG -> addLog(value)
             }
         }
 
@@ -318,7 +332,17 @@ class PiLink(private val context: Context) {
             when (c.uuid) {
                 TELEMETRY -> parse(v)
                 STATUS -> parseStatus(v)
+                LOG -> addLog(v)
             }
+        }
+    }
+
+    private fun addLog(v: ByteArray) {
+        val line = String(v, Charsets.UTF_8).trimEnd()
+        if (line.isEmpty()) return
+        synchronized(logLines) {
+            logLines.addLast(line)
+            while (logLines.size > LOG_KEEP) logLines.removeFirst()
         }
     }
 

@@ -30,6 +30,14 @@ class PiStatusTest {
         assertNull(n.testDrive)
     }
 
+    @Test fun engineStateFromTheBluetoothService() {
+        // the engine updating: the Bluetooth service reports systemd's state, no player state
+        val s = parsePiStatus("""{"v":"Flat-6","vol":1.0,"car":false,"cq":true,"svc":"activating","msg":"The engine is starting (or updating)."}""")!!
+        assertEquals("activating", s.engineState)
+        assertNull(s.native)
+        assertNull(parsePiStatus("""{"v":"Flat-6","vol":1.0,"car":true,"msg":""}""")!!.engineState)   // an older Pi
+    }
+
     @Test fun dataOnlyPiHasNoRemote() {
         assertNull(parsePiStatus("""{"v":"Starship","vol":1.0,"car":true,"msg":""}""")!!.native)
         assertNull(parsePiStatus("not json"))

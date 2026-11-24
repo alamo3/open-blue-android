@@ -31,6 +31,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -270,6 +271,8 @@ fun SoundScreen(vm: MainViewModel, onBack: () -> Unit) {
                     onDispose { vm.detachPiRemote() }
                 }
                 vm.piRemote?.native?.let { n -> PiSoundRemote(vm, vm.piRemote!!, n) }
+                // what the Pi is doing: its engine's state and log (its separate Bluetooth service)
+                vm.piRemote?.let { PiActivity(it, vm.piLog) }
                 r?.dropouts?.let {
                     Text("Hiccups this session: $it", style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
                 }
@@ -418,6 +421,48 @@ private fun PiSoundRemote(vm: MainViewModel, s: io.github.alamo3.openblue.sound.
         }
         Text(piLive(s, n), style = MaterialTheme.typography.bodySmall, color = if (n.live || driving) scheme.primary else scheme.onSurfaceVariant)
         if (s.message.isNotEmpty()) Text(s.message, style = MaterialTheme.typography.bodySmall, color = scheme.error)
+    }
+}
+
+/** The Pi's engine state when it isn't simply running, and its log (newest at the bottom). */
+@Composable
+private fun PiActivity(s: io.github.alamo3.openblue.sound.PiStatus, log: List<String>) {
+    val scheme = MaterialTheme.colorScheme
+    val state = s.engineState
+    if (state == null && log.isEmpty()) return               // a Pi without the Bluetooth service
+    Column(Modifier.fillMaxWidth().padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        if (state != null && state != "running") {
+            Text(
+                when (state) {
+                    "activating" -> "The Pi's engine is starting or updating…"
+                    "failed" -> "The Pi's engine stopped after a failure: see its log."
+                    "inactive" -> "The Pi's engine isn't running."
+                    "deactivating" -> "The Pi's engine is stopping…"
+                    else -> "The Pi's engine: $state"
+                },
+                style = MaterialTheme.typography.bodyMedium,
+                color = if (state == "failed") scheme.error else scheme.primary,
+            )
+        }
+        if (log.isNotEmpty()) {
+            var open by remember { mutableStateOf(false) }
+            TextButton(onClick = { open = !open }) { Text(if (open) "Hide the Pi's log" else "Show the Pi's log (${log.size} lines)") }
+            if (open) {
+                val scroll = rememberScrollState()
+                androidx.compose.runtime.LaunchedEffect(log.size) { scroll.scrollTo(scroll.maxValue) }   // follow the newest
+                Box(
+                    Modifier.fillMaxWidth().height(260.dp).clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
+                        .background(scheme.surfaceVariant).padding(8.dp).verticalScroll(scroll),
+                ) {
+                    Text(
+                        log.joinToString("\n"),
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                        color = scheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
     }
 }
 

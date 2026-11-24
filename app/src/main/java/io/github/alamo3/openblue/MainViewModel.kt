@@ -1998,6 +1998,9 @@ class MainViewModel(
         private set
     var piRemoteLink by mutableStateOf(io.github.alamo3.openblue.sound.PiLink.State.OFF)
         private set
+    /** The Pi's log (its Bluetooth service streams it), oldest first. */
+    var piLog by mutableStateOf<List<String>>(emptyList())
+        private set
 
     private fun canUseBluetooth(): Boolean {
         val perms = if (android.os.Build.VERSION.SDK_INT >= 31) {
@@ -2019,6 +2022,8 @@ class MainViewModel(
                 if (!held && canUseBluetooth()) { piLink.acquire(piRemoteHolder); held = true }
                 piRemote = piLink.status
                 piRemoteLink = piLink.state
+                val log = piLink.log
+                if (log.size != piLog.size || log.lastOrNull() != piLog.lastOrNull()) piLog = log
                 delay(250)
             }
         }
