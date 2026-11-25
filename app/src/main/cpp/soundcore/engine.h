@@ -72,8 +72,8 @@ public:
     void setGearshifts(bool on) { gearshifts_ = on; }
     void setActive(bool on) { active_ = on; }      // fades in / out (no clicks)
     void skipChime() { chimed_ = true; }           // e.g. a host that already chimed, or switched sound mid-drive
-    // cruise settle: at a steady cruise the engine eases ~6 dB down (with a little life in it),
-    // and snaps back the moment the pedal moves -- as cars with synthetic engine sound do
+    // settle: at a steady cruise the engine eases ~8 dB down (with a little life in it), at idle
+    // ~9 dB, and snaps back the moment the pedal moves -- as cars with synthetic engine sound do
     void setCruiseSettle(bool on) { cruiseSettle_ = on; }
     void startTestDrive();
     void stopTestDrive();
@@ -114,7 +114,7 @@ private:
     Readout readout_;
     // cruise settle
     bool cruiseSettle_ = true;
-    float cruisePedal_ = 0, steadyT_ = 0, cruiseGain_ = 1, life_ = 0;
+    float cruisePedal_ = 0, steadyT_ = 0, idleT_ = 0, cruiseGain_ = 1, life_ = 0;
     Wander lifeLoad_, lifeRpm_;
 };
 

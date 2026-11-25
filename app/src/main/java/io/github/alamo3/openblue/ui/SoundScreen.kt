@@ -229,8 +229,8 @@ fun SoundScreen(vm: MainViewModel, onBack: () -> Unit) {
                 ) { vm.changeGearshifts(it) }
             }
             SettingSwitch(
-                "Settle at a steady cruise",
-                "On: after a few seconds of steady speed the engine eases down, so a long run doesn't drone; it comes straight back when you press or lift.",
+                "Settle when cruising or idling",
+                "On: after a few seconds of steady speed (from 20 km/h) or standing still, the engine eases down so it doesn't drone; it comes straight back when you press or lift.",
                 vm.cruiseSettle,
             ) { vm.changeCruiseSettle(it) }
             SettingSwitch(
@@ -405,7 +405,7 @@ private fun PiSoundRemote(vm: MainViewModel, s: io.github.alamo3.openblue.sound.
         Text("Volume ${(vol * 100).roundToInt()}%", style = MaterialTheme.typography.bodyMedium)
         Slider(value = vol, onValueChange = { vol = it }, onValueChangeFinished = { vm.piVolume(vol) }, colors = sliderColors(scheme.primary))
         SettingSwitch("Gearbox", "The dual-clutch gearbox: shifts, kickdown, the rev limiter.", n.gears) { vm.piGearshifts(it) }
-        SettingSwitch("Settle at a steady cruise", "Eases the engine down after a few seconds of steady speed; back the moment you press or lift.", s.cruiseSettle) { vm.piCruiseSettle(it) }
+        SettingSwitch("Settle when cruising or idling", "Eases the engine down after a few seconds of steady speed or standing still; back the moment you press or lift.", s.cruiseSettle) { vm.piCruiseSettle(it) }
         // rev it in place: springs back when let go
         var rev by remember { mutableFloatStateOf(0f) }
         Text("Rev it", style = MaterialTheme.typography.bodyMedium)
